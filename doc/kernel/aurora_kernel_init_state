@@ -1,0 +1,46 @@
+upon boot, the kernel will follow a certain protocol for starting the first process
+the kernel will be loaded with an initrd, whose format is specified here:
+https://github.com/Athryx/gen-initrd
+
+the kernel will attempt to parse the initrd, and load the early-init executable
+the kernel will allocate a 256 KiB stack, with a guard page at the end
+
+it will also insert some capabilities into the early-init process
+a pointer to the array of capabilities will be placed in rax
+
+the following capabilities will be present in the array in this order:
+init_process: rwpu Cap<Process>
+a capability to the init_process
+
+intrd: ru Cap<Mem>
+a capability to the initrd so early-init can load the other programs
+
+global_info_table: ru Cap<Mem>
+a capability to the global information table
+
+kcontrol: rwu Cap<Event>
+an event that can be used to issue certain privalidged commands to the kernel, such as power off and panic
+
+spawner: rwpu Cap<Spawner>
+the spawner that the early-init process was spawned with
+
+spawn_key: ru Cap<Key>
+a key that allows creating other spawners
+
+root_allocator: rpu Cap<Allocator>
+the root memory allocator
+
+root_oom: rwu Cap<RootOom>
+the root out of memory event listener
+
+root_oom_table: rwu Cap<Mem>
+the root out of memory table used to indicate which regions of memory to page to disk
+
+mmio_allocator: rpu Cap<MmioAllocator>
+the memory mapped io allocator
+
+int_allocator: rpu Cap<IntAllocator>
+the hardware interrupt allocator
+
+port_allocator: rpu Cap<PortAllocator>
+the io port allocator
