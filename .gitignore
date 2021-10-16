@@ -1,0 +1,8 @@
+kernel/kernel.iso
+disk.img
+*.bin
+boot/initrd
+initrd/initrd
+*target/
+*.cargo/
+*.vim/
