@@ -19,3 +19,5 @@ done
 [[ $1 = fmt ]] && exit 0
 
 #gen-initrd --ahci ahci-server/ahci-server.bin --init early-init/early-init.bin --fs fs-server/fs-server.bin --ext2 ext2-server/ext2-server.bin --part-list part-list -o initrd
+
+exit 0

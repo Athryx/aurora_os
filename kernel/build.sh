@@ -9,7 +9,9 @@ cd $(dirname $0)
 
 cargo build $RFLAG || exit 1
 
-IMG=target/x86_64-os/debug/kernel
-[[ $1 = release ]] && IMG=target/x86_64-os/release/kernel
+IMG=target/x86_64-os-kernel/debug/kernel
+[[ $1 = release ]] && IMG=target/x86_64-os-kernel/release/kernel
 
 cp $IMG kernel.bin
+
+exit 0

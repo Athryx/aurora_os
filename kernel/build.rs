@@ -11,8 +11,7 @@ fn asm_file(file: &str, out_dir: &str) {}
 fn asm(out_dir: &str) {}
 
 #[cfg(target_arch = "x86_64")]
-fn asm_file(file: &str, out_dir: &str)
-{
+fn asm_file(file: &str, out_dir: &str) {
 	let file = format!("{}/{}", ASM_DIR, file);
 	let out_name = file.replace("/", "-");
 	let out_file = format!("lib{}.a", out_name);
@@ -55,19 +54,17 @@ fn asm_file(file: &str, out_dir: &str)
 }
 
 #[cfg(target_arch = "x86_64")]
-fn asm(out_dir: &str)
-{
+fn asm(out_dir: &str) {
 	let incl_files = vec!["asm_def.asm"];
 
 	let files = vec![
-		//"boot/mb2.asm",
 		"boot/boot.asm",
 		"boot/long_init.asm",
-		"boot/ap_boot.asm",
+		//"boot/ap_boot.asm",
 		"misc.asm",
-		"int/int.asm",
-		"syscall/syscall.asm",
-		"resources.asm",
+		//"int/int.asm",
+		//"syscall/syscall.asm",
+		//"resources.asm",
 	];
 
 	for f in incl_files.iter() {
@@ -79,11 +76,10 @@ fn asm(out_dir: &str)
 	}
 }
 
-fn main()
-{
-	/*let out_dir = env::var("OUT_DIR").unwrap();
+fn main() {
+	let out_dir = env::var("OUT_DIR").unwrap();
 
 	println!("cargo:rustc-link-search={}", out_dir);
 
-	asm(&out_dir);*/
+	asm(&out_dir);
 }

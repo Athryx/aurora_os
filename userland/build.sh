@@ -21,3 +21,5 @@ done
 [[ $1 = sysroot ]] && exit 0
 [[ $1 = test ]] && exit 0
 [[ $1 = fmt ]] && exit 0
+
+exit 0

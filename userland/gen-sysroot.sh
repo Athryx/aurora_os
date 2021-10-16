@@ -11,3 +11,5 @@ EOF
 else
 	cargo sysroot --target $TARGET --sysroot-dir $SYSROOT
 fi
+
+exit 0
