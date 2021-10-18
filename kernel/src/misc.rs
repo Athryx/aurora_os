@@ -1,4 +1,5 @@
 use core::ops::Range;
+use core::str::Utf8Error;
 use core::alloc::Layout;
 
 use crate::consts::PAGE_SIZE;
@@ -155,6 +156,22 @@ where
 
 pub fn aligned_nonnull<T>(ptr: *const T) -> bool {
 	core::mem::align_of::<T>() == align_of(ptr as usize) && !ptr.is_null()
+}
+
+pub unsafe fn from_cstr<'a>(ptr: *const u8) -> Result<&'a str, Utf8Error> {
+	let mut len = 0;
+	let start = ptr;
+
+	loop {
+		if *ptr.add(len) != 0 {
+			len += 1;
+		} else {
+			break;
+		}
+	}
+
+	let slice = core::slice::from_raw_parts(start, len);
+	core::str::from_utf8(slice)
 }
 
 /*pub fn to_heap<V>(object: V) -> *mut V

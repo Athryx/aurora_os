@@ -29,7 +29,7 @@ pub unsafe fn set_mem_offset(offset: usize) {
 pub struct PhysAddr(usize);
 
 impl PhysAddr {
-	const MASK: usize = 0x003fffffffffffff;
+	const MASK: usize = 0x000fffffffffffff;
 
 	pub fn new(addr: usize) -> Self {
 		Self::try_new(addr).expect("invalid physical addres")
@@ -63,7 +63,7 @@ impl PhysAddr {
 pub struct VirtAddr(usize);
 
 impl VirtAddr {
-	const MASK: usize = 0x0003ffffffffffff;
+	const MASK: usize = 0x0000ffffffffffff;
 
 	pub fn new(addr: usize) -> Self {
 		Self::try_new(addr).expect("invalid virtual addres")
@@ -73,6 +73,7 @@ impl VirtAddr {
 		match get_bits(addr, 47..64) {
 			0 => Some(VirtAddr(addr)),
 			1 => Some(Self::new_truncate(addr)),
+			0x1ffff => Some(VirtAddr(addr)),
 			_ => None,
 		}
 	}

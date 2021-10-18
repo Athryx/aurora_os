@@ -18,11 +18,14 @@
 #![feature(map_first_last)]*/
 
 mod arch;
+mod acpi;
 mod mem;
 mod sync;
 
 mod consts;
+mod hwa_iter;
 mod misc;
+mod mb2;
 mod io;
 mod prelude;
 
@@ -30,6 +33,7 @@ use core::panic::PanicInfo;
 
 use prelude::*;
 use arch::x64::*;
+use mb2::BootInfo;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -43,14 +47,24 @@ fn panic(info: &PanicInfo) -> ! {
 	}
 }
 
-// rust entry point of the kernel after boot.asm calls this
-#[no_mangle]
-pub extern "C" fn _start(boot_info_addr: usize) -> ! {
+fn init(boot_info_addr: usize) -> Result<(), SysErr> {
 	unsafe {
 		mem::init(*consts::KERNEL_VMA)
 	}
 
 	io::WRITER.lock().clear();
+
+	let boot_info = unsafe { BootInfo::new(boot_info_addr) };
+
+	Ok(())
+}
+
+// rust entry point of the kernel after boot.asm calls this
+#[no_mangle]
+pub extern "C" fn _start(boot_info_addr: usize) -> ! {
+	bochs_break();
+
+	init(boot_info_addr).expect("kernel init failed");
 
 	println!("aurora v0.0.1");
 
