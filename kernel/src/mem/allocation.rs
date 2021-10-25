@@ -1,4 +1,5 @@
 use core::cmp::min;
+use core::alloc::Layout;
 
 use crate::prelude::*;
 use super::VirtAddr;
@@ -28,14 +29,14 @@ impl Allocation
 		self.ptr
 	}
 
-	pub fn as_mut_ptr<T>(&mut self) -> *mut T
-	{
-		self.ptr.as_mut_ptr()
-	}
-
 	pub fn as_ptr<T>(&self) -> *const T
 	{
 		self.ptr.as_ptr()
+	}
+
+	pub fn as_mut_ptr<T>(&mut self) -> *mut T
+	{
+		self.ptr.as_mut_ptr()
 	}
 
 	pub fn as_slice(&self) -> &[u8]
@@ -56,6 +57,70 @@ impl Allocation
 	pub fn size(&self) -> usize
 	{
 		self.size
+	}
+
+	// returns number of bytes copied
+	pub fn copy_from_mem(&mut self, other: &[u8]) -> usize
+	{
+		let size = min(self.size(), other.len());
+		unsafe {
+			let dst: &mut [u8] = core::slice::from_raw_parts_mut(self.as_mut_ptr(), size);
+			let src: &[u8] = core::slice::from_raw_parts(other.as_ptr(), size);
+			dst.copy_from_slice(src);
+		}
+		size
+	}
+}
+
+pub struct HeapAllocation {
+	addr: usize,
+	size: usize,
+	align: usize,
+}
+
+impl HeapAllocation {
+	pub fn new(addr: usize, size: usize, align: usize) -> Self {
+		HeapAllocation {
+			addr,
+			size,
+			align,
+		}
+	}
+
+	pub fn from_layout(addr: usize, layout: Layout) -> Self {
+		Self::new(addr, layout.size(), layout.align())
+	}
+
+	pub fn addr(&self) -> usize {
+		self.addr
+	}
+
+	pub fn size(&self) -> usize {
+		self.size
+	}
+
+	pub fn align(&self) -> usize {
+		self.align
+	}
+
+	pub fn as_ptr<T>(&self) -> *const T
+	{
+		self.addr as *const T
+	}
+
+	pub fn as_mut_ptr<T>(&mut self) -> *mut T
+	{
+		self.addr as *mut T
+	}
+
+	pub fn as_slice(&self) -> &[u8]
+	{
+		unsafe { core::slice::from_raw_parts(self.as_ptr(), self.size) }
+	}
+
+	pub fn as_mut_slice(&mut self) -> &mut [u8]
+	{
+		unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr(), self.size) }
 	}
 
 	// returns number of bytes copied

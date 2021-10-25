@@ -1,4 +1,4 @@
-use core::slice;
+use core::slice::{self, Iter};
 
 use crate::prelude::*;
 use crate::mem::PhysAddr;
@@ -122,6 +122,12 @@ impl MemoryMap
 		self.data[self.len] = region;
 		self.len += 1;
 	}
+
+	pub fn iter(&self) -> Iter<MemoryRegionType> {
+		unsafe {
+			slice::from_raw_parts(&self.data as *const _, self.len).iter()
+		}
+	}
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -180,7 +186,7 @@ impl MemoryRegionType
 		[prange1.map(convert_func), prange2.map(convert_func), prange3.map(convert_func), prange4.map(convert_func)]
 	}
 
-	fn range(&self) -> PhysRange
+	pub fn range(&self) -> PhysRange
 	{
 		match self {
 			Self::Usable(mem) => *mem,

@@ -17,8 +17,10 @@
 #![feature(map_try_insert)]
 #![feature(map_first_last)]*/
 
+mod alloc;
 mod arch;
 mod acpi;
+mod container;
 mod mem;
 mod sync;
 
