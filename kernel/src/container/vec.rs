@@ -1,6 +1,8 @@
 use core::ptr::NonNull;
 use core::marker::PhantomData;
 use core::alloc::Layout;
+use core::ops::{Deref, DerefMut, Index, IndexMut};
+use core::slice::SliceIndex;
 
 use crate::prelude::*;
 use crate::alloc::{AllocRef, HeapAllocator};
@@ -126,5 +128,143 @@ impl<T> Vec<T> {
 			inner: RawVec::try_with_capacity(allocer, cap)?,
 			len: 0,
 		})
+	}
+
+	// returns a const pointer to the object at the specified index
+	unsafe fn coff(&self, index: usize) -> *const T {
+		self.as_ptr().add(index)
+	}
+
+	// returns a mutable pointer to the object at the specified index
+	unsafe fn off(&mut self, index: usize) -> *mut T {
+		self.as_mut_ptr().add(index)
+	}
+
+	pub fn len(&self) -> usize {
+		self.len
+	}
+
+	pub fn cap(&self) -> usize {
+		self.inner.cap
+	}
+
+	pub fn as_ptr(&self) -> *const T {
+		self.inner.ptr.as_ptr() as *const T
+	}
+
+	pub fn as_mut_ptr(&mut self) -> *mut T {
+		self.inner.ptr.as_ptr()
+	}
+
+	pub fn as_slice(&self) -> &[T] {
+		unsafe {
+			core::slice::from_raw_parts(self.as_ptr(), self.len)
+		}
+	}
+
+	pub fn as_mut_slice(&mut self) -> &mut [T] {
+		unsafe {
+			core::slice::from_raw_parts_mut(self.as_mut_ptr(), self.len)
+		}
+	}
+
+	pub fn allocator(&self) -> &dyn HeapAllocator {
+		self.inner.allocer.allocator()
+	}
+
+	pub fn push(&mut self, object: T) -> KResult<()> {
+		if self.len == self.cap() {
+			self.inner.try_grow()?;
+		}
+
+		unsafe {
+			ptr::write(self.off(self.len), object);
+		}
+
+		self.len += 1;
+
+		Ok(())
+	}
+
+	pub fn pop(&mut self) -> Option<T> {
+		if self.len == 0 {
+			None
+		} else {
+			self.len -= 1;
+
+			unsafe {
+				Some(ptr::read(self.off(self.len)))
+			}
+		}
+	}
+
+	pub fn insert(&mut self, index: usize, object: T) -> KResult<()> {
+		assert!(index <= self.len, "index out of bounds");
+
+		if self.len == self.cap() {
+			self.inner.try_grow()?;
+		}
+
+		let ncpy = self.len - index;
+
+		unsafe {
+			ptr::copy(self.off(index), self.off(index + 1), ncpy);
+			ptr::write(self.off(index), object);
+		}
+
+		self.len += 1;
+
+		Ok(())
+	}
+
+	pub fn remove(&mut self, index: usize) -> T {
+		assert!(index < self.len, "index out of bounds");
+
+		let out = unsafe {
+			ptr::read(self.off(index))
+		};
+
+		self.len -= 1;
+		let ncpy = self.len - index;
+
+		unsafe {
+			ptr::copy(self.off(index + 1), self.off(index), ncpy);
+		}
+
+		out
+	}
+}
+
+impl<T> Deref for Vec<T> {
+	type Target = [T];
+
+	fn deref(&self) -> &Self::Target {
+		self.as_slice()
+	}
+}
+
+impl<T> DerefMut for Vec<T> {
+	fn deref_mut(&mut self) -> &mut Self::Target {
+		self.as_mut_slice()
+	}
+}
+
+impl<T, I: SliceIndex<[T]>> Index<I> for Vec<T> {
+	type Output = I::Output;
+
+	fn index(&self, index: I) -> &Self::Output {
+		Index::index(self.as_slice(), index)
+	}
+}
+
+impl<T, I: SliceIndex<[T]>> IndexMut<I> for Vec<T> {
+	fn index_mut(&mut self, index: I) -> &mut Self::Output {
+		IndexMut::index_mut(self.as_mut_slice(), index)
+	}
+}
+
+impl<T> Drop for Vec<T> {
+	fn drop(&mut self) {
+		while let Some(_) = self.pop() {}
 	}
 }

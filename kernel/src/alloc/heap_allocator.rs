@@ -35,6 +35,10 @@ impl AllocRef {
 	pub unsafe fn new_raw(allocer: *const dyn HeapAllocator) -> Self {
 		AllocRef(AllocRefInner::Raw(allocer))
 	}
+
+	pub fn allocator(&self) -> &dyn HeapAllocator {
+		self.deref()
+	}
 }
 
 impl Deref for AllocRef {
