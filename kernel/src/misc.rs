@@ -193,10 +193,6 @@ pub fn copy_to_heap<T: Copy + Default>(slice: &[T]) -> Vec<T>
 	out
 }*/
 
-pub const fn mlayout_of<T>() -> Layout {
-	unsafe { Layout::from_size_align_unchecked(size_of::<T>(), core::mem::align_of::<T>()) }
-}
-
 // code from some reddit post
 #[macro_export]
 macro_rules! init_array (

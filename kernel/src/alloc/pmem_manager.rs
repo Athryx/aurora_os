@@ -1,6 +1,8 @@
 use crate::prelude::*;
 use crate::mb2::{MemoryMap, MemoryRegionType};
 use super::pmem_allocator::PmemAllocator;
+use super::bump_allocator::BumpAllocator;
+use super::{HeapAllocator, AllocRef};
 
 pub struct PmemManager {
 	allocers: *const [PmemAllocator],
@@ -33,6 +35,11 @@ impl PmemManager {
 
 		let paddr = PhysAddr::new(level_addr);
 		let vrange = VirtRange::new_unaligned(paddr.to_virt(), level_size);
+
+		// make new bump allocator to use for initializing physical memory ranges
+		let allocer = BumpAllocator::new(vrange);
+		let temp = &allocer as *const dyn HeapAllocator;
+		let aref = AllocRef::new_raw(temp);
 
 		for regions in usable {
 		}

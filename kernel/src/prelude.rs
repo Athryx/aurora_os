@@ -12,3 +12,5 @@ pub use crate::arch::x64::bochs_break;
 pub use crate::{print, println, eprint, eprintln, rprint, rprintln, init_array};
 pub use crate::consts::PAGE_SIZE;
 pub use crate::mem::{PhysAddr, VirtAddr, PhysRange, VirtRange, phys_to_virt, virt_to_phys};
+
+pub type KResult<T> = Result<T, SysErr>;

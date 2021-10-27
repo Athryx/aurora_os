@@ -91,6 +91,10 @@ impl HeapAllocation {
 		Self::new(addr, layout.size(), layout.align())
 	}
 
+	pub fn from_ptr<T>(ptr: *const T) -> Self {
+		Self::from_layout(ptr as usize, Layout::new::<T>())
+	}
+
 	pub fn addr(&self) -> usize {
 		self.addr
 	}
