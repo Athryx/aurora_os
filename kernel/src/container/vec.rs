@@ -3,6 +3,7 @@ use core::marker::PhantomData;
 use core::alloc::Layout;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::slice::SliceIndex;
+use core::iter::FusedIterator;
 
 use crate::prelude::*;
 use crate::alloc::{AllocRef, HeapAllocator};
@@ -233,6 +234,33 @@ impl<T> Vec<T> {
 
 		out
 	}
+
+	pub fn iter<'a>(&'a self) -> Iter<'a, T> {
+		Iter {
+			inner: RawIter::new(self.as_slice()),
+			marker: PhantomData,
+		}
+	}
+
+	pub fn iter_mut<'a>(&'a self) -> IterMut<'a, T> {
+		IterMut {
+			inner: RawIter::new(self.as_slice()),
+			marker: PhantomData,
+		}
+	}
+
+	pub fn into_iter(self) -> IntoIter<T> {
+		let slice = self.as_slice();
+		// to get around borrow checker
+		let buffer = unsafe {
+			ptr::read(&self.inner)
+		};
+
+		IntoIter {
+			inner: RawIter::new(slice),
+			_buffer: buffer,
+		}
+	}
 }
 
 impl<T> Deref for Vec<T> {
@@ -268,3 +296,154 @@ impl<T> Drop for Vec<T> {
 		while let Some(_) = self.pop() {}
 	}
 }
+
+struct RawIter<T> {
+	// inclusive
+	start: usize,
+	// exlusive
+	end: usize,
+	marker: PhantomData<*mut T>,
+}
+
+impl<T> RawIter<T> {
+	fn new(data: &[T]) -> Self {
+		let addr = data.as_ptr() as usize;
+
+		RawIter {
+			start: addr,
+			end: addr + Self::elem_size() * data.len(),
+			marker: PhantomData,
+		}
+	}
+
+	fn elem_size() -> usize {
+		if size_of::<T>() == 0 {
+			1
+		} else {
+			size_of::<T>()
+		}
+	}
+}
+
+impl<T> Iterator for RawIter<T> {
+	type Item = *mut T;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		if self.start == self.end {
+			None
+		} else {
+			let out = self.start as *mut T;
+			self.start = self.start + Self::elem_size();
+			Some(out)
+		}
+	}
+
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		let bound = (self.end - self.start) / Self::elem_size();
+		(bound, Some(bound))
+	}
+}
+
+impl<T> DoubleEndedIterator for RawIter<T> {
+	fn next_back(&mut self) -> Option<Self::Item> {
+		if self.start == self.end {
+			None
+		} else {
+			self.start = self.start - Self::elem_size();
+			Some(self.start as *mut T)
+		}
+	}
+}
+
+impl<T> ExactSizeIterator for RawIter<T> {}
+impl<T> FusedIterator for RawIter<T> {}
+
+pub struct Iter<'a, T: 'a> {
+	inner: RawIter<T>,
+	marker: PhantomData<&'a T>,
+}
+
+impl<'a, T> Iterator for Iter<'a, T> {
+	type Item = &'a T;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		unsafe {
+			self.inner.next().map(|ptr| ptr.as_ref().unwrap())
+		}
+	}
+
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		self.inner.size_hint()
+	}
+}
+
+impl<T> DoubleEndedIterator for Iter<'_, T> {
+	fn next_back(&mut self) -> Option<Self::Item> {
+		unsafe {
+			self.inner.next_back().map(|ptr| ptr.as_ref().unwrap())
+		}
+	}
+}
+
+impl<T> ExactSizeIterator for Iter<'_, T> {}
+impl<T> FusedIterator for Iter<'_, T> {}
+
+pub struct IterMut<'a, T: 'a> {
+	inner: RawIter<T>,
+	marker: PhantomData<&'a T>,
+}
+
+impl<'a, T> Iterator for IterMut<'a, T> {
+	type Item = &'a mut T;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		unsafe {
+			self.inner.next().map(|ptr| ptr.as_mut().unwrap())
+		}
+	}
+
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		self.inner.size_hint()
+	}
+}
+
+impl<T> DoubleEndedIterator for IterMut<'_, T> {
+	fn next_back(&mut self) -> Option<Self::Item> {
+		unsafe {
+			self.inner.next_back().map(|ptr| ptr.as_mut().unwrap())
+		}
+	}
+}
+
+impl<T> ExactSizeIterator for IterMut<'_, T> {}
+impl<T> FusedIterator for IterMut<'_, T> {}
+
+pub struct IntoIter<T> {
+	inner: RawIter<T>,
+	_buffer: RawVec<T>
+}
+
+impl<T> Iterator for IntoIter<T> {
+	type Item = T;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		unsafe {
+			self.inner.next().map(|ptr| ptr::read(ptr))
+		}
+	}
+
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		self.inner.size_hint()
+	}
+}
+
+impl<T> DoubleEndedIterator for IntoIter<T> {
+	fn next_back(&mut self) -> Option<Self::Item> {
+		unsafe {
+			self.inner.next_back().map(|ptr| ptr::read(ptr))
+		}
+	}
+}
+
+impl<T> ExactSizeIterator for IntoIter<T> {}
+impl<T> FusedIterator for IntoIter<T> {}
