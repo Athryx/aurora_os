@@ -54,6 +54,7 @@ impl PageSize
 	}
 }
 
+// TODO: maybe test in constructors if end is invalid phys or virt address
 macro_rules! impl_addr_range {
 	($addr:ident, $frame:ident, $range:ident, $iter:ident) => {
 		#[derive(Debug, Clone, Copy)]
@@ -332,6 +333,26 @@ macro_rules! impl_addr_range {
 
 impl_addr_range! {PhysAddr, PhysFrame, PhysRange, PhysRangeIter}
 impl_addr_range! {VirtAddr, VirtFrame, VirtRange, VirtRangeIter}
+
+impl PhysRange {
+	// panics if invalid as a virt range
+	pub fn to_virt(&self) -> VirtRange {
+		// test if end is valid virt addr
+		let _tmp = self.end_addr().to_virt();
+		let addr = self.addr.to_virt();
+		VirtRange::new_unaligned(addr, self.size)
+	}
+}
+
+impl VirtRange {
+	// shouldn't panic because phys address are always allowed to be bigger than virt address
+	pub fn to_phys(&self) -> PhysRange {
+		// test if end is valid phys addr
+		let _tmp = self.end_addr().to_phys();
+		let addr = self.addr.to_phys();
+		PhysRange::new_unaligned(addr, self.size)
+	}
+}
 
 impl From<Allocation> for PhysRange
 {

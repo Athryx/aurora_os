@@ -1,5 +1,8 @@
+use core::cmp::min;
+
 use crate::prelude::*;
 use crate::mb2::{MemoryMap, MemoryRegionType};
+use crate::container::Vec;
 use super::pmem_allocator::PmemAllocator;
 use super::bump_allocator::BumpAllocator;
 use super::{HeapAllocator, AllocRef};
@@ -11,16 +14,25 @@ pub struct PmemManager {
 impl PmemManager {
 	// TODO: this might encounter problems with low amount of system memory (like very low)
 	pub unsafe fn new(mem_map: &MemoryMap) -> PmemManager {
+		// iterator over usable memory zones as a VirtRange
+		// these ranges are aligned on pages
 		let usable = mem_map.iter()
-			.filter(|zone| matches!(zone, MemoryRegionType::Usable(_)));
+			.filter(|zone| matches!(zone, MemoryRegionType::Usable(_)))
+			.map(|mem| mem.range().to_virt().aligned());
 
-		// phys range
+		// biggest usable virt range
 		let max = usable.clone()
-			.reduce(|z1, z2| if z1.range().size() > z2.range().size() {
+			.reduce(|z1, z2| if z1.size() > z2.size() {
 				z1
 			} else {
 				z2
-			}).unwrap().range();
+			}).unwrap();
+
+		// maximum number of level zones that could exist
+		let max_zones = usable.clone()
+			.fold(0, |acc, range| {
+				acc + 2 * log2(range.size()) - 1
+			});
 
 		// get the size of the largest power of 2 aligned chunk of memory
 		// we will use this memory for the temporary bump allocator to store heap data needed to set up buddy allocators
@@ -33,16 +45,33 @@ impl PmemManager {
 			level_addr = align_up(max.as_usize(), level_size);
 		}
 
-		let paddr = PhysAddr::new(level_addr);
-		let vrange = VirtRange::new_unaligned(paddr.to_virt(), level_size);
+		// will be aligned because level_addr and level_size are aligned in above code
+		let vrange = VirtRange::new_unaligned(VirtAddr::new(level_addr), level_size);
 
 		// make new bump allocator to use for initializing physical memory ranges
 		let allocer = BumpAllocator::new(vrange);
 		let temp = &allocer as *const dyn HeapAllocator;
 		let aref = AllocRef::new_raw(temp);
 
-		for regions in usable {
+		// holds zones of memory that have a size of power of 2 and an alignmant equal to their size
+		let mut zones = Vec::try_with_capacity(aref, max_zones).expect("not enough memory to initialize physical memory manager");
+
+		for region in usable {
+			let mut start = region.as_usize();
+			let end = region.end_usize();
+
+			while start < end {
+				let size = min(align_of(start), end - start);
+				// because region is aligned, this should be aligned
+				let range = VirtRange::new_unaligned(VirtAddr::new(start), size);
+				zones.push(range).expect("vec was not made big enough");
+
+				start += size;
+			}
 		}
+
+		zones.sort_unstable();
+
 		todo!();
 	}
 }

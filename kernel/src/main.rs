@@ -58,6 +58,8 @@ fn init(boot_info_addr: usize) -> Result<(), SysErr> {
 
 	let boot_info = unsafe { BootInfo::new(boot_info_addr) };
 
+	alloc::init(&boot_info.memory_map);
+
 	Ok(())
 }
 

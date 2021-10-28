@@ -4,6 +4,7 @@ use core::alloc::Layout;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::slice::SliceIndex;
 use core::iter::FusedIterator;
+use core::fmt;
 
 use crate::prelude::*;
 use crate::alloc::{AllocRef, HeapAllocator};
@@ -288,6 +289,12 @@ impl<T, I: SliceIndex<[T]>> Index<I> for Vec<T> {
 impl<T, I: SliceIndex<[T]>> IndexMut<I> for Vec<T> {
 	fn index_mut(&mut self, index: I) -> &mut Self::Output {
 		IndexMut::index_mut(self.as_mut_slice(), index)
+	}
+}
+
+impl<T: fmt::Debug> fmt::Debug for Vec<T> {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		fmt::Debug::fmt(self.as_slice(), f)
 	}
 }
 
