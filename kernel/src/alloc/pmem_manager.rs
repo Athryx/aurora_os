@@ -57,7 +57,7 @@ impl PmemManager {
 		// TODO: maybe use a better data structure than vec
 		// because some elements are removed from the middle, vec is not an optimal data structure,
 		// but it is the only one written at the moment, and this code is run once and is not performance critical
-		let mut zones = VecMap::try_with_capacity(aref, max_zones).expect("not enough memory to initialize physical memory manager");
+		let mut zones = VecSet::try_with_capacity(aref, max_zones).expect("not enough memory to initialize physical memory manager");
 
 		for region in usable {
 			let mut start = region.as_usize();
@@ -67,30 +67,13 @@ impl PmemManager {
 				let size = min(align_of(start), end - start);
 				// because region is aligned, this should be aligned
 				let range = VirtRange::new_unaligned(VirtAddr::new(start), size);
-				zones.push(range).expect("vec was not made big enough");
+				zones.insert(range).expect("vec was not made big enough");
 
 				start += size;
 			}
 		}
 
-		zones.sort_unstable();
-
-		let find_range = |vec: &mut Vec<VirtRange>, size: usize| -> Option<VirtRange> {
-			let bsearch_by = |probe: &VirtRange| probe.size().cmp(&size);
-			let i = match vec.binary_search_by(bsearch_by) {
-				Ok(i) => i,
-				Err(i) => i,
-			};
-
-			if i >= vec.len() {
-				None
-			} else {
-				Some(vec.remove(i))
-			}
-		};
-
-		while let Some(max) = zones.pop() {
-			let range = find_range(&mut zones, max.size());
+		while let Some(max) = zones.pop_max() {
 		}
 
 		todo!();

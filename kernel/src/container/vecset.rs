@@ -1,3 +1,5 @@
+use core::cmp::Ordering;
+
 use crate::prelude::*;
 use crate::alloc::AllocRef;
 use super::VecMap;
@@ -9,8 +11,16 @@ impl<T: Ord> VecSet<T> {
 		VecSet(VecMap::new(allocator))
 	}
 
+	pub fn with_compare(allocator: AllocRef, compare: fn(&T, &T) -> Ordering) -> Self {
+		VecSet(VecMap::with_compare(allocator, compare))
+	}
+
 	pub fn try_with_capacity(allocator: AllocRef, cap: usize) -> KResult<Self> {
 		Ok(VecSet(VecMap::try_with_capacity(allocator, cap)?))
+	}
+
+	pub fn try_with_capacity_compare(allocator: AllocRef, cap: usize, compare: fn(&T, &T) -> Ordering) -> KResult<Self> {
+		Ok(VecSet(VecMap::try_with_capacity_compare(allocator, cap, compare)?))
 	}
 
 	pub fn len(&self) -> usize {

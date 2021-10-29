@@ -1,3 +1,5 @@
+use core::cmp::Ordering;
+
 use crate::prelude::*;
 use crate::alloc::AllocRef;
 use super::Vec;
@@ -23,34 +25,58 @@ impl<K: Ord, V> MapNode<K, V>
 	}
 }
 
-pub struct VecMap<K: Ord, V>(Vec<MapNode<K, V>>);
+pub struct VecMap<K: Ord, V> {
+	data: Vec<MapNode<K, V>>,
+	compare: Option<fn(&K, &K) -> Ordering>,
+}
 
 impl<K: Ord, V> VecMap<K, V> {
 	pub fn new(allocator: AllocRef) -> Self {
-		VecMap(Vec::new(allocator))
+		VecMap {
+			data: Vec::new(allocator),
+			compare: None
+		}
+	}
+
+	// compare returns wether first argument is less than, equal to, or greater than second argument
+	pub fn with_compare(allocator: AllocRef, compare: fn(&K, &K) -> Ordering) -> Self {
+		VecMap {
+			data: Vec::new(allocator),
+			compare: Some(compare),
+		}
 	}
 
 	pub fn try_with_capacity(allocator: AllocRef, cap: usize) -> KResult<Self> {
-		Ok(VecMap(Vec::try_with_capacity(allocator, cap)?))
+		Ok(VecMap {
+			data: Vec::try_with_capacity(allocator, cap)?,
+			compare: None,
+		})
+	}
+
+	pub fn try_with_capacity_compare(allocator: AllocRef, cap: usize, compare: fn(&K, &K) -> Ordering) -> KResult<Self> {
+		Ok(VecMap {
+			data: Vec::try_with_capacity(allocator, cap)?,
+			compare: Some(compare),
+		})
 	}
 
 	pub fn len(&self) -> usize {
-		self.0.len()
+		self.data.len()
 	}
 
 	pub fn cap(&self) -> usize {
-		self.0.cap()
+		self.data.cap()
 	}
 
 	pub fn pop_max(&mut self) -> Option<(K, V)> {
-		self.0.pop().map(|node| node.tuple())
+		self.data.pop().map(|node| node.tuple())
 	}
 	
 	pub fn pop_min(&mut self) -> Option<(K, V)> {
 		if self.len() == 0 {
 			None
 		} else {
-			Some(self.0.remove(0).tuple())
+			Some(self.data.remove(0).tuple())
 		}
 	}
 
@@ -60,10 +86,10 @@ impl<K: Ord, V> VecMap<K, V> {
 		let node = MapNode::new(key, value);
 		match search_result {
 			Ok(index) => {
-				Ok(Some(self.0.replace(index, node).value))
+				Ok(Some(self.data.replace(index, node).value))
 			},
 			Err(index) => {
-				self.0.insert(index, node)?;
+				self.data.insert(index, node)?;
 				Ok(None)
 			},
 		}
@@ -71,7 +97,7 @@ impl<K: Ord, V> VecMap<K, V> {
 
 	pub fn remove(&mut self, key: &K) -> Option<V> {
 		match self.search(key) {
-			Ok(index) => Some(self.0.remove(index).value),
+			Ok(index) => Some(self.data.remove(index).value),
 			Err(_) => None
 		}
 	}
@@ -80,8 +106,8 @@ impl<K: Ord, V> VecMap<K, V> {
 	// returns none if no node greater than ore equal to exists
 	pub fn remove_gt(&mut self, key: &K) -> Option<(K, V)> {
 		match self.search(key) {
-			Ok(index) => Some(self.0.remove(index).tuple()),
-			Err(index) => self.0.try_remove(index).map(|node| node.tuple()),
+			Ok(index) => Some(self.data.remove(index).tuple()),
+			Err(index) => self.data.try_remove(index).map(|node| node.tuple()),
 		}
 	}
 
@@ -89,12 +115,12 @@ impl<K: Ord, V> VecMap<K, V> {
 	// returns none if no node greater than ore equal to exists
 	pub fn remove_lt(&mut self, key: &K) -> Option<(K, V)> {
 		match self.search(key) {
-			Ok(index) => Some(self.0.remove(index).tuple()),
+			Ok(index) => Some(self.data.remove(index).tuple()),
 			Err(index) => {
 				if index == 0 {
 					None
 				} else {
-					Some(self.0.remove(index - 1).tuple())
+					Some(self.data.remove(index - 1).tuple())
 				}
 			},
 		}
@@ -104,8 +130,12 @@ impl<K: Ord, V> VecMap<K, V> {
 	// else, Err(index where element should go) is returned
 	fn search(&self, key: &K) -> Result<usize, usize>
 	{
-		self.0.binary_search_by(|node| {
-			node.key.cmp(key)
+		self.data.binary_search_by(|node| {
+			if let Some(compare) = self.compare {
+				compare(&node.key, key)
+			} else {
+				node.key.cmp(key)
+			}
 		})
 	}
 }
