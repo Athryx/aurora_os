@@ -220,7 +220,13 @@ impl<T> Vec<T> {
 	}
 
 	pub fn remove(&mut self, index: usize) -> T {
-		assert!(index < self.len, "index out of bounds");
+		self.try_remove(index).expect("index out of bounds")
+	}
+
+	pub fn try_remove(&mut self, index: usize) -> Option<T> {
+		if index >= self.len {
+			return None;
+		}
 
 		let out = unsafe {
 			ptr::read(self.off(index))
@@ -231,6 +237,20 @@ impl<T> Vec<T> {
 
 		unsafe {
 			ptr::copy(self.off(index + 1), self.off(index), ncpy);
+		}
+
+		Some(out)
+	}
+
+	pub fn replace(&mut self, index: usize, object: T) -> T {
+		assert!(index < self.len, "index out of bounds");
+
+		let out = unsafe {
+			ptr::read(self.off(index))
+		};
+
+		unsafe {
+			ptr::write(self.off(index), object);
 		}
 
 		out

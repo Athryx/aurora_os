@@ -54,6 +54,9 @@ impl PmemManager {
 		let aref = AllocRef::new_raw(temp);
 
 		// holds zones of memory that have a size of power of 2 and an alignmant equal to their size
+		// TODO: maybe use a better data structure than vec
+		// because some elements are removed from the middle, vec is not an optimal data structure,
+		// but it is the only one written at the moment, and this code is run once and is not performance critical
 		let mut zones = Vec::try_with_capacity(aref, max_zones).expect("not enough memory to initialize physical memory manager");
 
 		for region in usable {
@@ -71,6 +74,24 @@ impl PmemManager {
 		}
 
 		zones.sort_unstable();
+
+		let find_range = |vec: &mut Vec<VirtRange>, size: usize| -> Option<VirtRange> {
+			let bsearch_by = |probe: &VirtRange| probe.size().cmp(&size);
+			let i = match vec.binary_search_by(bsearch_by) {
+				Ok(i) => i,
+				Err(i) => i,
+			};
+
+			if i >= vec.len() {
+				None
+			} else {
+				Some(vec.remove(i))
+			}
+		};
+
+		while let Some(max) = zones.pop() {
+			let range = find_range(&mut zones, max.size());
+		}
 
 		todo!();
 	}
