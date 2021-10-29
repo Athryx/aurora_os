@@ -2,7 +2,7 @@ use core::cmp::min;
 
 use crate::prelude::*;
 use crate::mb2::{MemoryMap, MemoryRegionType};
-use crate::container::Vec;
+use crate::container::VecSet;
 use super::pmem_allocator::PmemAllocator;
 use super::bump_allocator::BumpAllocator;
 use super::{HeapAllocator, AllocRef};
@@ -57,7 +57,7 @@ impl PmemManager {
 		// TODO: maybe use a better data structure than vec
 		// because some elements are removed from the middle, vec is not an optimal data structure,
 		// but it is the only one written at the moment, and this code is run once and is not performance critical
-		let mut zones = Vec::try_with_capacity(aref, max_zones).expect("not enough memory to initialize physical memory manager");
+		let mut zones = VecMap::try_with_capacity(aref, max_zones).expect("not enough memory to initialize physical memory manager");
 
 		for region in usable {
 			let mut start = region.as_usize();
