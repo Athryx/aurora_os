@@ -1,7 +1,10 @@
 use core::cmp::Ordering;
+use core::ops::{RangeBounds, Bound};
+use core::slice::Iter;
+use core::iter::FusedIterator;
 
 use crate::prelude::*;
-use crate::alloc::AllocRef;
+use crate::alloc::{AllocRef, HeapAllocator};
 use super::Vec;
 
 #[derive(Debug)]
@@ -68,10 +71,22 @@ impl<K: Ord, V> VecMap<K, V> {
 		self.data.cap()
 	}
 
+	pub fn allocator(&self) -> &dyn HeapAllocator {
+		self.data.allocator()
+	}
+
+	pub fn get(&self, key: &K) -> Option<&V> {
+		self.search(key).ok().map(|index| &self.data[index].value)
+	}
+
+	pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
+		self.search(key).ok().map(|index| &mut self.data[index].value)
+	}
+
 	pub fn pop_max(&mut self) -> Option<(K, V)> {
 		self.data.pop().map(|node| node.tuple())
 	}
-	
+
 	pub fn pop_min(&mut self) -> Option<(K, V)> {
 		if self.len() == 0 {
 			None
@@ -126,6 +141,45 @@ impl<K: Ord, V> VecMap<K, V> {
 		}
 	}
 
+	// panics if start > end, or start equals end and both are excluded
+	pub fn range<R: RangeBounds<K>>(&self, range: R) -> RangeIter<'_, K, V> {
+		let start_bound = range.start_bound();
+		let end_bound = range.end_bound();
+
+		match start_bound {
+			Bound::Included(key) => match end_bound {
+				Bound::Included(key2) | Bound::Excluded(key2) => assert!(key <= key2, "invalid range"),
+				_ => (),
+			},
+			Bound::Excluded(key) => match end_bound {
+				Bound::Included(key2) => assert!(key <= key2, "invalid range"),
+				Bound::Excluded(key2) => assert!(key < key2, "invalid range"),
+				_ => (),
+			},
+			_ => (),
+		}
+
+		let start = range.start_bound().map(|key| {
+			match self.search(&key) {
+				Ok(index) => index,
+				Err(index) => index + 1,
+			}
+		});
+
+		let end = range.start_bound().map(|key| {
+			match self.search(&key) {
+				Ok(index) => index,
+				Err(index) => index - 1,
+			}
+		});
+
+		// panic safety: start and end should already be in the vec
+		let slice_iter = self.data[(start, end)].iter();
+		RangeIter {
+			inner: slice_iter,
+		}
+	}
+
 	// if key is contained in the map, Ok(index of element) is returned
 	// else, Err(index where element should go) is returned
 	fn search(&self, key: &K) -> Result<usize, usize>
@@ -139,3 +193,28 @@ impl<K: Ord, V> VecMap<K, V> {
 		})
 	}
 }
+
+pub struct RangeIter<'a, K: Ord, V> {
+	inner: Iter<'a, MapNode<K, V>>,
+}
+
+impl<'a, K: Ord, V> Iterator for RangeIter<'a, K, V> {
+	type Item = (&'a K, &'a V);
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.inner.next().map(|node| (&node.key, &node.value))
+	}
+
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		self.inner.size_hint()
+	}
+}
+
+impl<K: Ord, V> DoubleEndedIterator for RangeIter<'_, K, V> {
+	fn next_back(&mut self) -> Option<Self::Item> {
+		self.inner.next_back().map(|node| (&node.key, &node.value))
+	}
+}
+
+impl<K: Ord, V> ExactSizeIterator for RangeIter<'_, K, V> {}
+impl<K: Ord, V> FusedIterator for RangeIter<'_, K, V> {}

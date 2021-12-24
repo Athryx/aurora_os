@@ -954,7 +954,7 @@ required capability permissions:
 sets the maximum number of pages the allocator can allocate
 
 options:
-bit 0 (set_max_relative): will add {pages} to the current max value, instead of setting the max value
+bit 0 (set_max_relative): will add {pages} to the current max value, instead of directly setting the max value
 
 required capability permissions:
 {allocator}: cap_write

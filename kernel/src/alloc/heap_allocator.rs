@@ -4,6 +4,7 @@ use core::ops::Deref;
 use crate::prelude::*;
 use crate::mem::HeapAllocation;
 
+/// A trait that represents an object that can allocate heap memory
 pub trait HeapAllocator {
 	fn alloc(&self, layout: Layout) -> Option<HeapAllocation>;
 	unsafe fn dealloc(&self, allocation: HeapAllocation);
@@ -23,6 +24,7 @@ enum AllocRefInner {
 	//OtherRc(Arc<CapAllocator>),
 }
 
+/// A reference to a heap allocator
 pub struct AllocRef(AllocRefInner);
 
 impl AllocRef {

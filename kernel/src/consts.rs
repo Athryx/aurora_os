@@ -55,16 +55,16 @@ lazy_static! {
 	pub static ref KERNEL_START: usize = unsafe { &__KERNEL_START } as *const _ as usize;
 	pub static ref KERNEL_END: usize = unsafe { &__KERNEL_END } as *const _ as usize;
 
-	pub static ref KERNEL_PHYS_RANGE: PhysRange = PhysRange::new(
+	pub static ref KERNEL_PHYS_RANGE: UPhysRange = UPhysRange::new_aligned(
 		PhysAddr::new(*KERNEL_LMA),
 		*KERNEL_END - *KERNEL_START
 	);
-	pub static ref KERNEL_VIRT_RANGE: VirtRange = VirtRange::new(
+	pub static ref KERNEL_VIRT_RANGE: UVirtRange = UVirtRange::new_aligned(
 		VirtAddr::new(*KERNEL_START),
 		*KERNEL_END - *KERNEL_START
 	);
 
-	pub static ref INIT_STACK: VirtRange = VirtRange::new(
+	pub static ref INIT_STACK: AVirtRange = AVirtRange::new_aligned(
 		PhysAddr::new(unsafe { &stack_bottom } as *const _ as usize).to_virt(),
 		(unsafe { &stack_top } as *const _ as usize)
 			- (unsafe { &stack_bottom } as *const _ as usize)

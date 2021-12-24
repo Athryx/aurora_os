@@ -3,7 +3,6 @@ use core::slice::{self, Iter};
 use crate::prelude::*;
 use crate::mem::PhysAddr;
 use crate::acpi::Rsdt;
-use crate::mem::PhysRange;
 use crate::consts;
 use crate::misc::from_cstr;
 use crate::hwa_iter::{HwaTag, HwaIter};
@@ -133,12 +132,12 @@ impl MemoryMap
 #[derive(Debug, Clone, Copy)]
 pub enum MemoryRegionType
 {
-	Usable(PhysRange),
-	Acpi(PhysRange),
-	HibernatePreserve(PhysRange),
-	Defective(PhysRange),
-	Reserved(PhysRange),
-	Kernel(PhysRange),
+	Usable(UPhysRange),
+	Acpi(UPhysRange),
+	HibernatePreserve(UPhysRange),
+	Defective(UPhysRange),
+	Reserved(UPhysRange),
+	Kernel(UPhysRange),
 	// only used internally, will never be shown if you deref a MemoryMap
 	None,
 }
@@ -148,7 +147,7 @@ impl MemoryRegionType
 	// this one might overlap with the kernel
 	unsafe fn new_unchecked(region: &Mb2MemoryRegion) -> Self
 	{
-		let prange = PhysRange::new(PhysAddr::new(region.addr as usize), region.len as usize);
+		let prange = UPhysRange::new(PhysAddr::new(region.addr as usize), region.len as usize);
 
 		match region.typ {
 			USABLE => Self::Usable(prange),
@@ -159,10 +158,10 @@ impl MemoryRegionType
 		}
 	}
 
-	fn new(region: &Mb2MemoryRegion, initrd_range: PhysRange) -> [Option<Self>; 4]
+	fn new(region: &Mb2MemoryRegion, initrd_range: UPhysRange) -> [Option<Self>; 4]
 	{
 		let (prange1, prange2) =
-			PhysRange::new_unaligned(PhysAddr::new(region.addr as usize), region.len as usize)
+			UPhysRange::new(PhysAddr::new(region.addr as usize), region.len as usize)
 				.split_at(*consts::KERNEL_PHYS_RANGE);
 
 		let (prange1, prange3) = match prange1 {
@@ -186,7 +185,7 @@ impl MemoryRegionType
 		[prange1.map(convert_func), prange2.map(convert_func), prange3.map(convert_func), prange4.map(convert_func)]
 	}
 
-	pub fn range(&self) -> PhysRange
+	pub fn range(&self) -> UPhysRange
 	{
 		match self {
 			Self::Usable(mem) => *mem,
@@ -288,7 +287,7 @@ impl BootInfo<'_>
 					if data.string() == "initrd" {
 						let size = (data.mod_end - data.mod_start) as usize;
 						let paddr = PhysAddr::new(data.mod_start as usize);
-						initrd_range = Some(PhysRange::new_unaligned(paddr, size));
+						initrd_range = Some(UPhysRange::new(paddr, size));
 
 						let initrd_ptr = paddr.to_virt().as_usize() as *const u8;
 						initrd_slice = Some(core::slice::from_raw_parts(initrd_ptr, size));

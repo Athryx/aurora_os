@@ -19,7 +19,7 @@ pub struct BumpAllocator {
 }
 
 impl BumpAllocator {
-	pub fn new(range: VirtRange) -> Self {
+	pub fn new(range: UVirtRange) -> Self {
 		let inner = IMutex::new(BumpInner {
 			current: range.as_usize(),
 			end: range.as_usize() + range.size(),
@@ -46,6 +46,11 @@ impl HeapAllocator for BumpAllocator {
 		}
 	}
 
-	unsafe fn dealloc(&self, _: HeapAllocation) {
+	unsafe fn dealloc(&self, allocation: HeapAllocation) {
+		let mut inner = self.inner.lock();
+
+		if allocation.end_addr() == inner.end {
+			inner.current -= allocation.size()
+		}
 	}
 }

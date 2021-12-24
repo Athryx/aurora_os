@@ -1,11 +1,45 @@
 use core::cmp::min;
+use core::alloc::Layout;
 
 use crate::prelude::*;
 use crate::mb2::{MemoryMap, MemoryRegionType};
-use crate::container::VecSet;
+use crate::container::VecMap;
 use super::pmem_allocator::PmemAllocator;
 use super::bump_allocator::BumpAllocator;
 use super::{HeapAllocator, AllocRef};
+
+struct PmemInitMap {
+	// all zones that can be allocatable memory and metadata
+	zones: VecMap<usize, UVirtRange>,
+	// zones that are too big and no other zone can hold their metadata, or zones that are no longer size aligned
+	// if this is not empty, it is used for allocating metadata
+	nofit: VecMap<usize, UVirtRange>,
+}
+
+impl PmemInitMap {
+	fn new(zones: VecMap<usize, UVirtRange>, nofit: VecMap<usize, UVirtRange>) -> Self {
+		PmemInitMap {
+			zones,
+			nofit,
+		}
+	}
+
+	fn get_mem_zone(&mut self) -> Option<UVirtRange> {
+		self.zones.pop_max().map(|data| data.1)
+	}
+
+	fn get_slice<T>(&mut self, len: usize) -> &[T] {
+		let size = len * size_of::<T>();
+		loop {
+			match self.nofit.remove_gt(&size) {
+				Some(range) => {
+				},
+				None => {
+				},
+			}
+		}
+	}
+}
 
 pub struct PmemManager {
 	allocers: *const [PmemAllocator],
@@ -18,7 +52,7 @@ impl PmemManager {
 		// these ranges are aligned on pages
 		let usable = mem_map.iter()
 			.filter(|zone| matches!(zone, MemoryRegionType::Usable(_)))
-			.map(|mem| mem.range().to_virt().aligned());
+			.map(|mem| mem.range().to_virt().as_aligned());
 
 		// biggest usable virt range
 		let max = usable.clone()
@@ -46,7 +80,7 @@ impl PmemManager {
 		}
 
 		// will be aligned because level_addr and level_size are aligned in above code
-		let vrange = VirtRange::new_unaligned(VirtAddr::new(level_addr), level_size);
+		let vrange = UVirtRange::new(VirtAddr::new(level_addr), level_size);
 
 		// make new bump allocator to use for initializing physical memory ranges
 		let allocer = BumpAllocator::new(vrange);
@@ -57,7 +91,11 @@ impl PmemManager {
 		// TODO: maybe use a better data structure than vec
 		// because some elements are removed from the middle, vec is not an optimal data structure,
 		// but it is the only one written at the moment, and this code is run once and is not performance critical
-		let mut zones = VecSet::try_with_capacity(aref, max_zones).expect("not enough memory to initialize physical memory manager");
+		let mut zones = VecMap::try_with_capacity(aref, max_zones)
+			.expect("not enough memory to initialize physical memory manager");
+
+		// zones that don't have any other zone that can hold all of their metadata
+		//let mut nofit = VecMap::new(aref);
 
 		for region in usable {
 			let mut start = region.as_usize();
@@ -66,14 +104,19 @@ impl PmemManager {
 			while start < end {
 				let size = min(align_of(start), end - start);
 				// because region is aligned, this should be aligned
-				let range = VirtRange::new_unaligned(VirtAddr::new(start), size);
-				zones.insert(range).expect("vec was not made big enough");
+				let range = UVirtRange::new(VirtAddr::new(start), size);
+				zones.insert(range.size(), range).expect("vec was not made big enough");
 
 				start += size;
 			}
 		}
 
-		while let Some(max) = zones.pop_max() {
+		// get slice of memory to hold PmemAllocators
+		// not optimal prediction of how many allocators there will be, but good enough
+		let size = zones.len() * size_of::<PmemAllocator>();
+
+
+		while let Some((_, max)) = zones.pop_max() {
 		}
 
 		todo!();

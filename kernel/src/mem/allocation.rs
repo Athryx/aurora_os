@@ -99,6 +99,10 @@ impl HeapAllocation {
 		self.addr
 	}
 
+	pub fn end_addr(&self) -> usize {
+		self.addr + self.size
+	}
+
 	pub fn size(&self) -> usize {
 		self.size
 	}

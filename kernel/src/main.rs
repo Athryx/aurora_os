@@ -10,12 +10,16 @@
 #![feature(stmt_expr_attributes)]
 #![feature(const_mut_refs)]
 #![feature(generic_associated_types)]
+#![feature(bound_map)]
+#![feature(slice_index_methods)]
 
 /*#![feature(arc_new_cyclic)]
 #![feature(const_btree_new)]
 #![feature(alloc_prelude)]
 #![feature(map_try_insert)]
 #![feature(map_first_last)]*/
+
+#![allow(dead_code)]
 
 mod alloc;
 mod arch;

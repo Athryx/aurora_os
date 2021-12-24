@@ -4,7 +4,8 @@ use core::mem::size_of_val;
 use core::iter::FusedIterator;
 
 pub trait HwaTag {
-	type Elem<'a>: core::fmt::Debug;
+	type Elem<'a>: core::fmt::Debug
+		where Self: 'a;
 
 	// returns the size of the element, including the tag
 	fn size(&self) -> usize;

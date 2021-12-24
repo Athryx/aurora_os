@@ -1,6 +1,7 @@
 use core::cmp::min;
 use core::marker::PhantomData;
 use core::slice;
+use core::alloc::Layout;
 
 use crate::prelude::*;
 use super::{PhysAddr, VirtAddr, Allocation};
@@ -54,9 +55,17 @@ impl PageSize
 	}
 }
 
+/*pub struct RangeAlignError;
+
+impl fmt::Display for RangeAlignError {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		fmt::Display::fmt("could not create an aligned range from an improperly aligned unaligned range type", f)
+	}
+}*/
+
 // TODO: maybe test in constructors if end is invalid phys or virt address
 macro_rules! impl_addr_range {
-	($addr:ident, $frame:ident, $range:ident, $iter:ident) => {
+	($addr:ident, $frame:ident, $range_trait:ident, $aligned_range:ident, $unaligned_range:ident, $iter:ident) => {
 		#[derive(Debug, Clone, Copy)]
 		pub enum $frame
 		{
@@ -104,17 +113,118 @@ macro_rules! impl_addr_range {
 			}
 		}
 
+		pub trait $range_trait {
+			fn addr(&self) -> $addr;
+			fn size(&self) -> usize;
+
+			fn addr_mut(&mut self) -> &mut $addr;
+			fn size_mut(&mut self) -> &mut usize;
+
+			fn is_aligned(&self) -> bool;
+			fn as_unaligned(&self) -> $unaligned_range;
+			/// Aligns range if it is not already aligned
+			fn as_aligned(&self) -> $aligned_range;
+			/// Returns None if the range is not already aligned
+			fn try_as_aligned(&self) -> Option<$aligned_range>;
+
+			fn as_usize(&self) -> usize
+			{
+				self.addr().as_usize()
+			}
+
+			fn end_addr(&self) -> $addr
+			{
+				self.addr() + self.size()
+			}
+
+			fn end_usize(&self) -> usize
+			{
+				self.as_usize() + self.size()
+			}
+
+			unsafe fn as_slice(&self) -> &[u8]
+			{
+				slice::from_raw_parts(self.as_usize() as *const u8, self.size())
+			}
+
+			fn contains(&self, addr: $addr) -> bool
+			{
+				(addr >= self.addr()) && (addr < (self.addr() + self.size()))
+			}
+
+			// NOTE: this only returns if it intersects at all, not if the range is fully contained in this range
+			fn contains_range(&self, range: &dyn $range_trait) -> bool
+			{
+				self.contains(range.addr()) || self.contains(range.addr() + range.size())
+			}
+
+			fn full_contains_range(&self, range: &dyn $range_trait) -> bool
+			{
+				self.contains(range.addr()) && self.contains(range.addr() + range.size())
+			}
+
+			/*pub fn verify_umem(&self) -> bool
+			{
+				udata::verify_umem(self.as_usize(), self.size())
+			}*/
+
+			fn merge(&self, other: Self) -> Option<Self>
+				where Self: Sized;
+
+			fn split_at(&self, range: Self) -> (Option<Self>, Option<Self>)
+				where Self: Sized;
+
+			fn get_take_size(&self) -> Option<PageSize>
+			{
+				PageSize::try_from_usize(min(
+					align_down_to_page_size(self.size()),
+					align_down_to_page_size(align_of(self.addr().as_usize())),
+				))
+			}
+
+			fn take(&mut self, size: PageSize) -> Option<$frame>
+			{
+				let take_size = self.get_take_size()?;
+				if size > take_size {
+					None
+				} else {
+					let size = size as usize;
+					let addr = self.addr();
+					*self.addr_mut() += size;
+					*self.size_mut() -= size;
+					Some($frame::new(addr, PageSize::from_usize(size)))
+				}
+			}
+
+			fn iter(&self) -> $iter
+			{
+				$iter {
+					start: self.addr(),
+					end: self.end_addr(),
+					life: PhantomData,
+				}
+			}
+		}
+
 		#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-		pub struct $range
+		pub struct $unaligned_range
 		{
 			// NOTE: this field must be first because it is the first one compared
 			addr: $addr,
 			size: usize,
 		}
 
-		impl $range
+		impl $unaligned_range
 		{
 			pub fn new(addr: $addr, size: usize) -> Self
+			{
+				Self {
+					addr,
+					size,
+				}
+			}
+
+			pub fn new_aligned(addr: $addr, size: usize) -> Self
 			{
 				let addr2 = (addr + size).align_up(PAGE_SIZE);
 				Self {
@@ -123,8 +233,19 @@ macro_rules! impl_addr_range {
 				}
 			}
 
+			pub fn try_new_aligned(addr: $addr, size: usize) -> Option<Self> {
+				if align_of(addr.as_usize()) < PAGE_SIZE || align_of(size) < PAGE_SIZE {
+					None
+				} else {
+					Some(Self{ 
+						addr,
+						size,
+					})
+				}
+			}
+
 			// returns error if invalid virt addr or unaligned addr and size
-			pub fn try_new_usize(addr: usize, size: usize) -> Result<Self, SysErr>
+			/*pub fn try_new_aligned_usize(addr: usize, size: usize) -> Result<Self, SysErr>
 			{
 				let vaddr = $addr::try_new(addr).ok_or(SysErr::InvlVirtAddr)?;
 				if align_of(addr) < PAGE_SIZE || align_of(size) < PAGE_SIZE {
@@ -136,26 +257,7 @@ macro_rules! impl_addr_range {
 						size,
 					})
 				}
-			}
-
-			// returns error if invalid virt addr or unaligned addr and size, or not in user mem zone
-			/*pub fn try_new_user(addr: usize, size: usize) -> Result<Self, SysErr>
-			{
-				let out = Self::try_new_usize(addr, size)?;
-				if !out.verify_umem() {
-					Err(SysErr::InvlPtr)
-				} else {
-					Ok(out)
-				}
 			}*/
-
-			pub fn new_unaligned(addr: $addr, size: usize) -> Self
-			{
-				Self {
-					addr,
-					size,
-				}
-			}
 
 			pub fn null() -> Self
 			{
@@ -165,68 +267,68 @@ macro_rules! impl_addr_range {
 				}
 			}
 
-			pub fn aligned(&self) -> Self
+			// returns new virt range, or none if layout does not fit in this virt range
+			// may set size to zero
+			// some areas may no longer have a virt zone pointing to them due to alignmant
+			// this can not be put in the trait because it does not guarentee alignmant
+			pub fn take_layout(&mut self, layout: Layout) -> Option<Self>
 			{
-				Self::new(self.addr, self.size)
+				let start_addr = self.addr().align_up(layout.align());
+				let new_addr = start_addr + layout.size();
+
+				if new_addr > self.addr() {
+					None
+				} else {
+					let size = new_addr - start_addr;
+					self.addr = new_addr;
+					self.size -= size;
+					Some(Self::new(start_addr, size))
+				}
+			}
+		}
+
+		impl $range_trait for $unaligned_range {
+			fn addr(&self) -> $addr {
+				self.addr
 			}
 
-			pub fn is_aligned(&self) -> bool
+			fn size(&self) -> usize {
+				self.size
+			}
+
+			fn addr_mut(&mut self) -> &mut $addr {
+				&mut self.addr
+			}
+
+			fn size_mut(&mut self) -> &mut usize {
+				&mut self.size
+			}
+
+			fn is_aligned(&self) -> bool
 			{
 				align_of(self.as_usize()) >= PAGE_SIZE && align_of(self.end_usize()) >= PAGE_SIZE
 			}
 
-			pub fn addr(&self) -> $addr
-			{
-				self.addr
+			fn as_unaligned(&self) -> $unaligned_range {
+				*self
 			}
 
-			pub fn as_usize(&self) -> usize
+			fn as_aligned(&self) -> $aligned_range
 			{
-				self.addr.as_usize()
+				self.into()
 			}
 
-			pub fn end_addr(&self) -> $addr
-			{
-				self.addr + self.size
+			fn try_as_aligned(&self) -> Option<$aligned_range> {
+				$aligned_range::try_new_aligned(self.addr, self.size)
 			}
 
-			pub fn end_usize(&self) -> usize
-			{
-				self.as_usize() + self.size
-			}
-
-			pub unsafe fn as_slice(&self) -> &[u8]
-			{
-				slice::from_raw_parts(self.as_usize() as *const u8, self.size)
-			}
-
-			pub fn contains(&self, addr: $addr) -> bool
-			{
-				(addr >= self.addr) && (addr < (self.addr + self.size))
-			}
-
-			// NOTE: this only returns if it intersects at all, not if the range is fully contained in this range
-			pub fn contains_range(&self, range: Self) -> bool
-			{
-				self.contains(range.addr()) || self.contains(range.addr() + range.size())
-			}
-
-			pub fn full_contains_range(&self, range: Self) -> bool
-			{
-				self.contains(range.addr()) && self.contains(range.addr() + range.size())
-			}
-
-			/*pub fn verify_umem(&self) -> bool
-			{
-				udata::verify_umem(self.as_usize(), self.size)
-			}*/
-
-			pub fn merge(&self, other: Self) -> Option<Self>
+			fn merge(&self, other: Self) -> Option<Self>
+				where Self: Sized
 			{
 				if self.end_addr() == other.addr() {
-					Some(Self::new_unaligned(self.addr(), self.size() + other.size()))
+					Some(Self::new(self.addr(), self.size() + other.size()))
 				} else if other.end_addr() == self.addr() {
-					Some(Self::new_unaligned(
+					Some(Self::new(
 						other.addr(),
 						self.size() + other.size(),
 					))
@@ -235,67 +337,180 @@ macro_rules! impl_addr_range {
 				}
 			}
 
-			pub fn split_at(&self, range: Self) -> (Option<Self>, Option<Self>)
+			fn split_at(&self, range: Self) -> (Option<Self>, Option<Self>)
+				where Self: Sized
 			{
-				let sbegin = self.addr;
-				let send = self.addr + self.size;
+				let sbegin = self.addr();
+				let send = self.addr() + self.size();
 
 				let begin = range.addr();
 				let end = begin + range.size();
 
-				if !self.contains_range(range) {
+				if !self.contains_range(&range) {
 					(Some(*self), None)
 				} else if begin <= sbegin && end >= send {
 					(None, None)
 				} else if self.contains(begin - 1usize) && !self.contains(end + 1usize) {
 					(
-						Some(Self::new_unaligned(sbegin, begin - sbegin)),
+						Some(Self::new(sbegin, begin - sbegin)),
 						None,
 					)
 				} else if self.contains(end + 1usize) && !self.contains(begin - 1usize) {
-					(Some(Self::new_unaligned(end, send - end)), None)
+					(Some(Self::new(end, send - end)), None)
 				} else {
 					(
-						Some(Self::new_unaligned(sbegin, (begin - sbegin) as usize)),
-						Some(Self::new_unaligned(end, send - end)),
+						Some(Self::new(sbegin, (begin - sbegin) as usize)),
+						Some(Self::new(end, send - end)),
 					)
 				}
 			}
+		}
 
-			pub fn size(&self) -> usize
+		impl From<&$aligned_range> for $unaligned_range {
+			fn from(range: &$aligned_range) -> Self {
+				Self {
+					addr: range.addr,
+					size: range.size,
+				}
+			}
+		}
+
+		#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+		pub struct $aligned_range {
+			// NOTE: this field must be first because it is the first one compared
+			addr: $addr,
+			size: usize,
+		}
+
+		impl $aligned_range {
+			/// Panics if addr and size are not page aligned
+			pub fn new(addr: $addr, size: usize) -> Self {
+				Self::try_new_aligned(addr, size).expect("")
+			}
+
+			pub fn new_aligned(addr: $addr, size: usize) -> Self {
+				let addr2 = (addr + size).align_up(PAGE_SIZE);
+				Self {
+					addr: addr.align_down(PAGE_SIZE),
+					size: align_up((addr2 - addr), PAGE_SIZE),
+				}
+			}
+
+			pub fn try_new_aligned(addr: $addr, size: usize) -> Option<Self> {
+				if align_of(addr.as_usize()) < PAGE_SIZE || align_of(size) < PAGE_SIZE {
+					None
+				} else {
+					Some(Self{ 
+						addr,
+						size,
+					})
+				}
+			}
+
+			// returns error if invalid virt addr or unaligned addr and size
+			/*pub fn try_new_aligned_usize(addr: usize, size: usize) -> Result<Self, SysErr>
 			{
+				let vaddr = $addr::try_new(addr).ok_or(SysErr::InvlVirtAddr)?;
+				if align_of(addr) < PAGE_SIZE || align_of(size) < PAGE_SIZE {
+					// TODO: figure out what error to return
+					Err(SysErr::InvlPtr)
+				} else {
+					Ok(Self {
+						addr: vaddr,
+						size,
+					})
+				}
+			}*/
+
+			pub fn null() -> Self
+			{
+				Self {
+					addr: $addr::new(0),
+					size: 0,
+				}
+			}
+		}
+
+		impl $range_trait for $aligned_range {
+			fn addr(&self) -> $addr {
+				self.addr
+			}
+
+			fn size(&self) -> usize {
 				self.size
 			}
 
-			pub fn get_take_size(&self) -> Option<PageSize>
-			{
-				PageSize::try_from_usize(min(
-					align_down_to_page_size(self.size),
-					align_down_to_page_size(align_of(self.addr.as_usize())),
-				))
+			fn addr_mut(&mut self) -> &mut $addr {
+				&mut self.addr
 			}
 
-			pub fn take(&mut self, size: PageSize) -> Option<$frame>
+			fn size_mut(&mut self) -> &mut usize {
+				&mut self.size
+			}
+
+			fn is_aligned(&self) -> bool {
+				true
+			}
+
+			fn as_unaligned(&self) -> $unaligned_range {
+				self.into()
+			}
+
+			fn as_aligned(&self) -> $aligned_range {
+				*self
+			}
+
+			fn try_as_aligned(&self) -> Option<$aligned_range> {
+				Some(*self)
+			}
+
+			fn merge(&self, other: Self) -> Option<Self>
+				where Self: Sized
 			{
-				let take_size = self.get_take_size()?;
-				if size > take_size {
-					None
+				if self.end_addr() == other.addr() {
+					Some(Self::new_aligned(self.addr(), self.size() + other.size()))
+				} else if other.end_addr() == self.addr() {
+					Some(Self::new_aligned(
+						other.addr(),
+						self.size() + other.size(),
+					))
 				} else {
-					let size = size as usize;
-					let addr = self.addr;
-					self.addr += size;
-					self.size -= size;
-					Some($frame::new(addr, PageSize::from_usize(size)))
+					None
 				}
 			}
 
-			pub fn iter(&self) -> $iter
+			fn split_at(&self, range: Self) -> (Option<Self>, Option<Self>)
+				where Self: Sized
 			{
-				$iter {
-					start: self.addr,
-					end: self.addr + self.size,
-					life: PhantomData,
+				let sbegin = self.addr();
+				let send = self.addr() + self.size();
+
+				let begin = range.addr();
+				let end = begin + range.size();
+
+				if !self.contains_range(&range) {
+					(Some(*self), None)
+				} else if begin <= sbegin && end >= send {
+					(None, None)
+				} else if self.contains(begin - 1usize) && !self.contains(end + 1usize) {
+					(
+						Some(Self::new_aligned(sbegin, begin - sbegin)),
+						None,
+					)
+				} else if self.contains(end + 1usize) && !self.contains(begin - 1usize) {
+					(Some(Self::new_aligned(end, send - end)), None)
+				} else {
+					(
+						Some(Self::new_aligned(sbegin, (begin - sbegin) as usize)),
+						Some(Self::new_aligned(end, send - end)),
+					)
 				}
+			}
+		}
+
+		impl From<&$unaligned_range> for $aligned_range {
+			fn from(range: &$unaligned_range) -> Self {
+				Self::new_aligned(range.addr, range.size)
 			}
 		}
 
@@ -304,7 +519,7 @@ macro_rules! impl_addr_range {
 		{
 			start: $addr,
 			end: $addr,
-			life: PhantomData<&'a $range>,
+			life: PhantomData<&'a dyn $range_trait>,
 		}
 
 		// FIXME
@@ -331,30 +546,34 @@ macro_rules! impl_addr_range {
 	};
 }
 
-impl_addr_range! {PhysAddr, PhysFrame, PhysRange, PhysRangeIter}
-impl_addr_range! {VirtAddr, VirtFrame, VirtRange, VirtRangeIter}
+impl_addr_range! {PhysAddr, PhysFrame, PhysRangeInner, APhysRange, UPhysRange, PhysRangeIter}
+impl_addr_range! {VirtAddr, VirtFrame, VirtRangeInner, AVirtRange, UVirtRange, VirtRangeIter}
 
-impl PhysRange {
+pub trait PhysRange: PhysRangeInner {
 	// panics if invalid as a virt range
-	pub fn to_virt(&self) -> VirtRange {
+	fn to_virt(&self) -> UVirtRange {
 		// test if end is valid virt addr
 		let _tmp = self.end_addr().to_virt();
-		let addr = self.addr.to_virt();
-		VirtRange::new_unaligned(addr, self.size)
+		let addr = self.addr().to_virt();
+		UVirtRange::new(addr, self.size())
 	}
 }
 
-impl VirtRange {
+impl<T: PhysRangeInner> PhysRange for T {}
+
+pub trait VirtRange: VirtRangeInner {
 	// shouldn't panic because phys address are always allowed to be bigger than virt address
-	pub fn to_phys(&self) -> PhysRange {
+	fn to_phys(&self) -> UPhysRange {
 		// test if end is valid phys addr
 		let _tmp = self.end_addr().to_phys();
-		let addr = self.addr.to_phys();
-		PhysRange::new_unaligned(addr, self.size)
+		let addr = self.addr().to_phys();
+		UPhysRange::new(addr, self.size())
 	}
 }
 
-impl From<Allocation> for PhysRange
+impl<T: VirtRangeInner> VirtRange for T {}
+
+impl From<Allocation> for UPhysRange
 {
 	fn from(mem: Allocation) -> Self
 	{

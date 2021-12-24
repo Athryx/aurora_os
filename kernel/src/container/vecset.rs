@@ -1,7 +1,7 @@
 use core::cmp::Ordering;
 
 use crate::prelude::*;
-use crate::alloc::AllocRef;
+use crate::alloc::{AllocRef, HeapAllocator};
 use super::VecMap;
 
 pub struct VecSet<T: Ord>(VecMap<T, ()>);
@@ -29,6 +29,10 @@ impl<T: Ord> VecSet<T> {
 
 	pub fn cap(&self) -> usize {
 		self.0.cap()
+	}
+
+	pub fn allocator(&self) -> &dyn HeapAllocator {
+		self.0.allocator()
 	}
 
 	pub fn pop_max(&mut self) -> Option<T> {

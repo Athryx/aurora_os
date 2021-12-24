@@ -174,6 +174,14 @@ impl<T> Vec<T> {
 		self.inner.allocer.allocator()
 	}
 
+	pub fn get<I: SliceIndex<[T]>>(&self, index: I) -> Option<&I::Output> {
+		index.get(self)
+	}
+
+	pub fn get_mut<I: SliceIndex<[T]>>(&mut self, index: I) -> Option<&mut I::Output> {
+		index.get_mut(self)
+	}
+
 	pub fn push(&mut self, object: T) -> KResult<()> {
 		if self.len == self.cap() {
 			self.inner.try_grow()?;
