@@ -1,11 +1,12 @@
 use core::alloc::Layout;
 use core::ops::Deref;
+use core::fmt;
 
 use crate::prelude::*;
 use crate::mem::HeapAllocation;
 
 /// A trait that represents an object that can allocate heap memory
-pub trait HeapAllocator {
+pub trait HeapAllocator: Send + Sync {
 	fn alloc(&self, layout: Layout) -> Option<HeapAllocation>;
 	unsafe fn dealloc(&self, allocation: HeapAllocation);
 
@@ -17,6 +18,7 @@ pub trait HeapAllocator {
 	}
 }
 
+#[derive(Clone)]
 enum AllocRefInner {
 	Static(&'static dyn HeapAllocator),
 	Raw(*const dyn HeapAllocator),
@@ -24,7 +26,17 @@ enum AllocRefInner {
 	//OtherRc(Arc<CapAllocator>),
 }
 
+unsafe impl Send for AllocRefInner {}
+unsafe impl Sync for AllocRefInner {}
+
+impl fmt::Debug for AllocRefInner {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		writeln!(f, "(AllocRefInner)")
+	}
+}
+
 /// A reference to a heap allocator
+#[derive(Debug, Clone)]
 pub struct AllocRef(AllocRefInner);
 
 impl AllocRef {

@@ -5,8 +5,7 @@ use crate::prelude::*;
 use super::VirtAddr;
 
 #[derive(Debug, Clone, Copy)]
-pub struct Allocation
-{
+pub struct Allocation {
 	ptr: VirtAddr,
 	size: usize,
 	pub zindex: usize,

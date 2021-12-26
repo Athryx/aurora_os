@@ -1,10 +1,11 @@
 use core::ops::Deref;
+use core::fmt;
 
 use crate::prelude::*;
 use crate::mem::{Allocation, PageLayout};
 
 /// A trait that represents an object that can allocate physical memory pages
-pub trait PageAllocator {
+pub trait PageAllocator: Send + Sync {
 	/// Allocates a page according to page layout
 	fn alloc(&self, layout: PageLayout) -> Option<Allocation>;
 
@@ -35,6 +36,7 @@ pub trait PageAllocator {
 	}
 }
 
+#[derive(Clone)]
 enum PaRefInner {
 	Static(&'static dyn PageAllocator),
 	Raw(*const dyn PageAllocator),
@@ -42,7 +44,17 @@ enum PaRefInner {
 	//OtherRc(Arc<CapAllocator>),
 }
 
+unsafe impl Send for PaRefInner {}
+unsafe impl Sync for PaRefInner {}
+
+impl fmt::Debug for PaRefInner {
+	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+		writeln!(f, "(AllocRefInner)")
+	}
+}
+
 /// A reference to a page allocator
+#[derive(Debug, Clone)]
 pub struct PaRef(PaRefInner);
 
 impl PaRef {

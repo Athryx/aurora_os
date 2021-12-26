@@ -4,13 +4,11 @@ use core::sync::atomic::AtomicPtr;
 use core::cell::Cell;
 use core::cmp::max;
 
-use sys::PAGE_SIZE;
-
-use crate::uses::*;
+use crate::prelude::*;
 use crate::collections::LinkedList;
 use crate::ptr::{UniqueMut, UniquePtr, UniqueRef};
 use crate::{alloc, dealloc, impl_list_node};
-use super::{Allocation, MemOwner};
+use crate::mem::{Allocation, MemOwner};
 
 const INITIAL_HEAP_SIZE: usize = PAGE_SIZE * 8;
 const HEAP_INC_SIZE: usize = PAGE_SIZE * 4;
