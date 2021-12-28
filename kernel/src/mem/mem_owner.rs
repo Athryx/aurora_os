@@ -2,23 +2,29 @@ use core::alloc::Layout;
 use core::ops::{Deref, DerefMut};
 
 use crate::prelude::*;
-use crate::alloc::HeapAllocator;
+use crate::alloc::OrigAllocator;
 use super::HeapAllocation;
 
 #[derive(Debug)]
 pub struct MemOwner<T>(*mut T);
 
 impl<T> MemOwner<T> {
-	pub fn new(data: T, allocator: &dyn HeapAllocator) -> Self {
+	pub fn new(data: T, allocator: &dyn OrigAllocator) -> KResult<Self> {
 		let layout = Layout::new::<T>();
 
-		let mut mem = allocator.alloc(layout).expect("out of memory for MemOwner");
+		let mut mem = allocator.alloc(layout).ok_or(SysErr::OutOfMem)?;
 		let ptr: *mut T = mem.as_mut_ptr();
 
 		unsafe {
 			core::ptr::write(ptr, data);
-			Self::from_raw(ptr)
+			Ok(Self::from_raw(ptr))
 		}
+	}
+
+	pub unsafe fn new_at_addr(data: T, addr: usize) -> Self {
+		let ptr = addr as *mut T;
+		ptr.write(data);
+		MemOwner(ptr)
 	}
 
 	pub unsafe fn from_raw(ptr: *mut T) -> Self {
@@ -37,8 +43,15 @@ impl<T> MemOwner<T> {
 		self.0
 	}
 
-	pub unsafe fn dealloc(self, allocator: &dyn HeapAllocator) {
-		allocator.dealloc(HeapAllocation::from_ptr(self.0));
+	pub fn leak<'a>(mut self) -> &'a mut T {
+		// Safety: this should point to valid data, which we are not deallocating
+		unsafe {
+			unbound_mut(&mut *self)
+		}
+	}
+
+	pub unsafe fn dealloc(self, allocator: &dyn OrigAllocator) {
+		allocator.dealloc_orig(HeapAllocation::from_ptr(self.0));
 	}
 }
 

@@ -1,36 +1,49 @@
 use core::ops::{Deref, DerefMut};
-use core::mem;
+use core::mem::{self, MaybeUninit};
 
 use crate::prelude::*;
 use crate::mem::{HeapAllocation, MemOwner};
-use crate::alloc::{AllocRef, HeapAllocator};
+use crate::alloc::{OrigRef, OrigAllocator};
 
 #[derive(Debug)]
 pub struct Box<T> {
 	data: MemOwner<T>,
-	allocator: AllocRef,
+	allocator: OrigRef,
 }
 
 impl<T> Box<T> {
-	pub fn new(data: T, allocator: AllocRef) -> Self {
-		Box {
-			data: MemOwner::new(data, &*allocator),
+	pub fn new(data: T, allocator: OrigRef) -> KResult<Self> {
+		Ok(Box {
+			data: MemOwner::new(data, &*allocator)?,
 			allocator,
-		}
+		})
 	}
 
-	pub unsafe fn from_raw(ptr: *mut T, allocator: AllocRef) -> Self {
+	pub fn new_uninit(allocator: OrigRef) -> KResult<Box<MaybeUninit<T>>> {
+		Box::new(MaybeUninit::<T>::uninit(), allocator)
+	}
+
+	pub unsafe fn from_raw(ptr: *mut T, allocator: OrigRef) -> Self {
 		Box {
 			data: MemOwner::from_raw(ptr),
 			allocator,
 		}
 	}
 
-	pub fn into_raw(self) -> (*mut T, AllocRef) {
+	pub fn into_raw(self) -> (*mut T, OrigRef) {
 		let data = unsafe { ptr::read(&self.data) };
 		let allocator = unsafe { ptr::read(&self.allocator) };
 		mem::forget(self);
 		(data.ptr_mut(), allocator)
+	}
+
+	fn try_clone(&self) -> KResult<Self>
+		where T: Clone {
+		let (ptr, allocator) = Self::new_uninit(self.allocator.clone())?.into_raw();
+		unsafe {
+			ptr::write(ptr as *mut T, (**self).clone());
+			Ok(Self::from_raw(ptr as *mut T, allocator))
+		}
 	}
 
 	pub fn ptr(&self) -> *const T {
@@ -41,7 +54,7 @@ impl<T> Box<T> {
 		self.data.ptr_mut()
 	}
 
-	pub fn allocator(&self) -> &dyn HeapAllocator {
+	pub fn allocator(&self) -> &dyn OrigAllocator {
 		&*self.allocator
 	}
 }

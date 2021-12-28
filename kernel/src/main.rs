@@ -12,6 +12,7 @@
 #![feature(generic_associated_types)]
 #![feature(bound_map)]
 #![feature(slice_index_methods)]
+#![feature(trait_upcasting)]
 
 /*#![feature(arc_new_cyclic)]
 #![feature(const_btree_new)]

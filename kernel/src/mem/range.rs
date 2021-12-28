@@ -123,6 +123,8 @@ macro_rules! impl_addr_range {
 			fn is_aligned(&self) -> bool;
 			fn as_unaligned(&self) -> $unaligned_range;
 			/// Aligns range if it is not already aligned
+			fn as_inside_aligned(&self) -> Option<$aligned_range>;
+			/// Aligns range if it is not already aligned
 			fn as_aligned(&self) -> $aligned_range;
 			/// Returns None if the range is not already aligned
 			fn try_as_aligned(&self) -> Option<$aligned_range>;
@@ -224,6 +226,21 @@ macro_rules! impl_addr_range {
 				}
 			}
 
+			/// Aligns address up, and end address up
+			/// May return None if it cannot create an Aligned range of any size
+			pub fn new_aligned_inside(addr: $addr, size: usize) -> Option<Self> {
+				let start_addr = addr.align_up(PAGE_SIZE);
+				let end_addr = (addr + size).align_down(PAGE_SIZE);
+				if start_addr > end_addr {
+					None
+				} else {
+					Some(Self {
+						addr: start_addr,
+						size: end_addr - start_addr,
+					})
+				}
+			}
+
 			pub fn new_aligned(addr: $addr, size: usize) -> Self
 			{
 				let addr2 = (addr + size).align_up(PAGE_SIZE);
@@ -313,9 +330,12 @@ macro_rules! impl_addr_range {
 				*self
 			}
 
-			fn as_aligned(&self) -> $aligned_range
-			{
-				self.into()
+			fn as_inside_aligned(&self) -> Option<$aligned_range> {
+				$aligned_range::new_aligned_inside(self.addr, self.size)
+			}
+
+			fn as_aligned(&self) -> $aligned_range {
+				$aligned_range::new_aligned(self.addr, self.size)
 			}
 
 			fn try_as_aligned(&self) -> Option<$aligned_range> {
@@ -385,9 +405,25 @@ macro_rules! impl_addr_range {
 		impl $aligned_range {
 			/// Panics if addr and size are not page aligned
 			pub fn new(addr: $addr, size: usize) -> Self {
-				Self::try_new_aligned(addr, size).expect("")
+				Self::try_new_aligned(addr, size).expect("invalid address and size passed to AlignedRange::new()")
 			}
 
+			/// Aligns address up, and end address up
+			/// May return None if it cannot create an Aligned range of any size
+			pub fn new_aligned_inside(addr: $addr, size: usize) -> Option<Self> {
+				let start_addr = addr.align_up(PAGE_SIZE);
+				let end_addr = (addr + size).align_down(PAGE_SIZE);
+				if start_addr > end_addr {
+					None
+				} else {
+					Some(Self {
+						addr: start_addr,
+						size: end_addr - start_addr,
+					})
+				}
+			}
+
+			/// Aligns address down, and end address up
 			pub fn new_aligned(addr: $addr, size: usize) -> Self {
 				let addr2 = (addr + size).align_up(PAGE_SIZE);
 				Self {
@@ -456,6 +492,10 @@ macro_rules! impl_addr_range {
 				self.into()
 			}
 
+			fn as_inside_aligned(&self) -> Option<$aligned_range> {
+				Some(*self)
+			}
+
 			fn as_aligned(&self) -> $aligned_range {
 				*self
 			}
@@ -505,12 +545,6 @@ macro_rules! impl_addr_range {
 						Some(Self::new_aligned(end, send - end)),
 					)
 				}
-			}
-		}
-
-		impl From<&$unaligned_range> for $aligned_range {
-			fn from(range: &$unaligned_range) -> Self {
-				Self::new_aligned(range.addr, range.size)
 			}
 		}
 

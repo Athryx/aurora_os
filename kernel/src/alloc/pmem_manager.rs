@@ -5,8 +5,9 @@ use crate::prelude::*;
 use crate::mb2::{MemoryMap, MemoryRegionType};
 use crate::container::VecMap;
 use super::pmem_allocator::PmemAllocator;
-use super::bump_allocator::BumpAllocator;
-use super::{HeapAllocator, AllocRef};
+use super::linked_list_allocator::LinkedListAllocator;
+use super::fixed_page_allocator::FixedPageAllocator;
+use super::{PageAllocator, PaRef, OrigAllocator, OrigRef};
 
 struct PmemInitMap {
 	// all zones that can be allocatable memory and metadata
@@ -82,16 +83,21 @@ impl PmemManager {
 		// will be aligned because level_addr and level_size are aligned in above code
 		let vrange = UVirtRange::new(VirtAddr::new(level_addr), level_size);
 
-		// make new bump allocator to use for initializing physical memory ranges
-		let allocer = BumpAllocator::new(vrange);
-		let temp = &allocer as *const dyn HeapAllocator;
-		let aref = AllocRef::new_raw(temp);
+		// A fixed page allocator used as the initial page allocator
+		// panic safety: this range is the biggest range, it should not fail
+		let page_allocator = FixedPageAllocator::new(vrange.as_inside_aligned().unwrap());
+		let pa_ptr = &page_allocator as *const dyn PageAllocator;
+		let page_ref = PaRef::new_raw(pa_ptr);
+
+		let allocer = LinkedListAllocator::new(page_ref);
+		let temp = &allocer as *const dyn OrigAllocator;
+		let aref = OrigRef::new_raw(temp);
 
 		// holds zones of memory that have a size of power of 2 and an alignmant equal to their size
 		// TODO: maybe use a better data structure than vec
 		// because some elements are removed from the middle, vec is not an optimal data structure,
 		// but it is the only one written at the moment, and this code is run once and is not performance critical
-		let mut zones = VecMap::try_with_capacity(aref, max_zones)
+		let mut zones = VecMap::try_with_capacity(aref.downgrade(), max_zones)
 			.expect("not enough memory to initialize physical memory manager");
 
 		// zones that don't have any other zone that can hold all of their metadata

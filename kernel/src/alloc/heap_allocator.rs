@@ -1,9 +1,8 @@
 use core::alloc::Layout;
-use core::ops::Deref;
-use core::fmt;
 
 use crate::prelude::*;
 use crate::mem::HeapAllocation;
+use crate::make_alloc_ref;
 
 /// A trait that represents an object that can allocate heap memory
 pub trait HeapAllocator: Send + Sync {
@@ -18,50 +17,36 @@ pub trait HeapAllocator: Send + Sync {
 	}
 }
 
-#[derive(Clone)]
-enum AllocRefInner {
-	Static(&'static dyn HeapAllocator),
-	Raw(*const dyn HeapAllocator),
-	// uncomment once Arcs are addded
-	//OtherRc(Arc<CapAllocator>),
-}
+/// A trait that represents an allocator which can deallocate objects given the orginal size and align passed into alloc
+pub trait OrigAllocator: HeapAllocator {
+	/// This function takes in an allocation
+	/// This allocation can have the same size and align properties as the layout the user allocated an object with before
+	/// It will then return a HeapAllocation that has the actual size and align properties the allocator would have returned
+	/// If it is impossible to compute because the address field is wrong, and the allocation could not have come from this allocator,
+	/// It will return None
+	fn compute_alloc_properties(&self, _allocation: HeapAllocation) -> Option<HeapAllocation>;
 
-unsafe impl Send for AllocRefInner {}
-unsafe impl Sync for AllocRefInner {}
+	unsafe fn dealloc_orig(&self, allocation: HeapAllocation) {
+		if let Some(allocation) = self.compute_alloc_properties(allocation) {
+			self.dealloc(allocation)
+		}
+	}
 
-impl fmt::Debug for AllocRefInner {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		writeln!(f, "(AllocRefInner)")
+	unsafe fn realloc_orig(&self, allocation: HeapAllocation, layout: Layout) -> Option<HeapAllocation> {
+		let allocation = self.compute_alloc_properties(allocation)?;
+		self.realloc(allocation, layout)
 	}
 }
 
-/// A reference to a heap allocator
-#[derive(Debug, Clone)]
-pub struct AllocRef(AllocRefInner);
+make_alloc_ref!(AllocRef, AllocRefInner, HeapAllocator);
+make_alloc_ref!(OrigRef, OrigRefInner, OrigAllocator);
 
-impl AllocRef {
-	pub fn new(allocer: &'static dyn  HeapAllocator) -> Self {
-		AllocRef(AllocRefInner::Static(allocer))
-	}
-
-	// FIXME: find a better solution
-	// safety: object
-	pub unsafe fn new_raw(allocer: *const dyn HeapAllocator) -> Self {
-		AllocRef(AllocRefInner::Raw(allocer))
-	}
-
-	pub fn allocator(&self) -> &dyn HeapAllocator {
-		self.deref()
-	}
-}
-
-impl Deref for AllocRef {
-	type Target = dyn HeapAllocator;
-
-	fn deref(&self) -> &Self::Target {
+impl OrigRef {
+	/// Returns an alloc ref referencing the same allocator the orig ref referenced
+	pub fn downgrade(&self) -> AllocRef {
 		match self.0 {
-			AllocRefInner::Static(allocer) => allocer,
-			AllocRefInner::Raw(ptr) => unsafe { ptr.as_ref().unwrap() },
+			OrigRefInner::Static(allocer) => AllocRef::new(allocer),
+			OrigRefInner::Raw(ptr) => unsafe { AllocRef::new_raw(ptr) },
 		}
 	}
 }

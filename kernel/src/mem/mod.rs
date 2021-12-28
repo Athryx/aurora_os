@@ -10,6 +10,7 @@ pub use addr::{PhysAddr, VirtAddr, phys_to_virt, virt_to_phys};
 pub use range::*;
 pub use allocation::{Allocation, HeapAllocation};
 pub use page_layout::PageLayout;
+pub use core::alloc::Layout;
 pub use mem_owner::MemOwner;
 
 pub unsafe fn init(mem_offset: usize) {

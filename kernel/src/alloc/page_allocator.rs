@@ -1,8 +1,6 @@
-use core::ops::Deref;
-use core::fmt;
-
 use crate::prelude::*;
 use crate::mem::{Allocation, PageLayout};
+use crate::make_alloc_ref;
 
 /// A trait that represents an object that can allocate physical memory pages
 pub trait PageAllocator: Send + Sync {
@@ -36,50 +34,4 @@ pub trait PageAllocator: Send + Sync {
 	}
 }
 
-#[derive(Clone)]
-enum PaRefInner {
-	Static(&'static dyn PageAllocator),
-	Raw(*const dyn PageAllocator),
-	// uncomment once Arcs are addded
-	//OtherRc(Arc<CapAllocator>),
-}
-
-unsafe impl Send for PaRefInner {}
-unsafe impl Sync for PaRefInner {}
-
-impl fmt::Debug for PaRefInner {
-	fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-		writeln!(f, "(AllocRefInner)")
-	}
-}
-
-/// A reference to a page allocator
-#[derive(Debug, Clone)]
-pub struct PaRef(PaRefInner);
-
-impl PaRef {
-	pub fn new(allocer: &'static dyn  PageAllocator) -> Self {
-		PaRef(PaRefInner::Static(allocer))
-	}
-
-	// FIXME: find a better solution
-	// safety: object
-	pub unsafe fn new_raw(allocer: *const dyn PageAllocator) -> Self {
-		PaRef(PaRefInner::Raw(allocer))
-	}
-
-	pub fn allocator(&self) -> &dyn PageAllocator {
-		self.deref()
-	}
-}
-
-impl Deref for PaRef {
-	type Target = dyn PageAllocator;
-
-	fn deref(&self) -> &Self::Target {
-		match self.0 {
-			PaRefInner::Static(allocer) => allocer,
-			PaRefInner::Raw(ptr) => unsafe { ptr.as_ref().unwrap() },
-		}
-	}
-}
+make_alloc_ref!(PaRef, PaRefInner, PageAllocator);

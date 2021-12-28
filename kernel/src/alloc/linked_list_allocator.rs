@@ -1,14 +1,14 @@
 use core::mem;
-use core::alloc::Layout;
 use core::sync::atomic::AtomicPtr;
 use core::cell::Cell;
 use core::cmp::max;
 
 use crate::prelude::*;
-use crate::collections::LinkedList;
-use crate::ptr::{UniqueMut, UniquePtr, UniqueRef};
-use crate::{alloc, dealloc, impl_list_node};
-use crate::mem::{Allocation, MemOwner};
+use crate::sync::IMutex;
+use crate::container::LinkedList;
+use crate::impl_list_node;
+use super::{PageAllocator, PaRef, HeapAllocator, OrigAllocator};
+use crate::mem::{Allocation, PageLayout, HeapAllocation, Layout, MemOwner};
 
 const INITIAL_HEAP_SIZE: usize = PAGE_SIZE * 8;
 const HEAP_INC_SIZE: usize = PAGE_SIZE * 4;
@@ -36,16 +36,13 @@ impl Node
 {
 	unsafe fn new(addr: usize, size: usize) -> MemOwner<Self>
 	{
-		let ptr = addr as *mut Node;
-
 		let out = Node {
 			prev: AtomicPtr::new(null_mut()),
 			next: AtomicPtr::new(null_mut()),
 			size: Cell::new(size),
 		};
-		ptr.write(out);
 
-		MemOwner::from_raw(ptr)
+		MemOwner::new_at_addr(out, addr)
 	}
 
 	unsafe fn resize(&self, size: usize, align: usize) -> ResizeResult
@@ -107,11 +104,11 @@ struct HeapZone
 impl HeapZone
 {
 	// size is aligned up to page size
-	unsafe fn new(size: usize) -> Option<MemOwner<Self>>
+	unsafe fn new(size: usize, allocator: &dyn PageAllocator) -> Option<MemOwner<Self>>
 	{
-		let size = align_up(size, PAGE_SIZE);
-		let mem = alloc(size)?;
-		let size = mem.len();
+		let layout = PageLayout::new_rounded(size, PAGE_SIZE).unwrap();
+		let mem = allocator.alloc(layout)?;
+		let size = mem.size();
 		let ptr = mem.as_usize() as *mut HeapZone;
 
 		let mut out = HeapZone {
@@ -146,24 +143,24 @@ impl HeapZone
 	fn contains(&self, addr: usize, size: usize) -> bool
 	{
 		(addr >= self.addr() + CHUNK_SIZE)
-			&& (addr + size <= self.addr() + CHUNK_SIZE + self.mem.len())
+			&& (addr + size <= self.addr() + CHUNK_SIZE + self.mem.size())
 	}
 
-	unsafe fn delete(&mut self)
+	unsafe fn delete(&mut self, allocator: &dyn PageAllocator)
 	{
-		dealloc(self.mem);
+		allocator.dealloc(self.mem);
 	}
 
-	unsafe fn alloc(&mut self, layout: Layout) -> *mut u8
+	unsafe fn alloc(&mut self, layout: Layout) -> Option<HeapAllocation>
 	{
 		let size = layout.size();
 		let align = layout.align();
 
 		if size > self.free_space() {
-			return null_mut();
+			return None;
 		}
 
-		let mut out = 0;
+		let mut out = None;
 		// to get around borrow checker
 		// node that may need to be removed
 		let mut rnode = None;
@@ -173,16 +170,17 @@ impl HeapZone
 			if old_size >= size {
 				match free_zone.resize(size, align) {
 					ResizeResult::Shrink(addr) => {
+						let alloc_size = old_size - free_zone.size();
 						let free_space = self.free_space();
 						self.free_space
-							.set(free_space - old_size + free_zone.size());
-						out = addr;
+							.set(free_space - alloc_size);
+						out = Some(HeapAllocation::new(addr, alloc_size, align));
 						break;
 					},
 					ResizeResult::Remove(addr) => {
-						rnode = Some(free_zone.ptr());
+						rnode = Some(free_zone as *const Node);
 						self.free_space.set(self.free_space() - old_size);
-						out = addr;
+						out = Some(HeapAllocation::new(addr, old_size, align));
 						break;
 					},
 					ResizeResult::NoCapacity => continue,
@@ -193,30 +191,32 @@ impl HeapZone
 		if let Some(node) = rnode {
 			// FIXME: find a way to fix ownership issue without doing this
 			self.list
-				.remove_node(UniqueRef::new(node.as_ref().unwrap()));
+				.remove_node(node.as_ref().unwrap());
 		}
 
-		out as *mut u8
+		out
 	}
 
 	// does not chack if ptr is in this zone
 	// ptr should be chuk_size aligned
-	unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout)
+	unsafe fn dealloc(&mut self, allocation: HeapAllocation)
 	{
-		let addr = ptr as usize;
-		let size = align_up(layout.size(), max(CHUNK_SIZE, layout.align()));
+		let addr = allocation.addr();
+		let size = allocation.size();
 
 		let cnode = Node::new(addr, size);
 		let (pnode, nnode) = self.get_prev_next_node(addr);
 
 		// TODO: make less ugly
-		let pnode = pnode.map(|ptr| ptr.unbound());
-		let nnode = nnode.map(|ptr| ptr.unbound());
+		// FIXME: remove map
+		let pnode = pnode.map(|node| unbound(node));
+		let nnode = nnode.map(|node| unbound(node));
 
 		let cnode = if let Some(pnode) = pnode {
 			if pnode.merge(&cnode) {
 				// cnode was never in list, no need to remove
-				UniqueMut::from_ptr(pnode.ptr() as *mut _)
+				// TODO: probably unbound
+				pnode
 			} else {
 				self.list.insert_after(cnode, pnode)
 			}
@@ -235,7 +235,7 @@ impl HeapZone
 
 	// TODO: make less dangerous
 	fn get_prev_next_node(&self, addr: usize)
-		-> (Option<UniqueRef<Node>>, Option<UniqueRef<Node>>)
+		-> (Option<&Node>, Option<&Node>)
 	{
 		let mut pnode = None;
 		let mut nnode = None;
@@ -253,38 +253,37 @@ impl HeapZone
 
 impl_list_node!(HeapZone, prev, next);
 
-pub struct LinkedListAllocator
+struct LinkedListAllocatorInner
 {
 	list: LinkedList<HeapZone>,
+	page_allocator: PaRef,
 }
 
-impl LinkedListAllocator
+impl LinkedListAllocatorInner
 {
-	pub fn new() -> LinkedListAllocator
+	fn new(page_allocator: PaRef) -> Self
 	{
 		let node = unsafe {
-			HeapZone::new(INITIAL_HEAP_SIZE).expect("failed to allocate pages for kernel heap")
+			HeapZone::new(INITIAL_HEAP_SIZE, &*page_allocator).expect("failed to allocate pages for kernel heap")
 		};
 		let mut list = LinkedList::new();
 		list.push(node);
 
-		LinkedListAllocator {
+		LinkedListAllocatorInner {
 			list,
+			page_allocator,
 		}
 	}
 
-	pub unsafe fn alloc(&mut self, layout: Layout) -> *mut u8
+	fn alloc(&mut self, layout: Layout) -> Option<HeapAllocation>
 	{
 		let size = layout.size();
 		let align = layout.align();
 
-		for mut z in self.list.iter_mut() {
+		for z in self.list.iter_mut() {
 			if z.free_space() >= size {
-				let ptr = z.alloc(layout);
-				if ptr.is_null() {
-					continue;
-				} else {
-					return ptr;
+				if let Some(allocation) = unsafe { z.alloc(layout) } {
+					return Some(allocation);
 				}
 			}
 		}
@@ -294,30 +293,63 @@ impl LinkedListAllocator
 			HEAP_INC_SIZE,
 			size + max(align, CHUNK_SIZE) + INITIAL_CHUNK_SIZE,
 		);
-		let zone = match HeapZone::new(size_inc) {
+		let zone = match unsafe { HeapZone::new(size_inc, &*self.page_allocator) } {
 			Some(n) => n,
-			None => return null_mut(),
+			None => return None,
 		};
 
-		let mut zone = self.list.push(zone);
+		let zone = self.list.push(zone);
 
 		// shouldn't fail now
-		zone.alloc(layout)
+		unsafe {
+			zone.alloc(layout)
+		}
 	}
 
-	pub unsafe fn dealloc(&mut self, ptr: *mut u8, layout: Layout)
+	unsafe fn dealloc(&mut self, allocation: HeapAllocation)
 	{
-		let addr = ptr as usize;
-		assert!(align_of(addr) >= CHUNK_SIZE);
-		let size = layout.size();
+		let addr = allocation.addr();
+		let size = allocation.size();
 
-		for mut z in self.list.iter_mut() {
+		for z in self.list.iter_mut() {
 			if z.contains(addr, size) {
-				z.dealloc(ptr, layout);
+				z.dealloc(allocation);
 				return;
 			}
 		}
 
-		panic!("invalid pointer passed to dealloc");
+		panic!("invalid allocation passed to dealloc");
+	}
+}
+
+// NOTE: can switch to schedular mutex once implemented
+pub struct LinkedListAllocator(IMutex<LinkedListAllocatorInner>);
+
+impl LinkedListAllocator {
+	pub fn new(page_allocator: PaRef) -> Self {
+		LinkedListAllocator(IMutex::new(LinkedListAllocatorInner::new(page_allocator)))
+	}
+}
+
+// TODO: add specialized realloc method
+impl HeapAllocator for LinkedListAllocator {
+	fn alloc(&self, layout: Layout) -> Option<HeapAllocation> {
+		self.0.lock().alloc(layout)
+	}
+
+	unsafe fn dealloc(&self, allocation: HeapAllocation) {
+		self.0.lock().dealloc(allocation)
+	}
+}
+
+impl OrigAllocator for LinkedListAllocator {
+	fn compute_alloc_properties(&self, allocation: HeapAllocation) -> Option<HeapAllocation> {
+		if align_of(allocation.addr()) < CHUNK_SIZE {
+			None
+		} else {
+			let align = allocation.align();
+			let size = align_up(allocation.size(), max(CHUNK_SIZE, align));
+			Some(HeapAllocation::new(allocation.addr(), size, align))
+		}
 	}
 }
