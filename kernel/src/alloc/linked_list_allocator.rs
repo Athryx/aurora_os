@@ -343,6 +343,10 @@ impl HeapAllocator for LinkedListAllocator {
 }
 
 impl OrigAllocator for LinkedListAllocator {
+	fn as_heap_allocator(&self) -> &dyn HeapAllocator {
+		self
+	}
+
 	fn compute_alloc_properties(&self, allocation: HeapAllocation) -> Option<HeapAllocation> {
 		if align_of(allocation.addr()) < CHUNK_SIZE {
 			None

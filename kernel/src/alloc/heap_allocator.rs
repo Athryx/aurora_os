@@ -19,6 +19,9 @@ pub trait HeapAllocator: Send + Sync {
 
 /// A trait that represents an allocator which can deallocate objects given the orginal size and align passed into alloc
 pub trait OrigAllocator: HeapAllocator {
+	/// This is necessary because the trait upcasting feature is unstable, and also has potential safety concerns
+	fn as_heap_allocator(&self) -> &dyn HeapAllocator;
+
 	/// This function takes in an allocation
 	/// This allocation can have the same size and align properties as the layout the user allocated an object with before
 	/// It will then return a HeapAllocation that has the actual size and align properties the allocator would have returned
@@ -45,8 +48,11 @@ impl OrigRef {
 	/// Returns an alloc ref referencing the same allocator the orig ref referenced
 	pub fn downgrade(&self) -> AllocRef {
 		match self.0 {
-			OrigRefInner::Static(allocer) => AllocRef::new(allocer),
-			OrigRefInner::Raw(ptr) => unsafe { AllocRef::new_raw(ptr) },
+			OrigRefInner::Static(allocer) => AllocRef::new(allocer.as_heap_allocator()),
+			OrigRefInner::Raw(ptr) => unsafe { AllocRef::new_raw(
+					ptr.as_ref().unwrap().as_heap_allocator()
+				)
+			},
 		}
 	}
 }
