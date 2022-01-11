@@ -1,6 +1,5 @@
 use core::ops::Range;
 use core::str::Utf8Error;
-use core::alloc::Layout;
 
 use crate::consts::PAGE_SIZE;
 use crate::prelude::*;
@@ -73,7 +72,9 @@ pub const fn get_bits_raw(n: usize, bits: Range<usize>) -> usize {
 
 pub unsafe fn memset(mem: *mut u8, len: usize, data: u8) {
 	for i in 0..len {
-		*mem.add(i) = data;
+		unsafe {
+			*mem.add(i) = data;
+		}
 	}
 }
 
@@ -127,11 +128,15 @@ pub const fn log2_up_const(n: usize) -> usize {
 }
 
 pub unsafe fn unbound<'a, 'b, T>(r: &'a T) -> &'b T {
-	(r as *const T).as_ref().unwrap()
+	unsafe {
+		(r as *const T).as_ref().unwrap()
+	}
 }
 
 pub unsafe fn unbound_mut<'a, 'b, T>(r: &'a mut T) -> &'b mut T {
-	(r as *mut T).as_mut().unwrap()
+	unsafe {
+		(r as *mut T).as_mut().unwrap()
+	}
 }
 
 pub fn optac<T, F>(opt: Option<T>, f: F) -> bool
@@ -163,15 +168,17 @@ pub unsafe fn from_cstr<'a>(ptr: *const u8) -> Result<&'a str, Utf8Error> {
 	let start = ptr;
 
 	loop {
-		if *ptr.add(len) != 0 {
+		if unsafe { *ptr.add(len) } != 0 {
 			len += 1;
 		} else {
 			break;
 		}
 	}
 
-	let slice = core::slice::from_raw_parts(start, len);
-	core::str::from_utf8(slice)
+	unsafe {
+		let slice = core::slice::from_raw_parts(start, len);
+		core::str::from_utf8(slice)
+	}
 }
 
 /*pub fn to_heap<V>(object: V) -> *mut V

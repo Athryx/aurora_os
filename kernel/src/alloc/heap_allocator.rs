@@ -12,7 +12,9 @@ pub trait HeapAllocator: Send + Sync {
 	unsafe fn realloc(&self, allocation: HeapAllocation, layout: Layout) -> Option<HeapAllocation> {
 		let mut mem = self.alloc(layout)?;
 		mem.copy_from_mem(allocation.as_slice());
-		self.dealloc(allocation);
+		unsafe {
+			self.dealloc(allocation);
+		}
 		Some(mem)
 	}
 }
@@ -31,13 +33,17 @@ pub trait OrigAllocator: HeapAllocator {
 
 	unsafe fn dealloc_orig(&self, allocation: HeapAllocation) {
 		if let Some(allocation) = self.compute_alloc_properties(allocation) {
-			self.dealloc(allocation)
+			unsafe {
+				self.dealloc(allocation)
+			}
 		}
 	}
 
 	unsafe fn realloc_orig(&self, allocation: HeapAllocation, layout: Layout) -> Option<HeapAllocation> {
 		let allocation = self.compute_alloc_properties(allocation)?;
-		self.realloc(allocation, layout)
+		unsafe {
+			self.realloc(allocation, layout)
+		}
 	}
 }
 

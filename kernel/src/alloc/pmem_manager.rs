@@ -50,24 +50,18 @@ impl PmemManager {
 	// TODO: this might encounter problems with low amount of system memory (like very low)
 	pub unsafe fn new(mem_map: &MemoryMap) -> PmemManager {
 		// iterator over usable memory zones as a VirtRange
-		// these ranges are aligned on pages
 		let usable = mem_map.iter()
 			.filter(|zone| matches!(zone, MemoryRegionType::Usable(_)))
-			.map(|mem| mem.range().to_virt().as_aligned());
+			.map(|mem| mem.range().to_virt());
 
 		// biggest usable virt range
+		// align to pages because we will use this for the initial allocator
 		let max = usable.clone()
 			.reduce(|z1, z2| if z1.size() > z2.size() {
 				z1
 			} else {
 				z2
-			}).unwrap();
-
-		// maximum number of level zones that could exist
-		let max_zones = usable.clone()
-			.fold(0, |acc, range| {
-				acc + 2 * log2(range.size()) - 1
-			});
+			}).unwrap().as_inside_aligned().unwrap();
 
 		// get the size of the largest power of 2 aligned chunk of memory
 		// we will use this memory for the temporary bump allocator to store heap data needed to set up buddy allocators
@@ -80,18 +74,28 @@ impl PmemManager {
 			level_addr = align_up(max.as_usize(), level_size);
 		}
 
-		// will be aligned because level_addr and level_size are aligned in above code
-		let vrange = UVirtRange::new(VirtAddr::new(level_addr), level_size);
+		// Panic safety: will be aligned because level_addr and level_size are aligned in above code
+		let vrange = AVirtRange::new(VirtAddr::new(level_addr), level_size);
 
 		// A fixed page allocator used as the initial page allocator
 		// panic safety: this range is the biggest range, it should not fail
-		let page_allocator = FixedPageAllocator::new(vrange.as_inside_aligned().unwrap());
+		let page_allocator = FixedPageAllocator::new(vrange);
 		let pa_ptr = &page_allocator as *const dyn PageAllocator;
-		let page_ref = PaRef::new_raw(pa_ptr);
+		let page_ref = unsafe { PaRef::new_raw(pa_ptr) };
 
 		let allocer = LinkedListAllocator::new(page_ref);
 		let temp = &allocer as *const dyn OrigAllocator;
-		let aref = OrigRef::new_raw(temp);
+		// Safety: make sure not to use this outside of this function
+		let aref = unsafe {
+			OrigRef::new_raw(temp)
+		};
+
+		// maximum number of level zones that could exist
+		// TODO: find out how to actually calculate this
+		let max_zones = usable.clone()
+			.fold(0, |acc, range| {
+				acc + 2 * log2(range.size()) - 1
+			});
 
 		// holds zones of memory that have a size of power of 2 and an alignmant equal to their size
 		// TODO: maybe use a better data structure than vec

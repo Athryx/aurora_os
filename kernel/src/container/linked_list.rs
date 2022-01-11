@@ -395,20 +395,30 @@ impl<T: ListNode> LinkedList<T>
 
 		let mut node;
 		if index * 2 > self.len {
-			node = self.end.as_ref().unwrap();
+			unsafe {
+				node = self.end.as_ref().unwrap();
+			}
 
 			for _ in 0..(self.len - index - 1) {
-				node = node.prev_ptr().as_ref().unwrap();
+				unsafe {
+					node = node.prev_ptr().as_ref().unwrap();
+				}
 			}
 		} else {
-			node = self.start.as_ref().unwrap();
+			unsafe {
+				node = self.start.as_ref().unwrap();
+			}
 
 			for _ in 0..index {
-				node = node.next_ptr().as_ref().unwrap();
+				unsafe {
+					node = node.next_ptr().as_ref().unwrap();
+				}
 			}
 		}
 
-		unbound(node)
+		unsafe {
+			unbound(node)
+		}
 	}
 
 	// maybe unsafe
@@ -421,20 +431,30 @@ impl<T: ListNode> LinkedList<T>
 
 		let mut node;
 		if index * 2 > self.len {
-			node = (self.end as *mut T).as_mut().unwrap();
+			unsafe {
+				node = (self.end as *mut T).as_mut().unwrap();
+			}
 
 			for _ in 0..(self.len - index - 1) {
-				node = (node.prev_ptr() as *mut T).as_mut().unwrap();
+				unsafe {
+					node = (node.prev_ptr() as *mut T).as_mut().unwrap();
+				}
 			}
 		} else {
-			node = (self.start as *mut T).as_mut().unwrap();
+			unsafe {
+				node = (self.start as *mut T).as_mut().unwrap();
+			}
 
 			for _ in 0..index {
-				node = (node.next_ptr() as *mut T).as_mut().unwrap();
+				unsafe {
+					node = (node.next_ptr() as *mut T).as_mut().unwrap();
+				}
 			}
 		}
 
-		unbound_mut(node)
+		unsafe {
+			unbound_mut(node)
+		}
 	}
 }
 

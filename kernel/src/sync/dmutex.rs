@@ -64,7 +64,9 @@ impl<T> DMutex<T> {
 	}
 
 	pub unsafe fn force_unlock(&self) {
-		self.inner.force_unlock()
+		unsafe {
+			self.inner.force_unlock()
+		}
 	}
 }
 
@@ -166,7 +168,9 @@ impl<T> DIMutex<T> {
 	}
 
 	pub unsafe fn force_unlock(&self) {
-		self.inner.force_unlock()
+		unsafe {
+			self.inner.force_unlock()
+		}
 	}
 }
 

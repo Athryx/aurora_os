@@ -25,7 +25,7 @@ impl<T> Box<T> {
 
 	pub unsafe fn from_raw(ptr: *mut T, allocator: OrigRef) -> Self {
 		Box {
-			data: MemOwner::from_raw(ptr),
+			data: unsafe { MemOwner::from_raw(ptr) },
 			allocator,
 		}
 	}

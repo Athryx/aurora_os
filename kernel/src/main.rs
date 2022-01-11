@@ -12,7 +12,6 @@
 #![feature(generic_associated_types)]
 #![feature(bound_map)]
 #![feature(slice_index_methods)]
-//#![feature(trait_upcasting)]
 
 /*#![feature(arc_new_cyclic)]
 #![feature(const_btree_new)]
@@ -21,6 +20,7 @@
 #![feature(map_first_last)]*/
 
 #![allow(dead_code)]
+#![deny(unsafe_op_in_unsafe_fn)]
 
 mod alloc;
 mod arch;
@@ -54,7 +54,7 @@ fn panic(info: &PanicInfo) -> ! {
 	}
 }
 
-fn init(boot_info_addr: usize) -> Result<(), SysErr> {
+fn init(boot_info_addr: usize) -> KResult<()> {
 	unsafe {
 		mem::init(*consts::KERNEL_VMA)
 	}

@@ -21,7 +21,9 @@ pub fn virt_to_phys(addr: usize) -> usize {
 }
 
 pub unsafe fn set_mem_offset(offset: usize) {
-	MEM_OFFSET = offset;
+	unsafe {
+		MEM_OFFSET = offset;
+	}
 }
 
 #[repr(transparent)]

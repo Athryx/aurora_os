@@ -23,7 +23,9 @@ impl<T> MemOwner<T> {
 
 	pub unsafe fn new_at_addr(data: T, addr: usize) -> Self {
 		let ptr = addr as *mut T;
-		ptr.write(data);
+		unsafe {
+			ptr.write(data);
+		}
 		MemOwner(ptr)
 	}
 
@@ -51,7 +53,9 @@ impl<T> MemOwner<T> {
 	}
 
 	pub unsafe fn dealloc(self, allocator: &dyn OrigAllocator) {
-		allocator.dealloc_orig(HeapAllocation::from_ptr(self.0));
+		unsafe {
+			allocator.dealloc_orig(HeapAllocation::from_ptr(self.0));
+		}
 	}
 }
 

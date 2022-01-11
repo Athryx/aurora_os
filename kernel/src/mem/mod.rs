@@ -14,5 +14,7 @@ pub use core::alloc::Layout;
 pub use mem_owner::MemOwner;
 
 pub unsafe fn init(mem_offset: usize) {
-	addr::set_mem_offset(mem_offset)
+	unsafe {
+		addr::set_mem_offset(mem_offset)
+	}
 }

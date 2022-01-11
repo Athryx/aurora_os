@@ -42,7 +42,9 @@ impl Node
 			size: Cell::new(size),
 		};
 
-		MemOwner::new_at_addr(out, addr)
+		unsafe {
+			MemOwner::new_at_addr(out, addr)
+		}
 	}
 
 	unsafe fn resize(&self, size: usize, align: usize) -> ResizeResult
@@ -119,15 +121,18 @@ impl HeapZone
 			list: LinkedList::new(),
 		};
 
-		let node = Node::new(
-			mem.as_usize() + INITIAL_CHUNK_SIZE,
-			size - INITIAL_CHUNK_SIZE,
-		);
+		let node = unsafe {
+			Node::new(
+				mem.as_usize() + INITIAL_CHUNK_SIZE,
+				size - INITIAL_CHUNK_SIZE,
+			)
+		};
 		out.list.push(node);
 
-		ptr.write(out);
-
-		Some(MemOwner::from_raw(ptr))
+		unsafe {
+			ptr.write(out);
+			Some(MemOwner::from_raw(ptr))
+		}
 	}
 
 	fn free_space(&self) -> usize
@@ -148,7 +153,9 @@ impl HeapZone
 
 	unsafe fn delete(&mut self, allocator: &dyn PageAllocator)
 	{
-		allocator.dealloc(self.mem);
+		unsafe {
+			allocator.dealloc(self.mem);
+		}
 	}
 
 	unsafe fn alloc(&mut self, layout: Layout) -> Option<HeapAllocation>
@@ -168,7 +175,7 @@ impl HeapZone
 		for free_zone in self.list.iter() {
 			let old_size = free_zone.size();
 			if old_size >= size {
-				match free_zone.resize(size, align) {
+				match unsafe { free_zone.resize(size, align) } {
 					ResizeResult::Shrink(addr) => {
 						let alloc_size = old_size - free_zone.size();
 						let free_space = self.free_space();
@@ -190,8 +197,10 @@ impl HeapZone
 
 		if let Some(node) = rnode {
 			// FIXME: find a way to fix ownership issue without doing this
-			self.list
-				.remove_node(node.as_ref().unwrap());
+			unsafe {
+				self.list
+					.remove_node(node.as_ref().unwrap());
+			}
 		}
 
 		out
@@ -204,13 +213,13 @@ impl HeapZone
 		let addr = allocation.addr();
 		let size = allocation.size();
 
-		let cnode = Node::new(addr, size);
+		let cnode = unsafe { Node::new(addr, size) };
 		let (pnode, nnode) = self.get_prev_next_node(addr);
 
 		// TODO: make less ugly
 		// FIXME: remove map
-		let pnode = pnode.map(|node| unbound(node));
-		let nnode = nnode.map(|node| unbound(node));
+		let pnode = pnode.map(|node| unsafe { unbound(node) });
+		let nnode = nnode.map(|node| unsafe { unbound(node) });
 
 		let cnode = if let Some(pnode) = pnode {
 			if pnode.merge(&cnode) {
@@ -249,10 +258,20 @@ impl HeapZone
 
 		(pnode, nnode)
 	}
+
+	// TODO: add reporting of memory that is still allocated
+	// safety: cannot use this heap zone after calling this method
+	unsafe fn dealloc_all(&mut self, allocator: &dyn PageAllocator) {
+		assert_eq!(self.free_space.get(), 0);
+		unsafe {
+			allocator.dealloc(self.mem);
+		}
+	}
 }
 
 impl_list_node!(HeapZone, prev, next);
 
+// TODO: add drop implementation that frees all page allocations
 struct LinkedListAllocatorInner
 {
 	list: LinkedList<HeapZone>,
@@ -313,12 +332,25 @@ impl LinkedListAllocatorInner
 
 		for z in self.list.iter_mut() {
 			if z.contains(addr, size) {
-				z.dealloc(allocation);
+				unsafe {
+					z.dealloc(allocation);
+				}
 				return;
 			}
 		}
 
 		panic!("invalid allocation passed to dealloc");
+	}
+}
+
+impl Drop for LinkedListAllocatorInner {
+	fn drop(&mut self) {
+		for zone in self.list.iter_mut() {
+			// safety: these zones can never be referenced after this point
+			unsafe {
+				zone.dealloc_all(&*self.page_allocator);
+			}
+		}
 	}
 }
 
@@ -338,7 +370,9 @@ impl HeapAllocator for LinkedListAllocator {
 	}
 
 	unsafe fn dealloc(&self, allocation: HeapAllocation) {
-		self.0.lock().dealloc(allocation)
+		unsafe {
+			self.0.lock().dealloc(allocation)
+		}
 	}
 }
 

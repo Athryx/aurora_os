@@ -146,7 +146,9 @@ macro_rules! impl_addr_range {
 
 			unsafe fn as_slice(&self) -> &[u8]
 			{
-				slice::from_raw_parts(self.as_usize() as *const u8, self.size())
+				unsafe {
+					slice::from_raw_parts(self.as_usize() as *const u8, self.size())
+				}
 			}
 
 			fn contains(&self, addr: $addr) -> bool

@@ -221,8 +221,10 @@ impl Mb2Module
 {
 	unsafe fn string(&self) -> &str
 	{
-		let ptr = (self as *const Self).add(1) as *const u8;
-		from_cstr(ptr).expect("bootloader did not pass valid utf-8 string for module name")
+		unsafe {
+			let ptr = (self as *const Self).add(1) as *const u8;
+			from_cstr(ptr).expect("bootloader did not pass valid utf-8 string for module name")
+		}
 	}
 }
 
@@ -269,8 +271,12 @@ impl BootInfo<'_>
 		// that would be a lot of extra typing
 
 		// add 8 to get past initial entry which is always there
-		let start = (addr as *const Mb2Start).as_ref().unwrap();
-		let iter: HwaIter<TagHeader> = HwaIter::from_align(addr + size_of::<Mb2Start>(), start.size(), 8);
+		let start = unsafe {
+			(addr as *const Mb2Start).as_ref().unwrap()
+		};
+		let iter: HwaIter<TagHeader> = unsafe {
+			HwaIter::from_align(addr + size_of::<Mb2Start>(), start.size(), 8)
+		};
 
 		let mut initrd_range = None;
 		let mut initrd_slice = None;
@@ -284,13 +290,15 @@ impl BootInfo<'_>
 			match data {
 				Mb2Elem::End => break,
 				Mb2Elem::Module(data) => {
-					if data.string() == "initrd" {
+					if unsafe { data.string() } == "initrd" {
 						let size = (data.mod_end - data.mod_start) as usize;
 						let paddr = PhysAddr::new(data.mod_start as usize);
 						initrd_range = Some(UPhysRange::new(paddr, size));
 
 						let initrd_ptr = paddr.to_virt().as_usize() as *const u8;
-						initrd_slice = Some(core::slice::from_raw_parts(initrd_ptr, size));
+						unsafe {
+							initrd_slice = Some(core::slice::from_raw_parts(initrd_ptr, size));
+						}
 					}
 				},
 				Mb2Elem::MemoryMap(tag) => memory_map_tag = Some(tag),
@@ -298,7 +306,9 @@ impl BootInfo<'_>
 					if !rsdp.validate() {
 						panic!("invalid rsdp passed to kernel");
 					}
-					rsdt = Rsdt::from(rsdp.rsdt_addr as usize);
+					unsafe {
+						rsdt = Rsdt::from(rsdp.rsdt_addr as usize);
+					}
 				},
 				Mb2Elem::Other(_) => (),
 			}
@@ -306,12 +316,16 @@ impl BootInfo<'_>
 
 		// have to do this at the end, because it needs to know where multiboot modules are
 		if let Some(tag_header) = memory_map_tag {
-			let mut ptr = (tag_header as *const _ as *const u8).add(16) as *const Mb2MemoryRegion;
+			let mut ptr = unsafe {
+				(tag_header as *const _ as *const u8).add(16) as *const Mb2MemoryRegion
+			};
 
 			let len = (tag_header.size - 16) / 24;
 
 			for _ in 0..len {
-				let region = ptr.as_ref().unwrap();
+				let region = unsafe {
+					ptr.as_ref().unwrap()
+				};
 	
 				let regions = MemoryRegionType::new(region, initrd_range.expect("no initrd"));
 
@@ -321,7 +335,9 @@ impl BootInfo<'_>
 					}
 				}
 
-				ptr = ptr.add(1);
+				unsafe {
+					ptr = ptr.add(1);
+				}
 			}
 		}
 

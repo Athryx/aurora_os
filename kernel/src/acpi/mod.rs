@@ -96,7 +96,9 @@ impl SdtHeader {
 	// safety: length must be valid
 	pub unsafe fn validate(&self) -> bool {
 		let mut sum: usize = 0;
-		let slice = slice::from_raw_parts(self as *const _ as *const u8, self.size());
+		let slice = unsafe {
+			slice::from_raw_parts(self as *const _ as *const u8, self.size())
+		};
 
 		for n in slice {
 			sum += *n as usize;
@@ -126,15 +128,21 @@ impl SdtHeader {
 		Some(match self.sdt_type()? {
 			SdtType::Rsdt => {
 				assert!(size_of::<Rsdt>() <= self.size());
-				AcpiTable::Rsdt(transmute(self))
+				unsafe {
+					AcpiTable::Rsdt(transmute(self))
+				}
 			},
 			SdtType::Madt => {
 				assert!(size_of::<Madt>() <= self.size());
-				AcpiTable::Madt(transmute(self))
+				unsafe {
+					AcpiTable::Madt(transmute(self))
+				}
 			},
 			SdtType::Hpet => {
 				assert!(size_of::<Hpet>() <= self.size());
-				AcpiTable::Hpet(transmute(self))
+				unsafe {
+					AcpiTable::Hpet(transmute(self))
+				}
 			},
 			_ => return None,
 		})
@@ -145,7 +153,9 @@ pub trait Sdt {
 	fn header(&self) -> &SdtHeader;
 
 	unsafe fn validate(&self) -> bool {
-		self.header().validate()
+		unsafe {
+			self.header().validate()
+		}
 	}
 
 	fn sdt_type(&self) -> Option<SdtType> {
@@ -160,8 +170,10 @@ pub struct Rsdt(SdtHeader);
 impl Rsdt {
 	// from a physical address
 	pub unsafe fn from<'a>(addr: usize) -> Option<&'a Rsdt> {
-		let out = (phys_to_virt(addr) as *const Self).as_ref().unwrap();
-		if !out.0.validate() {
+		let out = unsafe {
+			(phys_to_virt(addr) as *const Self).as_ref().unwrap()
+		};
+		if unsafe { !out.0.validate() } {
 			None
 		} else {
 			Some(out)
@@ -191,10 +203,15 @@ impl Rsdt {
 		let slice: &[u32] = self.0.data();
 		for n in slice {
 			let addr = phys_to_virt(*n as usize);
-			let table = (addr as *const SdtHeader).as_ref().unwrap();
+			let table = unsafe {
+				(addr as *const SdtHeader).as_ref().unwrap()
+			};
+
 			if let Some(typ) = table.sdt_type() {
 				if typ == table_type {
-					return table.as_acpi_table();
+					unsafe {
+						return table.as_acpi_table();
+					}
 				}
 			}
 		}

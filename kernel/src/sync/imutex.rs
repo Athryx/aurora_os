@@ -36,7 +36,9 @@ impl<T> IMutex<T>
 
 	pub unsafe fn force_unlock(&self)
 	{
-		self.0.force_unlock();
+		unsafe {
+			self.0.force_unlock();
+		}
 	}
 }
 

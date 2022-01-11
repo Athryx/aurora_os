@@ -9,7 +9,9 @@ pub trait PageAllocator: Send + Sync {
 
 	/// Deallocate pages, uses the zindex field as metadata to deallocate the allocation
 	unsafe fn dealloc(&self, allocation: Allocation) {
-		self.search_dealloc(allocation);
+		unsafe {
+			self.search_dealloc(allocation);
+		}
 	}
 
 	/// Deallocate pages, does not use the zindex field as metadata
@@ -20,7 +22,9 @@ pub trait PageAllocator: Send + Sync {
 	unsafe fn realloc(&self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
 		let mut out = self.alloc(layout)?;
 		out.copy_from_mem(allocation.as_slice());
-		self.dealloc(allocation);
+		unsafe {
+			self.dealloc(allocation);
+		}
 		Some(out)
 	}
 
@@ -29,7 +33,9 @@ pub trait PageAllocator: Send + Sync {
 	unsafe fn search_realloc(&self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
 		let mut out = self.alloc(layout)?;
 		out.copy_from_mem(allocation.as_slice());
-		self.search_dealloc(allocation);
+		unsafe {
+			self.search_dealloc(allocation);
+		}
 		Some(out)
 	}
 }

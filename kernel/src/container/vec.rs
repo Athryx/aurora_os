@@ -134,12 +134,16 @@ impl<T> Vec<T> {
 
 	// returns a const pointer to the object at the specified index
 	unsafe fn coff(&self, index: usize) -> *const T {
-		self.as_ptr().add(index)
+		unsafe {
+			self.as_ptr().add(index)
+		}
 	}
 
 	// returns a mutable pointer to the object at the specified index
 	unsafe fn off(&mut self, index: usize) -> *mut T {
-		self.as_mut_ptr().add(index)
+		unsafe {
+			self.as_mut_ptr().add(index)
+		}
 	}
 
 	pub fn len(&self) -> usize {
