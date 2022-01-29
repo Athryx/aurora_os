@@ -167,6 +167,12 @@ macro_rules! impl_addr_range {
 				self.contains(range.addr()) && self.contains(range.addr() + range.size())
 			}
 
+			/// returns true if the size equals the alignmant
+			/// this also ensures that the size is always a power of 2
+			fn is_power2_size_align(&self) -> bool {
+				self.size().is_power_of_two() && align_of(self.as_usize()) >= self.size()
+			}
+
 			/*pub fn verify_umem(&self) -> bool
 			{
 				udata::verify_umem(self.as_usize(), self.size())
@@ -295,7 +301,7 @@ macro_rules! impl_addr_range {
 				let start_addr = self.addr().align_up(layout.align());
 				let new_addr = start_addr + layout.size();
 
-				if new_addr > self.addr() {
+				if new_addr > self.end_addr() {
 					None
 				} else {
 					let size = new_addr - start_addr;

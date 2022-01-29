@@ -11,7 +11,7 @@ pub struct FixedPageAllocator {
 }
 
 impl FixedPageAllocator {
-	pub fn new(mem: AVirtRange) -> Self {
+	pub unsafe fn new(mem: AVirtRange) -> Self {
 		FixedPageAllocator {
 			mem: Allocation::new(mem.as_usize(), mem.size()),
 			alloced: AtomicBool::new(false),

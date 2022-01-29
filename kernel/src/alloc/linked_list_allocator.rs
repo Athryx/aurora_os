@@ -262,7 +262,7 @@ impl HeapZone
 	// TODO: add reporting of memory that is still allocated
 	// safety: cannot use this heap zone after calling this method
 	unsafe fn dealloc_all(&mut self, allocator: &dyn PageAllocator) {
-		assert_eq!(self.free_space.get(), 0);
+		//assert_eq!(self.free_space.get(), self.mem.size());
 		unsafe {
 			allocator.dealloc(self.mem);
 		}

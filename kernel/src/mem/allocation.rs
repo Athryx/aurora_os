@@ -48,6 +48,10 @@ impl Allocation
 		unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr(), self.size) }
 	}
 
+	pub fn as_vrange(&self) -> UVirtRange {
+		UVirtRange::new(self.ptr, self.size)
+	}
+
 	pub fn as_usize(&self) -> usize
 	{
 		self.ptr.as_usize()
@@ -92,6 +96,10 @@ impl HeapAllocation {
 
 	pub fn from_ptr<T>(ptr: *const T) -> Self {
 		Self::from_layout(ptr as usize, Layout::new::<T>())
+	}
+
+	pub fn array<T>(ptr: *const T, len: usize) -> Self {
+		Self::from_layout(ptr as usize, Layout::array::<T>(len).expect("Layout overflowed"))
 	}
 
 	pub fn addr(&self) -> usize {

@@ -77,8 +77,8 @@ impl<T> RawVec<T> {
 		let new_alloc = if self.cap == 0 {
 			self.allocer.alloc(new_layout)
 		} else {
-			let old_ptr = self.ptr.as_ptr() as *mut u8;
-			let old_alloc = HeapAllocation::from_ptr(old_ptr);
+			let old_ptr = self.ptr.as_ptr();
+			let old_alloc = HeapAllocation::array(old_ptr, self.cap);
 			unsafe {
 				self.allocer.realloc(old_alloc, new_layout)
 			}

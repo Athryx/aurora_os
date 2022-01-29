@@ -1,5 +1,8 @@
+use core::mem::MaybeUninit;
 use core::cmp::min;
 use core::alloc::Layout;
+use core::slice;
+use core::sync::atomic::{AtomicU8, AtomicUsize};
 
 use crate::prelude::*;
 use crate::mb2::{MemoryMap, MemoryRegionType};
@@ -9,41 +12,50 @@ use super::linked_list_allocator::LinkedListAllocator;
 use super::fixed_page_allocator::FixedPageAllocator;
 use super::{PageAllocator, PaRef, OrigAllocator, OrigRef};
 
-struct PmemInitMap {
-	// all zones that can be allocatable memory and metadata
-	zones: VecMap<usize, UVirtRange>,
-	// zones that are too big and no other zone can hold their metadata, or zones that are no longer size aligned
-	// if this is not empty, it is used for allocating metadata
-	nofit: VecMap<usize, UVirtRange>,
+// metadata range
+enum MetaRange {
+	Main(usize, AVirtRange),
+	Meta(usize, UVirtRange),
 }
 
-impl PmemInitMap {
-	fn new(zones: VecMap<usize, UVirtRange>, nofit: VecMap<usize, UVirtRange>) -> Self {
-		PmemInitMap {
-			zones,
-			nofit,
+type MainMap = VecMap<usize, AVirtRange>;
+type MetaMap = VecMap<usize, UVirtRange>;
+
+
+impl MetaRange {
+	fn new(size: usize, main_map: &mut MainMap, meta_map: &mut MetaMap) -> Option<Self> {
+		match meta_map.remove_gt(&size) {
+			Some((size, range)) => Some(MetaRange::Meta(size, range)),
+			None => {
+				match main_map.remove_gt(&size) {
+					Some((size, range)) => Some(MetaRange::Main(size, range)),
+					None => None,
+				}
+			},
 		}
 	}
 
-	fn get_mem_zone(&mut self) -> Option<UVirtRange> {
-		self.zones.pop_max().map(|data| data.1)
+	fn insert_into(&self, main_map: &mut MainMap, meta_map: &mut MetaMap) {
+		match *self {
+			Self::Main(size, range) => {
+				main_map.insert(size, range).unwrap();
+			},
+			Self::Meta(size, range) => {
+				meta_map.insert(size, range).unwrap();
+			},
+		}
 	}
 
-	fn get_slice<T>(&mut self, len: usize) -> &[T] {
-		let size = len * size_of::<T>();
-		loop {
-			match self.nofit.remove_gt(&size) {
-				Some(range) => {
-				},
-				None => {
-				},
-			}
+	fn range(&self) -> UVirtRange {
+		match self {
+			Self::Main(_, range) => range.as_unaligned(),
+			Self::Meta(_, range) => *range,
 		}
 	}
 }
 
 pub struct PmemManager {
-	allocers: *const [PmemAllocator],
+	allocers: &'static [PmemAllocator],
 }
 
 impl PmemManager {
@@ -52,7 +64,7 @@ impl PmemManager {
 		// iterator over usable memory zones as a VirtRange
 		let usable = mem_map.iter()
 			.filter(|zone| matches!(zone, MemoryRegionType::Usable(_)))
-			.map(|mem| mem.range().to_virt());
+			.filter_map(|mem| mem.range().to_virt().as_inside_aligned());
 
 		// biggest usable virt range
 		// align to pages because we will use this for the initial allocator
@@ -61,7 +73,8 @@ impl PmemManager {
 				z1
 			} else {
 				z2
-			}).unwrap().as_inside_aligned().unwrap();
+			})
+			.expect("no usable memory zones found");
 
 		// get the size of the largest power of 2 aligned chunk of memory
 		// we will use this memory for the temporary bump allocator to store heap data needed to set up buddy allocators
@@ -75,13 +88,15 @@ impl PmemManager {
 		}
 
 		// Panic safety: will be aligned because level_addr and level_size are aligned in above code
-		let vrange = AVirtRange::new(VirtAddr::new(level_addr), level_size);
+		let init_heap_vrange = AVirtRange::new(VirtAddr::new(level_addr), level_size);
 
 		// A fixed page allocator used as the initial page allocator
 		// panic safety: this range is the biggest range, it should not fail
-		let page_allocator = FixedPageAllocator::new(vrange);
+		let page_allocator = unsafe { FixedPageAllocator::new(init_heap_vrange) };
 		let pa_ptr = &page_allocator as *const dyn PageAllocator;
-		let page_ref = unsafe { PaRef::new_raw(pa_ptr) };
+		let page_ref = unsafe {
+			PaRef::new_raw(pa_ptr)
+		};
 
 		let allocer = LinkedListAllocator::new(page_ref);
 		let temp = &allocer as *const dyn OrigAllocator;
@@ -91,7 +106,7 @@ impl PmemManager {
 		};
 
 		// maximum number of level zones that could exist
-		// TODO: find out how to actually calculate this
+		// TODO: find out how to actually calculate this, but this is good enough for now
 		let max_zones = usable.clone()
 			.fold(0, |acc, range| {
 				acc + 2 * log2(range.size()) - 1
@@ -104,31 +119,140 @@ impl PmemManager {
 		let mut zones = VecMap::try_with_capacity(aref.downgrade(), max_zones)
 			.expect("not enough memory to initialize physical memory manager");
 
-		// zones that don't have any other zone that can hold all of their metadata
-		//let mut nofit = VecMap::new(aref);
+		// holds zones taken from zones vecmap that are used to store metadata
+		let mut metadata_zones: VecMap<usize, UVirtRange> = VecMap::new(aref.downgrade());
 
 		for region in usable {
 			let mut start = region.as_usize();
 			let end = region.end_usize();
 
 			while start < end {
-				let size = min(align_of(start), end - start);
+				let size = min(align_of(start), 1 << log2(end - start));
 				// because region is aligned, this should be aligned
-				let range = UVirtRange::new(VirtAddr::new(start), size);
+				let range = AVirtRange::new(VirtAddr::new(start), size);
 				zones.insert(range.size(), range).expect("vec was not made big enough");
 
 				start += size;
 			}
 		}
 
+		// one zone will be used to store the allocators
+		let allocator_count = zones.len() - 1;
+
 		// get slice of memory to hold PmemAllocators
-		// not optimal prediction of how many allocators there will be, but good enough
-		let size = zones.len() * size_of::<PmemAllocator>();
+		// not optimal prediction of how many allocators there will be, but there can't be more
+		let size = allocator_count * size_of::<PmemAllocator>();
 
+		// get a region of memory to store all of the allocators
+		let (_, orig_allocator_range) = zones.remove_gt(&size).unwrap();
+		let mut orig_allocator_range = orig_allocator_range.as_unaligned();
 
-		while let Some((_, max)) = zones.pop_max() {
+		assert!(!init_heap_vrange.contains_range(&orig_allocator_range), "tried to use memory range for allocator initilizer heap to store allocator objects");
+
+		// only get part that is needed to store all allocator objects
+		let allocator_range = orig_allocator_range.take_layout(Layout::array::<PmemAllocator>(allocator_count).unwrap()).unwrap();
+
+		// store the other part in the metadata array
+		if orig_allocator_range.size() != 0 {
+			metadata_zones.insert(orig_allocator_range.size(), orig_allocator_range).unwrap();
 		}
 
-		todo!();
+		let allocator_slice = unsafe {
+			slice::from_raw_parts_mut(allocator_range.as_usize() as *mut MaybeUninit<PmemAllocator>, allocator_count)
+		};
+
+		// index of current allocator
+		let mut i = 0;
+
+		while let Some((current_size, current_zone)) = zones.pop_max() {
+			let (unaligned_tree_size, index_size) = PmemAllocator::required_tree_index_size(current_zone, PAGE_SIZE).unwrap();
+			let tree_size = align_up(unaligned_tree_size, size_of::<usize>());
+
+			let tree_data = if let Some(data) = MetaRange::new(tree_size, &mut zones, &mut metadata_zones) {
+				data
+			} else {
+				// give up on using this zone, use it for metadata instead
+				metadata_zones.insert(current_size, current_zone.as_unaligned()).unwrap();
+				continue;
+			};
+
+			let tree_range;
+			let index_range;
+
+			if index_size + tree_size <= tree_data.range().size() {
+				let mut range = tree_data.range();
+
+				// shouldn't fail now
+				tree_range = range.take_layout(Layout::from_size_align(tree_size, size_of::<usize>()).unwrap()).unwrap();
+				index_range = range.take_layout(Layout::from_size_align(index_size, size_of::<usize>()).unwrap()).unwrap();
+
+				// put this zone back into the metadata map
+				if range.size() != 0 {
+					metadata_zones.insert(range.size(), range).unwrap();
+				}
+			} else {
+				if let Some(index_data) = MetaRange::new(index_size, &mut zones, &mut metadata_zones) {
+					let mut orig_tree_range = tree_data.range();
+					let mut orig_index_range = index_data.range();
+
+					eprintln!("{:x?}", orig_tree_range);
+					eprintln!("{:x?}", orig_tree_range.end_addr());
+					eprintln!("{:x?}", Layout::from_size_align(tree_size, size_of::<usize>()).unwrap());
+
+					// shouldn't fail now
+					tree_range = orig_tree_range.take_layout(Layout::from_size_align(tree_size, size_of::<usize>()).unwrap()).unwrap();
+
+					eprintln!("{:x?}", orig_index_range);
+					eprintln!("{:x?}", orig_index_range.end_addr());
+					eprintln!("{:x?}", Layout::from_size_align(index_size, size_of::<usize>()).unwrap());
+
+					index_range = orig_index_range.take_layout(Layout::from_size_align(index_size, size_of::<usize>()).unwrap()).unwrap();
+
+					// put this zone back into the metadata map
+					if orig_tree_range.size() != 0 {
+						metadata_zones.insert(orig_tree_range.size(), orig_tree_range).unwrap();
+					}
+
+					if orig_index_range.size() != 0 {
+						metadata_zones.insert(orig_index_range.size(), orig_index_range).unwrap();
+					}
+				} else {
+					// give up on using this zone, use it for metadata instead
+					metadata_zones.insert(current_size, current_zone.as_unaligned()).unwrap();
+
+					// restore old zones before moving on to next zone
+					tree_data.insert_into(&mut zones, &mut metadata_zones);
+					continue;
+				};
+			}
+
+			// technically undefined behavior to make a slice of uninitilized AtomicU8s, but in practice it shouldn't matter
+			// they are initilized to 0 later anyways
+			let tree_slice = unsafe {
+				slice::from_raw_parts_mut(tree_range.as_usize() as *mut AtomicU8, unaligned_tree_size)
+			};
+
+			let index_slice = unsafe {
+				slice::from_raw_parts_mut(index_range.as_usize() as *mut AtomicUsize, index_size)
+			};
+
+			let allocator = unsafe {
+				PmemAllocator::from(current_zone, tree_slice, index_slice, PAGE_SIZE)
+			};
+
+			allocator_slice[i].write(allocator);
+
+			i += 1;
+		}
+
+		let allocator_slice = unsafe {
+			slice::from_raw_parts_mut(allocator_range.as_usize() as *mut PmemAllocator, i)
+		};
+
+		allocator_slice.sort_unstable_by(|a, b| a.start_addr().cmp(&b.start_addr()));
+
+		PmemManager {
+			allocers: allocator_slice,
+		}
 	}
 }

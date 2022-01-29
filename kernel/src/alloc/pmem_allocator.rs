@@ -1,5 +1,5 @@
-use core::sync::atomic::{AtomicUsize, AtomicU8, Ordering};
 use core::slice;
+use core::sync::atomic::{AtomicUsize, AtomicU8, Ordering};
 use core::cmp::min;
 
 use bitflags::bitflags;
@@ -128,7 +128,7 @@ impl<'a> TreeNode<'a> {
 		// start index of this node's level
 		let start_index = (1 << self.level()) - 1;
 		let diff = self.index - start_index;
-		self.allocator.start_addr + self.size() * diff
+		self.allocator.start_addr() + self.size() * diff
 	}
 
 	// size of memory this node refernces
@@ -151,15 +151,13 @@ impl<'a> TreeNode<'a> {
 #[derive(Debug)]
 pub struct PmemAllocator {
 	// start and end address of allocatable memory
-	start_addr: usize,
-	end_addr: usize,
+	addr_range: AVirtRange,
 
 	// pointer and length of tree array
 	tree: *const [AtomicU8],
 
 	// pointer and length of index arrray
-	index: *const AtomicUsize,
-	index_len: usize,
+	index: *const [AtomicUsize],
 
 	// maximum depth of the tree
 	depth: usize,
@@ -173,9 +171,56 @@ pub struct PmemAllocator {
 }
 
 impl PmemAllocator {
+	/// Returns the required tree size and index size in bytes in a tuple, or none if vrange and level_size are not valid for the allocator
+	pub fn required_tree_index_size(vrange: AVirtRange, level_size: usize) -> Option<(usize, usize)> {
+		if level_size.is_power_of_two()
+			&& vrange.is_power2_size_align()
+			// because vrange size and level_size are both power of 2, they are guarenteed to divide eachother evenly
+			&& vrange.size() >= level_size {
+			Some((2 * (vrange.size() / level_size) - 1, size_of::<usize>() * vrange.size() / level_size))
+		} else {
+			None
+		}
+	}
 
-	pub fn new(addr: usize, size: usize, level_size: usize) -> Self {
-		todo!();
+	/// creates a new physical memory allocator, and panics if the invariants are not upheld
+	///
+	/// # Safety
+	/// must not have a mutable reference to tree or index alive once you start calling other allocator methods
+	pub unsafe fn from(vrange: AVirtRange, tree: *mut [AtomicU8], index: *mut [AtomicUsize], level_size: usize) -> Self {
+		unsafe {
+			Self::try_from(vrange, tree, index, level_size).expect("failed to make physical memory allocator")
+		}
+	}
+
+	/// creates a new physical memory allocator, and returns None if the invariants are not upheld
+	///
+	/// # Safety
+	/// must not have a mutable reference to tree or index alive once you start calling other allocator methods
+	pub unsafe fn try_from(vrange: AVirtRange, tree: *mut [AtomicU8], index: *mut [AtomicUsize], level_size: usize) -> Option<Self> {
+		if Self::required_tree_index_size(vrange, level_size)? == (tree.len(), index.len()) {
+			// this is needed because Atomics do not have clone
+			// might be slow, but shouldn't matter because this is done once
+			unsafe {
+				// need to do it with raw integers because this is much faster
+				let tree_u8 = slice::from_raw_parts_mut(tree.as_mut_ptr() as *mut u8, tree.len());
+				let index_usize = slice::from_raw_parts_mut(index.as_mut_ptr() as *mut usize, index.len());
+				tree_u8.fill(0);
+				index_usize.fill(0);
+			}
+
+			Some(PmemAllocator {
+				addr_range: vrange,
+				tree: tree as *const [AtomicU8],
+				index: index as *const [AtomicUsize],
+				depth: log2(vrange.size() / level_size),
+				max_size: vrange.size(),
+				level_size,
+				free_space: AtomicUsize::new(vrange.size()),
+			})
+		} else {
+			None
+		}
 	}
 
 	pub fn alloc(&self, size: usize) -> Option<Allocation> {
@@ -264,20 +309,28 @@ impl PmemAllocator {
 		todo!();
 	}*/
 
+	/// deallocates memory referenced by allocation
+	/// panics if allocation is smaller than min level size,
+	/// or if allocation does not reference a range of memory managed by this allocator
 	pub unsafe fn dealloc(&self, allocation: Allocation) {
 		// get level that is big enough to hold size
 		let level = log2(self.max_size / allocation.size());
 		assert!(level <= self.depth);
+		assert!(self.addr_range.full_contains_range(&allocation.as_vrange()));
 
 		let level_start = (1 << level) - 1;
 
-		let addr_offset = allocation.as_usize() - self.start_addr;
+		let addr_offset = allocation.as_usize() - self.start_addr();
 
 		let node = self.get_tree_node(level_start + (addr_offset / allocation.size()));
 
 		self.dealloc_node(node, self.get_tree_node(0));
 
 		self.free_space.fetch_add(node.size(), Ordering::Relaxed);
+	}
+
+	pub fn start_addr(&self) -> usize {
+		self.addr_range.as_usize()
 	}
 
 	// goes up the tree starting from start, and up to and including end
@@ -354,7 +407,7 @@ impl PmemAllocator {
 
 	fn index_slice(&self) -> &[AtomicUsize] {
 		unsafe {
-			slice::from_raw_parts(self.index, self.index_len)
+			self.index.as_ref().unwrap()
 		}
 	}
 }
