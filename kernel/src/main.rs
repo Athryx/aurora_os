@@ -14,6 +14,7 @@
 #![feature(slice_index_methods)]
 #![feature(slice_ptr_len)]
 #![feature(slice_ptr_get)]
+#![feature(once_cell)]
 
 /*#![feature(arc_new_cyclic)]
 #![feature(const_btree_new)]
@@ -65,7 +66,9 @@ fn init(boot_info_addr: usize) -> KResult<()> {
 
 	let boot_info = unsafe { BootInfo::new(boot_info_addr) };
 
-	alloc::init(&boot_info.memory_map);
+	unsafe {
+		alloc::init(&boot_info.memory_map);
+	}
 
 	Ok(())
 }

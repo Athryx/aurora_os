@@ -2,11 +2,12 @@ use core::mem::MaybeUninit;
 use core::cmp::min;
 use core::alloc::Layout;
 use core::slice;
-use core::sync::atomic::{AtomicU8, AtomicUsize};
+use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 use crate::prelude::*;
 use crate::mb2::{MemoryMap, MemoryRegionType};
 use crate::container::VecMap;
+use crate::mem::{Allocation, PageLayout};
 use super::pmem_allocator::PmemAllocator;
 use super::linked_list_allocator::LinkedListAllocator;
 use super::fixed_page_allocator::FixedPageAllocator;
@@ -56,6 +57,7 @@ impl MetaRange {
 
 pub struct PmemManager {
 	allocers: &'static [PmemAllocator],
+	next_index: AtomicUsize,
 }
 
 impl PmemManager {
@@ -195,17 +197,8 @@ impl PmemManager {
 					let mut orig_tree_range = tree_data.range();
 					let mut orig_index_range = index_data.range();
 
-					eprintln!("{:x?}", orig_tree_range);
-					eprintln!("{:x?}", orig_tree_range.end_addr());
-					eprintln!("{:x?}", Layout::from_size_align(tree_size, size_of::<usize>()).unwrap());
-
 					// shouldn't fail now
 					tree_range = orig_tree_range.take_layout(Layout::from_size_align(tree_size, size_of::<usize>()).unwrap()).unwrap();
-
-					eprintln!("{:x?}", orig_index_range);
-					eprintln!("{:x?}", orig_index_range.end_addr());
-					eprintln!("{:x?}", Layout::from_size_align(index_size, size_of::<usize>()).unwrap());
-
 					index_range = orig_index_range.take_layout(Layout::from_size_align(index_size, size_of::<usize>()).unwrap()).unwrap();
 
 					// put this zone back into the metadata map
@@ -253,6 +246,45 @@ impl PmemManager {
 
 		PmemManager {
 			allocers: allocator_slice,
+			next_index: AtomicUsize::new(0),
+		}
+	}
+
+	// gets index in search dealloc, where the zindex is not set
+	fn get_index_of_allocation(&self, allocation: Allocation) -> Result<usize, usize> {
+		self.allocers.binary_search_by(|allocer| allocer.start_addr().cmp(&allocation.as_usize()))
+	}
+}
+
+// TODO: add realloc
+impl PageAllocator for PmemManager {
+	fn alloc(&self, layout: PageLayout) -> Option<Allocation> {
+		assert!(layout.align() <= align_of(layout.size()), "PmemManager does not support allocations with a greater alignamant than size");
+
+		// start allocating from different allocators to avoid slowing down each allocator with to many concurrent allocations
+		let start_index = self.next_index.fetch_add(1, Ordering::Relaxed);
+
+		for i in start_index..(start_index + self.allocers.len()) {
+			let i = i % self.allocers.len();
+			if let Some(allocation) = self.allocers[i].alloc(layout.size()) {
+				return Some(allocation);
+			}
+		}
+
+		None
+	}
+
+	unsafe fn dealloc(&self, allocation: Allocation) {
+		// this will panic if allocation is not contained in the allocator
+		unsafe {
+			self.allocers[allocation.zindex].dealloc(allocation);
+		}
+	}
+
+	unsafe fn search_dealloc(&self, allocation: Allocation) {
+		match self.get_index_of_allocation(allocation) {
+			Ok(index) => unsafe { self.allocers[index].dealloc(allocation) },
+			Err(_) => panic!("could not find allocator that matched allocation"),
 		}
 	}
 }

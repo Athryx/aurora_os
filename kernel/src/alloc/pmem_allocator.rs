@@ -204,9 +204,10 @@ impl PmemAllocator {
 			unsafe {
 				// need to do it with raw integers because this is much faster
 				let tree_u8 = slice::from_raw_parts_mut(tree.as_mut_ptr() as *mut u8, tree.len());
-				let index_usize = slice::from_raw_parts_mut(index.as_mut_ptr() as *mut usize, index.len());
+				// do not need to initilized index to 0
+				//let index_usize = slice::from_raw_parts_mut(index.as_mut_ptr() as *mut usize, index.len());
 				tree_u8.fill(0);
-				index_usize.fill(0);
+				//index_usize.fill(0);
 			}
 
 			Some(PmemAllocator {
@@ -253,7 +254,7 @@ impl PmemAllocator {
 				} else {
 					// allocation succeeded
 					//self.index_slice()[node.addr()].store(node.index, Ordering::Release);
-					self.free_space.fetch_sub(node.size(), Ordering::Relaxed);
+					self.free_space.fetch_sub(node.size(), Ordering::AcqRel);
 					return Some(Allocation::new(node.addr(), node.size()));
 				}
 			}
@@ -326,11 +327,19 @@ impl PmemAllocator {
 
 		self.dealloc_node(node, self.get_tree_node(0));
 
-		self.free_space.fetch_add(node.size(), Ordering::Relaxed);
+		self.free_space.fetch_add(node.size(), Ordering::AcqRel);
+	}
+
+	pub fn addr_range(&self) -> AVirtRange {
+		self.addr_range
 	}
 
 	pub fn start_addr(&self) -> usize {
 		self.addr_range.as_usize()
+	}
+
+	pub fn free_space(&self) -> usize {
+		self.free_space.load(Ordering::Acquire)
 	}
 
 	// goes up the tree starting from start, and up to and including end
