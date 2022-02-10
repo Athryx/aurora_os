@@ -30,32 +30,32 @@ impl<T> Box<T> {
 		}
 	}
 
-	pub fn into_raw(self) -> (*mut T, OrigRef) {
-		let data = unsafe { ptr::read(&self.data) };
-		let allocator = unsafe { ptr::read(&self.allocator) };
-		mem::forget(self);
+	pub fn into_raw(this: Self) -> (*mut T, OrigRef) {
+		let data = unsafe { ptr::read(&this.data) };
+		let allocator = unsafe { ptr::read(&this.allocator) };
+		mem::forget(this);
 		(data.ptr_mut(), allocator)
 	}
 
-	fn try_clone(&self) -> KResult<Self>
+	fn try_clone(this: &Self) -> KResult<Self>
 		where T: Clone {
-		let (ptr, allocator) = Self::new_uninit(self.allocator.clone())?.into_raw();
+		let (ptr, allocator) = Box::into_raw(Self::new_uninit(this.allocator.clone())?);
 		unsafe {
-			ptr::write(ptr as *mut T, (**self).clone());
+			ptr::write(ptr as *mut T, (**this).clone());
 			Ok(Self::from_raw(ptr as *mut T, allocator))
 		}
 	}
 
-	pub fn ptr(&self) -> *const T {
-		self.data.ptr()
+	pub fn ptr(this: &Self) -> *const T {
+		this.data.ptr()
 	}
 
-	pub fn ptr_mut(&self) -> *mut T {
-		self.data.ptr_mut()
+	pub fn ptr_mut(this: &Self) -> *mut T {
+		this.data.ptr_mut()
 	}
 
-	pub fn allocator(&self) -> &dyn OrigAllocator {
-		&*self.allocator
+	pub fn allocator(this: &Self) -> &dyn OrigAllocator {
+		&*this.allocator
 	}
 }
 
@@ -75,9 +75,9 @@ impl<T> DerefMut for Box<T> {
 
 impl<T> Drop for Box<T> {
 	fn drop(&mut self) {
-		let allocation = HeapAllocation::from_ptr(self.ptr());
+		let allocation = HeapAllocation::from_ptr(Box::ptr(self));
 		unsafe {
-			self.allocator.dealloc(allocation);
+			self.allocator.dealloc_orig(allocation);
 		}
 	}
 }

@@ -29,7 +29,7 @@ pub trait OrigAllocator: HeapAllocator {
 	/// It will then return a HeapAllocation that has the actual size and align properties the allocator would have returned
 	/// If it is impossible to compute because the address field is wrong, and the allocation could not have come from this allocator,
 	/// It will return None
-	fn compute_alloc_properties(&self, _allocation: HeapAllocation) -> Option<HeapAllocation>;
+	fn compute_alloc_properties(&self, allocation: HeapAllocation) -> Option<HeapAllocation>;
 
 	unsafe fn dealloc_orig(&self, allocation: HeapAllocation) {
 		if let Some(allocation) = self.compute_alloc_properties(allocation) {

@@ -14,7 +14,7 @@
 #![feature(slice_index_methods)]
 #![feature(slice_ptr_len)]
 #![feature(slice_ptr_get)]
-#![feature(once_cell)]
+#![feature(dropck_eyepatch)]
 
 /*#![feature(arc_new_cyclic)]
 #![feature(const_btree_new)]

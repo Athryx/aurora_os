@@ -8,7 +8,7 @@ use crate::alloc::{AllocRef, HeapAllocator};
 use super::Vec;
 
 #[derive(Debug)]
-pub struct MapNode<K: Ord, V> {
+struct MapNode<K: Ord, V> {
 	key: K,
 	value: V,
 }
@@ -34,11 +34,6 @@ pub struct VecMap<K: Ord, V> {
 }
 
 impl<K: Ord, V> VecMap<K, V> {
-	// NOTE: temp
-	pub fn as_slice(&self) -> &[MapNode<K, V>] {
-		&self.data
-	}
-
 	pub fn new(allocator: AllocRef) -> Self {
 		VecMap {
 			data: Vec::new(allocator),

@@ -1,3 +1,5 @@
+use core::arch::asm;
+
 use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy)]

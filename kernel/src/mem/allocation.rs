@@ -75,6 +75,7 @@ impl Allocation
 	}
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct HeapAllocation {
 	addr: usize,
 	size: usize,

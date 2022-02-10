@@ -1,8 +1,11 @@
 use core::ops::Range;
+use core::arch::asm;
 use core::str::Utf8Error;
 
-use crate::consts::PAGE_SIZE;
 use crate::prelude::*;
+use crate::consts::PAGE_SIZE;
+use crate::alloc::OrigAllocator;
+use crate::mem::MemOwner;
 
 // must be power of 2 for correct results
 pub const fn align_up(addr: usize, align: usize) -> usize {
@@ -179,6 +182,10 @@ pub unsafe fn from_cstr<'a>(ptr: *const u8) -> Result<&'a str, Utf8Error> {
 		let slice = core::slice::from_raw_parts(start, len);
 		core::str::from_utf8(slice)
 	}
+}
+
+pub fn to_heap<T>(object: T, allocer: &dyn OrigAllocator) -> KResult<*mut T> {
+	Ok(MemOwner::new(object, allocer)?.ptr_mut())
 }
 
 /*pub fn to_heap<V>(object: V) -> *mut V
