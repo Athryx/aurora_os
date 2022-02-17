@@ -1,5 +1,4 @@
 use crate::prelude::*;
-use crate::mem::{PhysAddr, VirtAddr, PhysRange, VirtRange};
 
 pub const PAGE_SIZE: usize = 4096;
 

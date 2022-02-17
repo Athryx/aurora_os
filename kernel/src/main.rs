@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 
-#![feature(asm)]
 #![feature(const_fn_trait_bound)]
 #![feature(maybe_uninit_uninit_array)]
 #![feature(array_methods)]
@@ -28,6 +27,7 @@
 mod alloc;
 mod arch;
 mod acpi;
+mod cap;
 mod container;
 mod mem;
 mod sync;
@@ -37,6 +37,7 @@ mod hwa_iter;
 mod misc;
 mod mb2;
 mod io;
+mod id;
 mod prelude;
 
 use core::panic::PanicInfo;
@@ -82,7 +83,75 @@ pub extern "C" fn _start(boot_info_addr: usize) -> ! {
 
 	println!("aurora v0.0.1");
 
+	test();
+
 	loop {
 		hlt();
 	}
+}
+
+use alloc::zm;
+use mem::PageLayout;
+use alloc::PageAllocator;
+
+fn test() {
+	unsafe {
+		let a1 = zm().alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a2 = zm().alloc(PageLayout::from_size_align_unchecked(2 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a3 = zm().alloc(PageLayout::from_size_align_unchecked(2 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a4 = zm().alloc(PageLayout::from_size_align_unchecked(10 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a5 = zm().alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a6 = zm().alloc(PageLayout::from_size_align_unchecked(15 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a7 = zm().alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a8 = zm().alloc(PageLayout::from_size_align_unchecked(1 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a9 = zm().alloc(PageLayout::from_size_align_unchecked(5 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		eprintln!("{:x?}", a1);
+		eprintln!("{:x?}", a2);
+		eprintln!("{:x?}", a3);
+		eprintln!("{:x?}", a4);
+		eprintln!("{:x?}", a5);
+		eprintln!("{:x?}", a6);
+		eprintln!("{:x?}", a7);
+		eprintln!("{:x?}", a8);
+		eprintln!("{:x?}", a9);
+		zm().dealloc(a9);
+		zm().dealloc(a4);
+		zm().dealloc(a1);
+		zm().dealloc(a3);
+		zm().dealloc(a8);
+		zm().dealloc(a2);
+		zm().dealloc(a5);
+		zm().dealloc(a7);
+		zm().dealloc(a6);
+
+		let a1 = zm().alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a2 = zm().alloc(PageLayout::from_size_align_unchecked(2 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a3 = zm().alloc(PageLayout::from_size_align_unchecked(2 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a4 = zm().alloc(PageLayout::from_size_align_unchecked(10 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a5 = zm().alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a6 = zm().alloc(PageLayout::from_size_align_unchecked(15 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a7 = zm().alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a8 = zm().alloc(PageLayout::from_size_align_unchecked(1 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		let a9 = zm().alloc(PageLayout::from_size_align_unchecked(5 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+		eprintln!("{:x?}", a1);
+		eprintln!("{:x?}", a2);
+		eprintln!("{:x?}", a3);
+		eprintln!("{:x?}", a4);
+		eprintln!("{:x?}", a5);
+		eprintln!("{:x?}", a6);
+		eprintln!("{:x?}", a7);
+		eprintln!("{:x?}", a8);
+		eprintln!("{:x?}", a9);
+		zm().dealloc(a9);
+		zm().dealloc(a4);
+		zm().dealloc(a1);
+		zm().dealloc(a3);
+		zm().dealloc(a8);
+		zm().dealloc(a2);
+		zm().dealloc(a5);
+		zm().dealloc(a7);
+		zm().dealloc(a6);
+	}
+
+	eprintln!("tests done");
 }

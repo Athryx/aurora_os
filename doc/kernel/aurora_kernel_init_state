@@ -9,7 +9,7 @@ it will also insert some capabilities into the early-init process
 a pointer to the array of capabilities will be placed in rax
 
 the following capabilities will be present in the array in this order:
-init_process: rwpu Cap<Process>
+init_process: rwp weak Cap<Process>
 a capability to the init_process
 
 intrd: ru Cap<Mem>

@@ -21,6 +21,7 @@ struct ArcInner<T: ?Sized> {
 unsafe impl<T: ?Sized + Send + Sync> Send for ArcInner<T> {}
 unsafe impl<T: ?Sized + Send + Sync> Sync for ArcInner<T> {}
 
+#[derive(Debug)]
 pub struct Arc<T: ?Sized> {
 	ptr: NonNull<ArcInner<T>>,
 	phantom: PhantomData<ArcInner<T>>,
@@ -134,6 +135,7 @@ unsafe impl<#[may_dangle] T: ?Sized> Drop for Arc<T> {
 unsafe impl<T: ?Sized + Send + Sync> Send for Arc<T> {}
 unsafe impl<T: ?Sized + Send + Sync> Sync for Arc<T> {}
 
+#[derive(Debug)]
 pub struct Weak<T: ?Sized> {
 	ptr: NonNull<ArcInner<T>>,
 }

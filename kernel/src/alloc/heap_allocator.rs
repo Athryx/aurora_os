@@ -59,6 +59,7 @@ impl OrigRef {
 					ptr.as_ref().unwrap().as_heap_allocator()
 				)
 			},
+			OrigRefInner::OtherRc(ref arc) => AllocRef::from_arc(arc.clone()),
 		}
 	}
 }

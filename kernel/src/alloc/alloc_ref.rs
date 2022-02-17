@@ -7,8 +7,7 @@ macro_rules! make_alloc_ref {
 		enum $inner_name {
 			Static(&'static dyn $trait),
 			Raw(*const dyn $trait),
-			// uncomment once Arcs are addded
-			//OtherRc(Arc<CapAllocator>),
+			OtherRc($crate::container::Arc<$crate::alloc::cap_allocator::CapAllocator>),
 		}
 
 		unsafe impl Send for $inner_name {}
@@ -29,8 +28,12 @@ macro_rules! make_alloc_ref {
 				Self($inner_name::Static(allocer))
 			}
 
+			pub fn from_arc(arc: $crate::container::Arc<$crate::alloc::cap_allocator::CapAllocator>) -> Self {
+				Self($inner_name::OtherRc(arc))
+			}
+
 			// FIXME: find a better solution
-			// safety: object
+			// safety: must have a shorter lifetime than allocer object
 			pub unsafe fn new_raw(allocer: *const dyn $trait) -> Self {
 				Self($inner_name::Raw(allocer))
 			}
@@ -47,6 +50,9 @@ macro_rules! make_alloc_ref {
 				match self.0 {
 					$inner_name::Static(allocer) => allocer,
 					$inner_name::Raw(ptr) => unsafe { ptr.as_ref().unwrap() },
+					$inner_name::OtherRc(ref allocer) => {
+						todo!();
+					},
 				}
 			}
 		}

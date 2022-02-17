@@ -266,7 +266,8 @@ impl PageAllocator for PmemManager {
 
 		for i in start_index..(start_index + self.allocers.len()) {
 			let i = i % self.allocers.len();
-			if let Some(allocation) = self.allocers[i].alloc(layout.size()) {
+			if let Some(mut allocation) = self.allocers[i].alloc(layout.size()) {
+				allocation.zindex = i;
 				return Some(allocation);
 			}
 		}

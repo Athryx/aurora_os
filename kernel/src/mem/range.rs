@@ -164,7 +164,13 @@ macro_rules! impl_addr_range {
 
 			fn full_contains_range(&self, range: &dyn $range_trait) -> bool
 			{
-				self.contains(range.addr()) && self.contains(range.addr() + range.size())
+				if range.size() == 0 {
+					// do this to handle the case of when range addr and size is 0 to avoid an integer underflow
+					// from the subtraction in the part below
+					self.contains(range.addr())
+				} else {
+					self.contains(range.addr()) && self.contains(range.addr() + range.size() - 1)
+				}
 			}
 
 			/// returns true if the size equals the alignmant

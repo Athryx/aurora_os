@@ -272,7 +272,8 @@ impl HeapZone
 impl_list_node!(HeapZone, prev, next);
 
 // TODO: add drop implementation that frees all page allocations
-struct LinkedListAllocatorInner
+// This is public because it is used by CapAllocator
+pub struct LinkedListAllocatorInner
 {
 	list: LinkedList<HeapZone>,
 	page_allocator: PaRef,
@@ -280,7 +281,7 @@ struct LinkedListAllocatorInner
 
 impl LinkedListAllocatorInner
 {
-	fn new(page_allocator: PaRef) -> Self
+	pub fn new(page_allocator: PaRef) -> Self
 	{
 		let node = unsafe {
 			HeapZone::new(INITIAL_HEAP_SIZE, &*page_allocator).expect("failed to allocate pages for kernel heap")
@@ -294,7 +295,7 @@ impl LinkedListAllocatorInner
 		}
 	}
 
-	fn alloc(&mut self, layout: Layout) -> Option<HeapAllocation>
+	pub fn alloc(&mut self, layout: Layout) -> Option<HeapAllocation>
 	{
 		let size = layout.size();
 		let align = layout.align();
@@ -325,7 +326,7 @@ impl LinkedListAllocatorInner
 		}
 	}
 
-	unsafe fn dealloc(&mut self, allocation: HeapAllocation)
+	pub unsafe fn dealloc(&mut self, allocation: HeapAllocation)
 	{
 		let addr = allocation.addr();
 		let size = allocation.size();
