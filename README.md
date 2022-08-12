@@ -2,6 +2,10 @@
 
 ## Build
 
+install required tools for building
+	sudo pacman -S nasm lld
+	cargo install cargo-sysroot
+
 set toolchain and build sysroot
 
 	rustup override set nightly
