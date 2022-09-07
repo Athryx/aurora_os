@@ -40,31 +40,15 @@ macro_rules! make_alloc_ref {
 
 			/// Returns the allocator ths alloc ref is referencing
 			pub fn allocator(&mut self) -> &dyn $trait {
-				let new_inner = if let $inner_name::CapAllocator(ref allocer) = self.0 {
-					if allocer.is_alive() {
-						None
-					} else {
-						match allocer.get_closest_alive_parent() {
-							$crate::alloc::CapAllocatorParent::Normal(allocer) => {
-								Some($inner_name::CapAllocator(allocer))
-							},
-							$crate::alloc::CapAllocatorParent::Root(allocer) => {
-								Some($inner_name::Static(allocer))
-							}
-						}
-					}
-				} else {
-					None
-				};
-
-				if let Some(new_inner) = new_inner {
-					self.0 = new_inner;
-				}
-
 				match self.0 {
 					$inner_name::Static(allocer) => allocer,
 					$inner_name::Raw(ptr) => unsafe { return ptr.as_ref().unwrap() },
-					$inner_name::CapAllocator(ref allocer) => &**allocer,
+					$inner_name::CapAllocator(ref mut allocer) => {
+						if !allocer.is_alive() {
+							*allocer = allocer.clone().get_closest_alive_parent()
+						}
+						&**allocer
+					},
 				}
 			}
 		}

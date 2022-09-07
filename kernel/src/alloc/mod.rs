@@ -9,13 +9,15 @@ mod alloc_ref;
 
 pub use heap_allocator::{HeapAllocator, AllocRef, OrigAllocator, OrigRef};
 pub use page_allocator::{PageAllocator, PaRef};
-pub use cap_allocator::CapAllocatorParent;
 
 use spin::Once;
 
 use crate::mb2::MemoryMap;
 use pmem_manager::PmemManager;
-use cap_allocator::RootAllocator;
+use linked_list_allocator::LinkedListAllocator;
+use cap_allocator::CapAllocator;
+use crate::container::Arc;
+
 
 static PMEM_MANAGER: Once<PmemManager> = Once::new();
 
@@ -25,9 +27,19 @@ pub fn zm() -> &'static PmemManager {
 	PMEM_MANAGER.get().expect("zone manager (PmemManager) has not been initilized")
 }
 
-static ROOT_ALLOCATOR: Once<RootAllocator> = Once::new();
+static HEAP: Once<LinkedListAllocator> = Once::new();
 
-pub fn root_allocator() -> &'static RootAllocator {
+pub fn heap() -> &'static LinkedListAllocator {
+	HEAP.get().expect("heap not yet initilized")
+}
+
+pub fn heap_ref() -> OrigRef {
+	OrigRef::new(heap())
+}
+
+static ROOT_ALLOCATOR: Once<Arc<CapAllocator>> = Once::new();
+
+pub fn root_allocator() -> &'static CapAllocator {
 	ROOT_ALLOCATOR.get().expect("root allocator accessed before it was initilized")
 }
 
@@ -41,6 +53,13 @@ pub unsafe fn init(mem_map: &MemoryMap) {
 			pmem_manager
 		});
 
-		ROOT_ALLOCATOR.call_once(|| RootAllocator::new(total_pages));
+		HEAP.call_once(|| {
+			LinkedListAllocator::new(PaRef::new(zm()))
+		});
+
+		ROOT_ALLOCATOR.call_once(|| {
+			Arc::new(CapAllocator::new_root(total_pages), heap_ref())
+				.expect("failed to initilize root cap allocator")
+		});
 	}
 }
