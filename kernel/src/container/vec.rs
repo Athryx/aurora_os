@@ -33,12 +33,12 @@ impl<T> RawVec<T> {
 	}
 
 	// tries to create a raw vec with specified capacity, returns out of mem on failure
-	fn try_with_capacity(allocer: AllocRef, cap: usize) -> KResult<Self> {
+	fn try_with_capacity(mut allocer: AllocRef, cap: usize) -> KResult<Self> {
 		if size_of::<T>() == 0 {
 			Ok(RawVec::new(allocer))
 		} else {
 			let layout = Layout::array::<T>(cap).unwrap();
-			let ptr = allocer.alloc(layout).ok_or(SysErr::OutOfMem)?.as_mut_ptr();
+			let ptr = allocer.allocator().alloc(layout).ok_or(SysErr::OutOfMem)?.as_mut_ptr();
 
 			Ok(RawVec {
 				ptr: NonNull::new(ptr).unwrap(),
@@ -74,13 +74,15 @@ impl<T> RawVec<T> {
 			"Allocation too large"
 		);
 
+		let allocator = self.allocer.allocator();
+
 		let new_alloc = if self.cap == 0 {
-			self.allocer.alloc(new_layout)
+			allocator.alloc(new_layout)
 		} else {
 			let old_ptr = self.ptr.as_ptr();
 			let old_alloc = HeapAllocation::array(old_ptr, self.cap);
 			unsafe {
-				self.allocer.realloc(old_alloc, new_layout)
+				allocator.realloc(old_alloc, new_layout)
 			}
 		};
 
@@ -103,7 +105,7 @@ impl<T> Drop for RawVec<T> {
 		if self.cap != 0 && elem_size != 0 {
 			let alloc = HeapAllocation::from_ptr(self.ptr.as_ptr());
 			unsafe {
-				self.allocer.dealloc(alloc);
+				self.allocer.allocator().dealloc(alloc);
 			}
 		}
 	}
@@ -174,7 +176,7 @@ impl<T> Vec<T> {
 		}
 	}
 
-	pub fn allocator(&self) -> &dyn HeapAllocator {
+	pub fn allocator(&mut self) -> &dyn HeapAllocator {
 		self.inner.allocer.allocator()
 	}
 

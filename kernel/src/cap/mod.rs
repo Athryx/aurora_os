@@ -1,4 +1,4 @@
-use core::sync::atomic::{AtomicUsize, Ordering, fence};
+use core::sync::atomic::{fence, AtomicUsize, Ordering};
 
 use bitflags::bitflags;
 
@@ -16,6 +16,7 @@ bitflags! {
 	}
 }
 
+#[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CapType {
 	Process,
@@ -117,7 +118,7 @@ impl<T: CapObject> CapObjectWrapper<T> {
 }
 
 #[derive(Debug)]
-pub struct Capability<T: CapObject> {
+pub struct StrongCapability<T: CapObject> {
 	object: Arc<CapObjectWrapper<T>>,
 	flags: CapFlags,
 	// if this is false, no refcounting will take place on the Capability object referenced by this Capability
@@ -126,10 +127,10 @@ pub struct Capability<T: CapObject> {
 	do_refcount: bool,
 }
 
-impl<T: CapObject> Capability<T> {
+impl<T: CapObject> StrongCapability<T> {
 	pub fn new(object: T, flags: CapFlags, allocer: OrigRef) -> KResult<Self> {
 		let inner = Arc::new(CapObjectWrapper::new(object), allocer)?;
-		Ok(Capability {
+		Ok(StrongCapability {
 			object: inner,
 			flags,
 			do_refcount: true,
@@ -138,7 +139,7 @@ impl<T: CapObject> Capability<T> {
 
 	pub fn new_no_refcount(object: T, flags: CapFlags, allocer: OrigRef) -> KResult<Self> {
 		let inner = Arc::new(CapObjectWrapper::new(object), allocer)?;
-		Ok(Capability {
+		Ok(StrongCapability {
 			object: inner,
 			flags,
 			do_refcount: false,
@@ -172,12 +173,12 @@ impl<T: CapObject> Capability<T> {
 	}
 }
 
-impl<T: CapObject> Clone for Capability<T> {
+impl<T: CapObject> Clone for StrongCapability<T> {
 	fn clone(&self) -> Self {
 		if self.do_refcount {
 			self.object.count.fetch_add(1, Ordering::Relaxed);
 		}
-		Capability {
+		StrongCapability {
 			object: self.object.clone(),
 			flags: self.flags,
 			do_refcount: self.do_refcount,
@@ -185,7 +186,7 @@ impl<T: CapObject> Clone for Capability<T> {
 	}
 }
 
-impl<T: CapObject> Drop for Capability<T> {
+impl<T: CapObject> Drop for StrongCapability<T> {
 	fn drop(&mut self) {
 		if self.do_refcount {
 			if self.object.count.fetch_sub(1, Ordering::Release) == 1 {
@@ -207,7 +208,7 @@ pub struct WeakCapability<T: CapObject> {
 impl<T: CapObject> WeakCapability<T> {
 	// fails if memory has been dropped or cap refcount is 0
 	// NOTE: if do_refcount is false, this will succeeed if there is any arc pointing to the CapObject, even if there are no string capabilities
-	pub fn upgrade(&self) -> Option<Capability<T>> {
+	pub fn upgrade(&self) -> Option<StrongCapability<T>> {
 		let arc = self.object.upgrade()?;
 		if self.do_refcount {
 			let mut count = arc.count.load(Ordering::Relaxed);
@@ -218,16 +219,18 @@ impl<T: CapObject> WeakCapability<T> {
 				}
 
 				match arc.count.compare_exchange_weak(count, count + 1, Ordering::Relaxed, Ordering::Relaxed) {
-					Ok(_) => return Some(Capability {
-						object: arc,
-						flags: self.flags,
-						do_refcount: self.do_refcount,
-					}),
+					Ok(_) => {
+						return Some(StrongCapability {
+							object: arc,
+							flags: self.flags,
+							do_refcount: self.do_refcount,
+						})
+					},
 					Err(num) => count = num,
 				}
 			}
 		} else {
-			Some(Capability {
+			Some(StrongCapability {
 				object: arc,
 				flags: self.flags,
 				do_refcount: self.do_refcount,
@@ -259,3 +262,45 @@ impl<T: CapObject> Clone for WeakCapability<T> {
 		}
 	}
 }
+
+/// A capability that points to certain objects that are static and always exist in the kernel
+/// From the userspace perspective, these capabilites act like normal capabilties, except the object is not dropped ever
+pub struct StaticCapability<T: CapObject + 'static> {
+	object: &'static T,
+	flags: CapFlags,
+}
+
+impl<T: CapObject + 'static> StaticCapability<T> {
+	pub fn new(object: &'static T, flags: CapFlags) -> Self {
+		Self {
+			object,
+			flags,
+		}
+	}
+
+	pub fn and_from_flags(cap: &Self, flags: CapFlags) -> Self {
+		let mut out = *cap;
+		out.flags &= flags;
+		out
+	}
+
+	pub fn flags(&self) -> CapFlags {
+		self.flags
+	}
+
+	pub fn object(&self) -> &'static T {
+		self.object
+	}
+}
+
+impl<T: CapObject + 'static> Clone for StaticCapability<T> {
+	fn clone(&self) -> Self {
+		StaticCapability {
+			object: self.object,
+			flags: self.flags,
+		}
+	}
+}
+
+// Do this here because derive copy doesn't work for some reason
+impl<T: CapObject + 'static> Copy for StaticCapability<T> {}

@@ -62,7 +62,9 @@ pub struct PmemManager {
 
 impl PmemManager {
 	// TODO: this might encounter problems with low amount of system memory (like very low)
-	pub unsafe fn new(mem_map: &MemoryMap) -> PmemManager {
+	/// Creates a new PmemManager from the memory map
+	/// Also returns the total amount of bytes that can be allocated, used to set up the root allocator
+	pub unsafe fn new(mem_map: &MemoryMap) -> (PmemManager, usize) {
 		// iterator over usable memory zones as a VirtRange
 		let usable = mem_map.iter()
 			.filter(|zone| matches!(zone, MemoryRegionType::Usable(_)))
@@ -166,6 +168,9 @@ impl PmemManager {
 		// index of current allocator
 		let mut i = 0;
 
+		// total amount of allocatable memory
+		let mut total_mem_size = 0;
+
 		while let Some((current_size, current_zone)) = zones.pop_max() {
 			let (unaligned_tree_size, index_size) = PmemAllocator::required_tree_index_size(current_zone, PAGE_SIZE).unwrap();
 			let tree_size = align_up(unaligned_tree_size, size_of::<usize>());
@@ -233,6 +238,8 @@ impl PmemManager {
 				PmemAllocator::from(current_zone, tree_slice, index_slice, PAGE_SIZE)
 			};
 
+			total_mem_size += current_zone.page_size();
+
 			allocator_slice[i].write(allocator);
 
 			i += 1;
@@ -244,10 +251,10 @@ impl PmemManager {
 
 		allocator_slice.sort_unstable_by(|a, b| a.start_addr().cmp(&b.start_addr()));
 
-		PmemManager {
+		(PmemManager {
 			allocers: allocator_slice,
 			next_index: AtomicUsize::new(0),
-		}
+		}, total_mem_size)
 	}
 
 	// gets index in search dealloc, where the zindex is not set

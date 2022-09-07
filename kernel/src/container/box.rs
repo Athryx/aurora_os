@@ -12,9 +12,9 @@ pub struct Box<T> {
 }
 
 impl<T> Box<T> {
-	pub fn new(data: T, allocator: OrigRef) -> KResult<Self> {
+	pub fn new(data: T, mut allocator: OrigRef) -> KResult<Self> {
 		Ok(Box {
-			data: MemOwner::new(data, &*allocator)?,
+			data: MemOwner::new(data, allocator.allocator())?,
 			allocator,
 		})
 	}
@@ -54,8 +54,8 @@ impl<T> Box<T> {
 		this.data.ptr_mut()
 	}
 
-	pub fn allocator(this: &Self) -> &dyn OrigAllocator {
-		&*this.allocator
+	pub fn allocator(this: &mut Self) -> &dyn OrigAllocator {
+		this.allocator.allocator()
 	}
 }
 
@@ -77,7 +77,7 @@ impl<T> Drop for Box<T> {
 	fn drop(&mut self) {
 		let allocation = HeapAllocation::from_ptr(Box::ptr(self));
 		unsafe {
-			self.allocator.dealloc_orig(allocation);
+			self.allocator.allocator().dealloc_orig(allocation);
 		}
 	}
 }

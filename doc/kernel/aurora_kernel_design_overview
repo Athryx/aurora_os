@@ -1,0 +1,11 @@
+Memory
+
+Page Allocator:
+non locking global page allocator system
+
+Scheduler:
+MuQSS
+
+Thread will be an intrusive linked list node
+Will keep weak reference to process
+getting the current process will also automatically stop running the thread is the process is dead

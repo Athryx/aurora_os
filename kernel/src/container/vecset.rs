@@ -31,7 +31,7 @@ impl<T: Ord> VecSet<T> {
 		self.0.cap()
 	}
 
-	pub fn allocator(&self) -> &dyn HeapAllocator {
+	pub fn allocator(&mut self) -> &dyn HeapAllocator {
 		self.0.allocator()
 	}
 

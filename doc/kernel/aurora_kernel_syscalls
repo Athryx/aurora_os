@@ -102,7 +102,7 @@ bit 3 (cap_upgrade): allows upgrading a weak capability to a strong capability
 CapFlags(usize)
 a bitmask representing the various properties of a capability
 bit 0-3 (cap_priv): specifies the privalidges of a capability
-uses bits 0-2 of the CapPriv type
+uses bits 0-3 of the CapPriv type
 bit 4 (cap_weak): capability is a weak capability
 this means that the capability does not keep the underlying object alive,
 and the object is deallocated when all strong capabilities are gone
@@ -178,7 +178,7 @@ in order to destroy the process, call process_exit to destroy the strong refernc
 the process is not freed when all weak references are destroyed
 
 options:
-bits 0-2 (process_cap_flags): CapPriv representing read, write, and prod privalidges of new capability
+bits 0-2 (process_cap_flags): CapPriv representing read, prod, and write privalidges of new capability
 
 required capability permissions:
 {allocator}: cap_prod
@@ -528,7 +528,7 @@ InvlOp: thread is not already asynchronously listening on this event object
 
 24: fn eret()
 returns from an asynchronous event handler
-does nothing if not in a syscall handler
+does nothing if not in a event handler
 
 
 25: fn channel_new(allocator: Cap<Allocator>, msg_size: usize, max_caps: usize) -> (err: SysErr, channel: Cap<Channel>)

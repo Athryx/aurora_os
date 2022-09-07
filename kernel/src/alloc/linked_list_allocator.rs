@@ -9,9 +9,9 @@ use crate::container::LinkedList;
 use crate::impl_list_node;
 use super::{PageAllocator, PaRef, HeapAllocator, OrigAllocator};
 use crate::mem::{Allocation, PageLayout, HeapAllocation, Layout, MemOwner};
+use spin::Mutex;
 
-const INITIAL_HEAP_SIZE: usize = PAGE_SIZE * 8;
-const HEAP_INC_SIZE: usize = PAGE_SIZE * 4;
+const HEAP_ZONE_SIZE: usize = PAGE_SIZE * 8;
 const CHUNK_SIZE: usize = 1 << log2_up_const(mem::size_of::<Node>());
 // TODO: make not use 1 extra space in some scenarios
 const INITIAL_CHUNK_SIZE: usize = align_up(mem::size_of::<HeapZone>(), CHUNK_SIZE);
@@ -273,29 +273,18 @@ impl_list_node!(HeapZone, prev, next);
 
 // TODO: add drop implementation that frees all page allocations
 // This is public because it is used by CapAllocator
-pub struct LinkedListAllocatorInner
-{
+pub struct LinkedListAllocatorInner {
 	list: LinkedList<HeapZone>,
-	page_allocator: PaRef,
 }
 
-impl LinkedListAllocatorInner
-{
-	pub fn new(page_allocator: PaRef) -> Self
-	{
-		let node = unsafe {
-			HeapZone::new(INITIAL_HEAP_SIZE, &*page_allocator).expect("failed to allocate pages for kernel heap")
-		};
-		let mut list = LinkedList::new();
-		list.push(node);
-
+impl LinkedListAllocatorInner {
+	pub fn new() -> Self {
 		LinkedListAllocatorInner {
-			list,
-			page_allocator,
+			list: LinkedList::new(),
 		}
 	}
 
-	pub fn alloc(&mut self, layout: Layout) -> Option<HeapAllocation>
+	pub fn alloc(&mut self, layout: Layout, page_allocator: &dyn PageAllocator) -> Option<HeapAllocation>
 	{
 		let size = layout.size();
 		let align = layout.align();
@@ -310,10 +299,10 @@ impl LinkedListAllocatorInner
 
 		// allocate new heapzone because there was no space in any others
 		let size_inc = max(
-			HEAP_INC_SIZE,
+			HEAP_ZONE_SIZE,
 			size + max(align, CHUNK_SIZE) + INITIAL_CHUNK_SIZE,
 		);
-		let zone = match unsafe { HeapZone::new(size_inc, &*self.page_allocator) } {
+		let zone = match unsafe { HeapZone::new(size_inc, page_allocator) } {
 			Some(n) => n,
 			None => return None,
 		};
@@ -342,37 +331,53 @@ impl LinkedListAllocatorInner
 
 		panic!("invalid allocation passed to dealloc");
 	}
-}
 
-impl Drop for LinkedListAllocatorInner {
-	fn drop(&mut self) {
+	/// Deallocates all allocations in the linked list allocator
+	pub unsafe fn dealloc_all(&mut self, page_allocator: &dyn PageAllocator) {
 		for zone in self.list.iter_mut() {
 			// safety: these zones can never be referenced after this point
 			unsafe {
-				zone.dealloc_all(&*self.page_allocator);
+				zone.dealloc_all(page_allocator);
 			}
+		}
+	}
+
+	/// Used for implementing the OrigAllocator trait on anything that wraps a LinkedListAllocatorInner
+	pub fn compute_alloc_properties(allocation: HeapAllocation) -> Option<HeapAllocation> {
+		if align_of(allocation.addr()) < CHUNK_SIZE {
+			None
+		} else {
+			let align = allocation.align();
+			let size = align_up(allocation.size(), max(CHUNK_SIZE, align));
+			Some(HeapAllocation::new(allocation.addr(), size, align))
 		}
 	}
 }
 
 // NOTE: can switch to schedular mutex once implemented
-pub struct LinkedListAllocator(IMutex<LinkedListAllocatorInner>);
+pub struct LinkedListAllocator {
+	inner: IMutex<LinkedListAllocatorInner>,
+	allocator: Mutex<PaRef>,
+}
 
 impl LinkedListAllocator {
-	pub fn new(page_allocator: PaRef) -> Self {
-		LinkedListAllocator(IMutex::new(LinkedListAllocatorInner::new(page_allocator)))
+	pub fn new(mut page_allocator: PaRef) -> Self {
+		LinkedListAllocator {
+			inner: IMutex::new(LinkedListAllocatorInner::new()),
+			allocator: Mutex::new(page_allocator),
+		}
 	}
 }
 
 // TODO: add specialized realloc method
 impl HeapAllocator for LinkedListAllocator {
 	fn alloc(&self, layout: Layout) -> Option<HeapAllocation> {
-		self.0.lock().alloc(layout)
+		self.inner.lock().alloc(layout, self.allocator.lock().allocator())
 	}
 
 	unsafe fn dealloc(&self, allocation: HeapAllocation) {
 		unsafe {
-			self.0.lock().dealloc(allocation)
+			self.inner.lock().dealloc(allocation)
 		}
 	}
 }
@@ -383,12 +388,14 @@ impl OrigAllocator for LinkedListAllocator {
 	}
 
 	fn compute_alloc_properties(&self, allocation: HeapAllocation) -> Option<HeapAllocation> {
-		if align_of(allocation.addr()) < CHUNK_SIZE {
-			None
-		} else {
-			let align = allocation.align();
-			let size = align_up(allocation.size(), max(CHUNK_SIZE, align));
-			Some(HeapAllocation::new(allocation.addr(), size, align))
+		LinkedListAllocatorInner::compute_alloc_properties(allocation)
+	}
+}
+
+impl Drop for LinkedListAllocator {
+	fn drop(&mut self) {
+		unsafe {
+			self.inner.lock().dealloc_all(self.allocator.lock().allocator());
 		}
 	}
 }

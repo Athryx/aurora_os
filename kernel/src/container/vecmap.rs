@@ -71,7 +71,7 @@ impl<K: Ord, V> VecMap<K, V> {
 		self.data.cap()
 	}
 
-	pub fn allocator(&self) -> &dyn HeapAllocator {
+	pub fn allocator(&mut self) -> &dyn HeapAllocator {
 		self.data.allocator()
 	}
 

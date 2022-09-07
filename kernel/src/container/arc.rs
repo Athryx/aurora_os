@@ -62,14 +62,14 @@ impl<T: ?Sized> Arc<T> {
 }
 
 impl<T> Arc<T> {
-	pub fn new(data: T, allocer: OrigRef) -> KResult<Self> {
+	pub fn new(data: T, mut allocer: OrigRef) -> KResult<Self> {
 		let ptr = to_heap(ArcInner {
 			strong: AtomicUsize::new(1),
 			weak: AtomicUsize::new(1),
 			allocer: allocer.clone(),
 			allocation: None,
 			data,
-		}, &*allocer)?;
+		}, allocer.allocator())?;
 
 		// meed to calculate this here becaust T is unsized in the Drop implementation
 		// this could maybe be made different to get the HeapAllocation returned by the allocator so an OrigRef is not necessary
@@ -214,7 +214,7 @@ unsafe impl<#[may_dangle] T: ?Sized> Drop for Weak<T> {
 		fence(Ordering::Acquire);
 
 		// copy allocator bitwise out of inner, so we can deallocate inner before dropping allocator
-		let allocer = unsafe {
+		let mut allocer = unsafe {
 			ptr::read(&self.inner().allocer)
 		};
 
@@ -222,7 +222,7 @@ unsafe impl<#[may_dangle] T: ?Sized> Drop for Weak<T> {
 		let allocation = self.inner().allocation.unwrap();
 
 		unsafe {
-			allocer.dealloc_orig(allocation);
+			allocer.allocator().dealloc_orig(allocation);
 		}
 	}
 }

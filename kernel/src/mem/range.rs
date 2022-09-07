@@ -457,6 +457,11 @@ macro_rules! impl_addr_range {
 				}
 			}
 
+			/// Returns the size of the range in pages
+			pub fn page_size(&self) -> usize {
+				self.size / PAGE_SIZE
+			}
+
 			// returns error if invalid virt addr or unaligned addr and size
 			/*pub fn try_new_aligned_usize(addr: usize, size: usize) -> Result<Self, SysErr>
 			{

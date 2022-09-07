@@ -1,7 +1,6 @@
 #![no_std]
 #![no_main]
 
-#![feature(const_fn_trait_bound)]
 #![feature(maybe_uninit_uninit_array)]
 #![feature(array_methods)]
 #![feature(alloc_error_handler)]
@@ -38,6 +37,7 @@ mod misc;
 mod mb2;
 mod io;
 mod id;
+mod process;
 mod prelude;
 
 use core::panic::PanicInfo;
