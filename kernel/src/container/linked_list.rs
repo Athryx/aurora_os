@@ -1,5 +1,7 @@
 //use core::ops::{Index, IndexMut};
 use core::fmt::{self, Debug, Formatter};
+use core::ops::{Index, IndexMut};
+
 use crate::prelude::*;
 use crate::mem::MemOwner;
 
@@ -355,16 +357,6 @@ impl<T: ListNode> LinkedList<T>
 		}
 	}
 
-	pub fn g(&self, index: usize) -> &T
-	{
-		self.get(index).expect("ListNode: invalid index")
-	}
-
-	pub fn gm(&mut self, index: usize) -> &mut T
-	{
-		self.get_mut(index).expect("ListNode: invalid index")
-	}
-
 	pub fn iter(&self) -> Iter<'_, T>
 	{
 		Iter {
@@ -385,7 +377,6 @@ impl<T: ListNode> LinkedList<T>
 		}
 	}
 
-	// maybe unsafe
 	// must call with valid index
 	unsafe fn get_node<'a, 'b>(&'a self, index: usize) -> &'b T
 	{
@@ -421,7 +412,6 @@ impl<T: ListNode> LinkedList<T>
 		}
 	}
 
-	// maybe unsafe
 	// must call with valid index
 	unsafe fn get_node_mut<'a, 'b>(&'a mut self, index: usize) -> &'b mut T
 	{
@@ -455,6 +445,20 @@ impl<T: ListNode> LinkedList<T>
 		unsafe {
 			unbound_mut(node)
 		}
+	}
+}
+
+impl<T: ListNode> Index<usize> for LinkedList<T> {
+	type Output = T;
+
+	fn index(&self, index: usize) -> &Self::Output {
+		self.get(index).expect("index out of bounds")
+	}
+}
+
+impl<T: ListNode> IndexMut<usize> for LinkedList<T> {
+	fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+		self.get_mut(index).expect("index out of bounds")
 	}
 }
 

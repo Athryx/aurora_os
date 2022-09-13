@@ -361,7 +361,7 @@ pub struct LinkedListAllocator {
 }
 
 impl LinkedListAllocator {
-	pub fn new(mut page_allocator: PaRef) -> Self {
+	pub fn new(page_allocator: PaRef) -> Self {
 		LinkedListAllocator {
 			inner: IMutex::new(LinkedListAllocatorInner::new()),
 			allocator: Mutex::new(page_allocator),

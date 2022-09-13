@@ -24,11 +24,11 @@ impl ThreadMap {
     }
 
     pub fn get_current_thread(&self) -> &Thread {
-        self.current_thread[prid().into()].g(0)
+        &self.current_thread[prid().into()][0]
     }
 
     pub fn get_current_thread_mut(&mut self) -> &mut Thread {
-        self.current_thread[prid().into()].gm(0)
+        &mut self.current_thread[prid().into()][0]
     }
 
     // each cpu will call this function to make sure there are enough elments in each vector

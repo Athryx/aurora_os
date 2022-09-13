@@ -1,8 +1,6 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 use core::alloc::Layout;
 
-use spin::Once;
-
 use crate::prelude::*;
 use crate::cap::CapObject;
 use crate::container::Arc;
@@ -70,7 +68,7 @@ impl CapAllocator {
 		};
 
 		let parent_lock_guard = parent_lock.lock();
-		let mut parent = parent_lock_guard.clone().get_closest_alive_parent();
+		let parent = parent_lock_guard.clone().get_closest_alive_parent();
 
 		let mut parent_page_data = parent.page_data.lock();
 
