@@ -1,89 +1,63 @@
+use core::cell::Cell;
 //use core::ops::{Index, IndexMut};
 use core::fmt::{self, Debug, Formatter};
 use core::ops::{Index, IndexMut};
+use core::ptr::Thin;
 
 use crate::prelude::*;
 use crate::mem::MemOwner;
 
-// Safety:
-// next_ptr must return pointer value previously set by set_next, same for preve_ptr and set_prev
-// next_ptr and prev_ptr values must not be modified by implementor
-// only LinkedList should modify these values
-pub unsafe trait ListNode
-{
-	fn next_ptr(&self) -> *const Self;
-	fn set_next(&self, next: *const Self);
-	fn prev_ptr(&self) -> *const Self;
-	fn set_prev(&self, prev: *const Self);
+#[derive(Debug, Clone)]
+pub struct ListNodeData<T: ?Sized + Thin> {
+	prev: Cell<*mut T>,
+	next: Cell<*mut T>,
 }
 
-#[macro_export]
-macro_rules! impl_list_node {
-	($ty:ty, $prev:ident, $next:ident) => {
-		impl $ty
-		{
-			pub fn addr(&self) -> usize
-			{
-				self as *const _ as usize
-			}
-
-			// so I don't have to bring trait into scope every time
-			fn next_ptr(&self) -> *mut Self
-			{
-				self.$next.load(core::sync::atomic::Ordering::Acquire)
-			}
-
-			fn set_next(&self, next: *mut Self)
-			{
-				self.$next
-					.store(next, core::sync::atomic::Ordering::Release);
-			}
-
-			fn prev_ptr(&self) -> *mut Self
-			{
-				self.$prev.load(core::sync::atomic::Ordering::Acquire)
-			}
-
-			fn set_prev(&self, prev: *mut Self)
-			{
-				self.$prev
-					.store(prev, core::sync::atomic::Ordering::Release);
-			}
+impl<T: ?Sized + Thin> Default for ListNodeData<T> {
+	fn default() -> Self {
+		Self {
+			prev: Cell::new(null_mut()),
+			next: Cell::new(null_mut()),
 		}
+	}
+}
 
-		unsafe impl $crate::container::ListNode for $ty
-		{
-			fn next_ptr(&self) -> *const Self
-			{
-				self.$next.load(core::sync::atomic::Ordering::Acquire) as *const _
-			}
+unsafe impl<T: ?Sized + Thin> Send for ListNodeData<T> {}
 
-			fn set_next(&self, next: *const Self)
-			{
-				self.$next
-					.store(next as *mut _, core::sync::atomic::Ordering::Release);
-			}
+pub trait ListNode: Thin {
+	fn list_node_data(&self) -> &ListNodeData<Self>;
 
-			fn prev_ptr(&self) -> *const Self
-			{
-				self.$prev.load(core::sync::atomic::Ordering::Acquire) as *const _
-			}
+	fn prev_ptr(&self) -> *mut Self {
+		self.list_node_data().prev.get()
+	}
 
-			fn set_prev(&self, prev: *const Self)
-			{
-				self.$prev
-					.store(prev as *mut _, core::sync::atomic::Ordering::Release);
-			}
-		}
-	};
+	fn next_ptr(&self) -> *mut Self {
+		self.list_node_data().next.get()
+	}
+
+	fn set_prev(&self, prev: *mut Self) {
+		self.list_node_data().prev.set(prev)
+	}
+
+	fn set_next(&self, next: *mut Self) {
+		self.list_node_data().next.set(next)
+	}
+
+	fn addr(&self) -> usize {
+		self as *const _ as *const () as usize
+	}
+
+	fn as_mut_ptr(&self) -> *mut Self {
+		self as *const _ as *mut _
+	}
 }
 
 // TODO: maybe make in into_iter method
 // this linked list doesn't require memory allocation
 pub struct LinkedList<T: ListNode>
 {
-	start: *const T,
-	end: *const T,
+	start: *mut T,
+	end: *mut T,
 	len: usize,
 }
 
@@ -107,17 +81,17 @@ impl<T: ListNode> LinkedList<T>
 	pub fn push(&mut self, val: MemOwner<T>) -> &mut T
 	{
 		if self.len == 0 {
-			self.start = val.ptr();
+			self.start = val.ptr_mut();
 			val.set_prev(null_mut());
 			val.set_next(null_mut());
 		} else {
 			unsafe {
-				self.end.as_ref().unwrap().set_next(val.ptr());
+				self.end.as_ref().unwrap().set_next(val.ptr_mut());
 			}
 			val.set_prev(self.end);
 			val.set_next(null_mut());
 		}
-		self.end = val.ptr();
+		self.end = val.ptr_mut();
 		self.len += 1;
 
 		val.leak()
@@ -131,7 +105,7 @@ impl<T: ListNode> LinkedList<T>
 
 		let out;
 		unsafe {
-			out = MemOwner::from_raw(self.end as *mut _);
+			out = MemOwner::from_raw(self.end);
 			let out_ref = self.end.as_ref().unwrap();
 			if self.len > 1 {
 				self.end = out_ref.prev_ptr();
@@ -146,17 +120,17 @@ impl<T: ListNode> LinkedList<T>
 	pub fn push_front(&mut self, val: MemOwner<T>) -> &mut T
 	{
 		if self.len == 0 {
-			self.end = val.ptr();
+			self.end = val.ptr_mut();
 			val.set_prev(null_mut());
 			val.set_next(null_mut());
 		} else {
 			unsafe {
-				self.start.as_ref().unwrap().set_prev(val.ptr());
+				self.start.as_ref().unwrap().set_prev(val.ptr_mut());
 			}
 			val.set_next(self.start);
 			val.set_prev(null_mut());
 		}
-		self.start = val.ptr();
+		self.start = val.ptr_mut();
 		self.len += 1;
 
 		val.leak()
@@ -170,7 +144,7 @@ impl<T: ListNode> LinkedList<T>
 
 		let out;
 		unsafe {
-			out = MemOwner::from_raw(self.start as *mut _);
+			out = MemOwner::from_raw(self.start);
 			let out_ref = self.start.as_ref().unwrap();
 			if self.len > 1 {
 				self.start = out_ref.next_ptr();
@@ -196,7 +170,8 @@ impl<T: ListNode> LinkedList<T>
 			return Some(self.push(val));
 		}
 
-		let node = unsafe { self.get_node(index) };
+		// FIXME: get rid of unbound lifetime
+		let node = unsafe { unbound(self.get_node(index)) };
 
 		Some(self.insert_before(val, node))
 	}
@@ -215,7 +190,8 @@ impl<T: ListNode> LinkedList<T>
 			return self.pop();
 		}
 
-		let node = unsafe { self.get_node(index) };
+		// FIXME: get rid of unbound lifetime
+		let node = unsafe { unbound(self.get_node(index)) };
 
 		Some(self.remove_node(node))
 	}
@@ -225,10 +201,10 @@ impl<T: ListNode> LinkedList<T>
 		assert!(self.len != 0);
 		self.len += 1;
 
-		let new_ptr = new_node.ptr();
+		let new_ptr = new_node.ptr_mut();
 
 		if let Some(prev_node) = unsafe { node.prev_ptr().as_ref() } {
-			new_node.set_prev(prev_node as *const _);
+			new_node.set_prev(prev_node.as_mut_ptr());
 			prev_node.set_next(new_ptr);
 		} else {
 			self.start = new_ptr;
@@ -236,7 +212,7 @@ impl<T: ListNode> LinkedList<T>
 		}
 
 		node.set_prev(new_ptr);
-		new_node.set_next(node as *const T);
+		new_node.set_next(node.as_mut_ptr());
 
 		new_node.leak()
 	}
@@ -246,10 +222,10 @@ impl<T: ListNode> LinkedList<T>
 		assert!(self.len != 0);
 		self.len += 1;
 
-		let new_ptr = new_node.ptr();
+		let new_ptr = new_node.ptr_mut();
 
 		if let Some(next_node) = unsafe { node.next_ptr().as_ref() } {
-			new_node.set_next(next_node as *const _);
+			new_node.set_next(next_node.as_mut_ptr());
 			next_node.set_prev(new_ptr);
 		} else {
 			self.end = new_ptr;
@@ -257,7 +233,7 @@ impl<T: ListNode> LinkedList<T>
 		}
 
 		node.set_next(new_ptr);
-		new_node.set_prev(node as *const T);
+		new_node.set_prev(node.as_mut_ptr());
 
 		new_node.leak()
 	}
@@ -286,16 +262,16 @@ impl<T: ListNode> LinkedList<T>
 
 		self.len -= 1;
 
-		unsafe { MemOwner::from_raw(node as *const T as *mut T) }
+		unsafe { MemOwner::from_raw(node.as_mut_ptr()) }
 	}
 
 	pub fn update_node(&mut self, old: &T, new: MemOwner<T>)
 	{
-		let new_ptr = new.ptr();
+		let new_ptr = new.ptr_mut();
 
 		if let Some(prev_node) = unsafe { old.prev_ptr().as_ref() } {
 			prev_node.set_next(new_ptr);
-			new.set_prev(prev_node as *const _);
+			new.set_prev(prev_node.as_mut_ptr());
 		} else {
 			self.start = new_ptr;
 			new.set_prev(null_mut());
@@ -303,10 +279,10 @@ impl<T: ListNode> LinkedList<T>
 
 		if let Some(next_node) = unsafe { old.next_ptr().as_ref() } {
 			next_node.set_prev(new_ptr);
-			new.set_next(next_node as *const _);
+			new.set_next(next_node.as_mut_ptr());
 		} else {
 			self.end = new_ptr;
-			new.set_next(null());
+			new.set_next(null_mut());
 		}
 	}
 
@@ -340,9 +316,7 @@ impl<T: ListNode> LinkedList<T>
 		if index >= self.len {
 			None
 		} else {
-			unsafe {
-				Some(self.get_node(index))
-			}
+			Some(self.get_node(index))
 		}
 	}
 
@@ -351,9 +325,7 @@ impl<T: ListNode> LinkedList<T>
 		if index >= self.len {
 			None
 		} else {
-			unsafe {
-				Some(self.get_node_mut(index))
-			}
+			Some(self.get_node_mut(index))
 		}
 	}
 
@@ -378,7 +350,7 @@ impl<T: ListNode> LinkedList<T>
 	}
 
 	// must call with valid index
-	unsafe fn get_node<'a, 'b>(&'a self, index: usize) -> &'b T
+	fn get_node(&self, index: usize) -> &T
 	{
 		if index >= self.len {
 			panic!("LinkedList internal error: get_node called with invalid index");
@@ -407,44 +379,40 @@ impl<T: ListNode> LinkedList<T>
 			}
 		}
 
-		unsafe {
-			unbound(node)
-		}
+		node
 	}
 
 	// must call with valid index
-	unsafe fn get_node_mut<'a, 'b>(&'a mut self, index: usize) -> &'b mut T
+	fn get_node_mut(&mut self, index: usize) -> &mut T
 	{
 		if index >= self.len {
-			panic!("LinkedList internal error: get_node called with invalid index");
+			panic!("LinkedList internal error: get_node_mut called with invalid index");
 		}
 
 		let mut node;
 		if index * 2 > self.len {
 			unsafe {
-				node = (self.end as *mut T).as_mut().unwrap();
+				node = self.end.as_mut().unwrap();
 			}
 
 			for _ in 0..(self.len - index - 1) {
 				unsafe {
-					node = (node.prev_ptr() as *mut T).as_mut().unwrap();
+					node = node.prev_ptr().as_mut().unwrap();
 				}
 			}
 		} else {
 			unsafe {
-				node = (self.start as *mut T).as_mut().unwrap();
+				node = self.start.as_mut().unwrap();
 			}
 
 			for _ in 0..index {
 				unsafe {
-					node = (node.next_ptr() as *mut T).as_mut().unwrap();
+					node = node.next_ptr().as_mut().unwrap();
 				}
 			}
 		}
 
-		unsafe {
-			unbound_mut(node)
-		}
+		node
 	}
 }
 
@@ -551,8 +519,8 @@ impl<T: ListNode> core::iter::FusedIterator for Iter<'_, T> {}
 
 pub struct IterMut<'a, T: ListNode>
 {
-	start: *const T,
-	end: *const T,
+	start: *mut T,
+	end: *mut T,
 	len: usize,
 	marker: PhantomData<&'a T>,
 }
@@ -566,7 +534,7 @@ impl<'a, T: ListNode> Iterator for IterMut<'a, T>
 		if self.len == 0 {
 			None
 		} else {
-			let out = unsafe { (self.start as *mut T).as_mut().unwrap() };
+			let out = unsafe { self.start.as_mut().unwrap() };
 			self.start = out.next_ptr();
 			self.len -= 1;
 			Some(out)
@@ -591,7 +559,7 @@ impl<'a, T: ListNode> DoubleEndedIterator for IterMut<'a, T>
 		if self.len == 0 {
 			None
 		} else {
-			let out = unsafe { (self.end as *mut T).as_mut().unwrap() };
+			let out = unsafe { self.end.as_mut().unwrap() };
 			self.end = out.prev_ptr();
 			self.len -= 1;
 			Some(out)

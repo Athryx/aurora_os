@@ -4,9 +4,9 @@ use core::cell::Cell;
 use core::cmp::max;
 
 use crate::prelude::*;
+use crate::container::{ListNode, ListNodeData};
 use crate::sync::IMutex;
 use crate::container::LinkedList;
-use crate::impl_list_node;
 use super::{PageAllocator, PaRef, HeapAllocator, OrigAllocator};
 use crate::mem::{Allocation, PageLayout, HeapAllocation, Layout, MemOwner};
 use spin::Mutex;
@@ -27,8 +27,7 @@ enum ResizeResult
 #[derive(Debug)]
 struct Node
 {
-	prev: AtomicPtr<Node>,
-	next: AtomicPtr<Node>,
+	list_node_data: ListNodeData<Self>,
 	size: Cell<usize>,
 }
 
@@ -37,8 +36,7 @@ impl Node
 	unsafe fn new(addr: usize, size: usize) -> MemOwner<Self>
 	{
 		let out = Node {
-			prev: AtomicPtr::new(null_mut()),
-			next: AtomicPtr::new(null_mut()),
+			list_node_data: ListNodeData::default(),
 			size: Cell::new(size),
 		};
 
@@ -92,12 +90,15 @@ impl Node
 	}
 }
 
-impl_list_node!(Node, prev, next);
+impl ListNode for Node {
+	fn list_node_data(&self) -> &ListNodeData<Self> {
+		&self.list_node_data
+	}
+}
 
 struct HeapZone
 {
-	prev: AtomicPtr<HeapZone>,
-	next: AtomicPtr<HeapZone>,
+	list_node_data: ListNodeData<Self>,
 	mem: Allocation,
 	free_space: Cell<usize>,
 	list: LinkedList<Node>,
@@ -114,8 +115,7 @@ impl HeapZone
 		let ptr = mem.as_usize() as *mut HeapZone;
 
 		let mut out = HeapZone {
-			prev: AtomicPtr::new(null_mut()),
-			next: AtomicPtr::new(null_mut()),
+			list_node_data: ListNodeData::default(),
 			mem,
 			free_space: Cell::new(size - INITIAL_CHUNK_SIZE),
 			list: LinkedList::new(),
@@ -269,7 +269,11 @@ impl HeapZone
 	}
 }
 
-impl_list_node!(HeapZone, prev, next);
+impl ListNode for HeapZone {
+	fn list_node_data(&self) -> &ListNodeData<Self> {
+		&self.list_node_data
+	}
+}
 
 // TODO: add drop implementation that frees all page allocations
 // This is public because it is used by CapAllocator

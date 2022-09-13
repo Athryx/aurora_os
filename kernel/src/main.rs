@@ -13,6 +13,7 @@
 #![feature(slice_ptr_len)]
 #![feature(slice_ptr_get)]
 #![feature(dropck_eyepatch)]
+#![feature(ptr_metadata)]
 
 /*#![feature(arc_new_cyclic)]
 #![feature(const_btree_new)]

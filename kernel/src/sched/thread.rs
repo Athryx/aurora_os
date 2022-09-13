@@ -1,7 +1,4 @@
-use core::sync::atomic::AtomicPtr;
-use core::fmt;
-
-use crate::container::Weak;
+use crate::container::{Weak, ListNodeData, ListNode};
 use crate::process::Process;
 use super::stack::Stack;
 
@@ -46,8 +43,11 @@ pub struct Thread {
     regs: Regsiters,
     stack: Stack,
 
-    prev: AtomicPtr<Thread>,
-    next: AtomicPtr<Thread>,
+    list_node_data: ListNodeData<Thread>,
 }
 
-crate::impl_list_node!(Thread, prev, next);
+impl ListNode for Thread {
+    fn list_node_data(&self) -> &ListNodeData<Self> {
+        &self.list_node_data
+    }
+}
