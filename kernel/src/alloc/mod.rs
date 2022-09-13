@@ -39,8 +39,12 @@ pub fn heap_ref() -> OrigRef {
 
 static ROOT_ALLOCATOR: Once<Arc<CapAllocator>> = Once::new();
 
-pub fn root_allocator() -> &'static CapAllocator {
+pub fn root_alloc() -> &'static CapAllocator {
 	ROOT_ALLOCATOR.get().expect("root allocator accessed before it was initilized")
+}
+
+pub fn root_alloc_ref() -> OrigRef {
+	OrigRef::new(root_alloc())
 }
 
 // safety: must call before ever calling zm

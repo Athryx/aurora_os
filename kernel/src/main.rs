@@ -30,6 +30,7 @@ mod cap;
 mod container;
 mod mem;
 mod sync;
+mod sched;
 
 mod consts;
 mod hwa_iter;
@@ -37,14 +38,16 @@ mod misc;
 mod mb2;
 mod io;
 mod id;
+mod gs_data;
 mod process;
 mod prelude;
 
-use core::panic::PanicInfo;
+use core::{panic::PanicInfo, sync::atomic::AtomicUsize};
 
 use prelude::*;
 use arch::x64::*;
 use mb2::BootInfo;
+use gs_data::{GsData, Prid};
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -70,6 +73,13 @@ fn init(boot_info_addr: usize) -> KResult<()> {
 	unsafe {
 		alloc::init(&boot_info.memory_map);
 	}
+
+	gs_data::init(GsData {
+		temp_syscall_return_rip: AtomicUsize::new(0),
+		prid: Prid::from(0),
+	});
+
+	sched::init();
 
 	Ok(())
 }

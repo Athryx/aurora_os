@@ -1,6 +1,7 @@
 use core::sync::atomic::{AtomicUsize, Ordering, fence};
 use core::ops::Deref;
 use core::ptr::NonNull;
+use core::fmt;
 
 use crate::prelude::*;
 use crate::alloc::OrigRef;
@@ -135,7 +136,6 @@ unsafe impl<#[may_dangle] T: ?Sized> Drop for Arc<T> {
 unsafe impl<T: ?Sized + Send + Sync> Send for Arc<T> {}
 unsafe impl<T: ?Sized + Send + Sync> Sync for Arc<T> {}
 
-#[derive(Debug)]
 pub struct Weak<T: ?Sized> {
 	ptr: NonNull<ArcInner<T>>,
 }
@@ -225,6 +225,12 @@ unsafe impl<#[may_dangle] T: ?Sized> Drop for Weak<T> {
 			allocer.allocator().dealloc_orig(allocation);
 		}
 	}
+}
+
+impl<T: ?Sized + fmt::Debug> fmt::Debug for Weak<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "(Weak)")
+    }
 }
 
 unsafe impl<T: ?Sized + Send + Sync> Send for Weak<T> {}

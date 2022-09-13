@@ -9,6 +9,7 @@ make_id_type!(Pid);
 
 static NEXT_PID: AtomicUsize = AtomicUsize::new(0);
 
+#[derive(Debug)]
 pub struct Process {
     pid: Pid,
 }
