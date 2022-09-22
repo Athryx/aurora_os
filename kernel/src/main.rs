@@ -27,11 +27,14 @@
 mod alloc;
 mod arch;
 mod acpi;
+mod int;
 mod cap;
 mod container;
 mod mem;
+//mod vmem;
 mod sync;
 mod sched;
+//mod time;
 
 mod consts;
 mod hwa_iter;
@@ -45,6 +48,9 @@ mod prelude;
 
 use core::{panic::PanicInfo, sync::atomic::AtomicUsize};
 
+use acpi::SdtType;
+use int::{idt::Idt, pic, /*apic*/};
+//use time::pit;
 use prelude::*;
 use arch::x64::*;
 use mb2::BootInfo;
@@ -72,15 +78,29 @@ fn init(boot_info_addr: usize) -> KResult<()> {
 	let boot_info = unsafe { BootInfo::new(boot_info_addr) };
 
 	unsafe {
-		alloc::init(&boot_info.memory_map);
+		alloc::init(&boot_info.memory_map)?;
 	}
 
 	gs_data::init(GsData {
 		temp_syscall_return_rip: AtomicUsize::new(0),
 		prid: Prid::from(0),
+		idt: Idt::new(),
 	});
 
-	sched::init();
+	sched::init()?;
+
+	pic::disable();
+	//pit::disable();
+
+	let acpi_madt = unsafe {
+		boot_info.rsdt.get_table(SdtType::Madt).unwrap()
+	};
+	let madt = acpi_madt.assume_madt().unwrap();
+
+	unsafe {
+		//let ap_ids = apic::init(madt);
+		//apic::smp_init(ap_ids, ap_code_zone, ap_addr_space);
+	}
 
 	Ok(())
 }
@@ -94,8 +114,19 @@ pub extern "C" fn _start(boot_info_addr: usize) -> ! {
 
 	println!("aurora v0.0.1");
 
+	// TEMP
+	eprintln!("{:?}", *crate::consts::AP_DATA);
+
 	test();
 
+	loop {
+		hlt();
+	}
+}
+
+// rust entry point on ap cores, called by ap_start.asm
+#[no_mangle]
+pub extern "C" fn _ap_start(id: usize, stack_top: usize) -> ! {
 	loop {
 		hlt();
 	}

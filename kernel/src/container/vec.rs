@@ -127,9 +127,9 @@ impl<T> Vec<T> {
 		}
 	}
 
-	pub fn try_with_capacity(allocer: AllocRef, cap: usize) -> KResult<Self> {
+	pub fn try_with_capacity(allocer: AllocRef, capacity: usize) -> KResult<Self> {
 		Ok(Vec {
-			inner: RawVec::try_with_capacity(allocer, cap)?,
+			inner: RawVec::try_with_capacity(allocer, capacity)?,
 			len: 0,
 		})
 	}
@@ -152,8 +152,12 @@ impl<T> Vec<T> {
 		self.len
 	}
 
-	pub fn cap(&self) -> usize {
+	pub fn capacity(&self) -> usize {
 		self.inner.cap
+	}
+
+	pub fn clear(&mut self) {
+		while let Some(_) = self.pop() {}
 	}
 
 	pub fn as_ptr(&self) -> *const T {
@@ -180,6 +184,10 @@ impl<T> Vec<T> {
 		self.inner.allocer.allocator()
 	}
 
+	pub fn alloc_ref(&self) -> AllocRef {
+		self.inner.allocer.clone()
+	}
+
 	pub fn get<I: SliceIndex<[T]>>(&self, index: I) -> Option<&I::Output> {
 		index.get(self)
 	}
@@ -189,7 +197,7 @@ impl<T> Vec<T> {
 	}
 
 	pub fn push(&mut self, object: T) -> KResult<()> {
-		if self.len == self.cap() {
+		if self.len == self.capacity() {
 			self.inner.try_grow()?;
 		}
 
@@ -217,7 +225,7 @@ impl<T> Vec<T> {
 	pub fn insert(&mut self, index: usize, object: T) -> KResult<()> {
 		assert!(index <= self.len, "index out of bounds");
 
-		if self.len == self.cap() {
+		if self.len == self.capacity() {
 			self.inner.try_grow()?;
 		}
 
@@ -334,7 +342,7 @@ impl<T: fmt::Debug> fmt::Debug for Vec<T> {
 
 impl<T> Drop for Vec<T> {
 	fn drop(&mut self) {
-		while let Some(_) = self.pop() {}
+		self.clear();
 	}
 }
 

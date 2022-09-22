@@ -4,6 +4,7 @@ mod vecset;
 mod r#box;
 mod arc;
 mod linked_list;
+mod hash_map;
 //mod nlvec;
 //mod nlvecmap;
 

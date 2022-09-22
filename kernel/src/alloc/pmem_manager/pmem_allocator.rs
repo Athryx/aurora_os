@@ -136,6 +136,10 @@ impl<'a> TreeNode<'a> {
 		self.allocator.max_size / (1 << self.level())
 	}
 
+	fn virt_range(&self) -> AVirtRange {
+		AVirtRange::new(VirtAddr::new(self.addr()), self.size())
+	}
+
 	fn level(&self) -> usize {
 		log2(self.index + 1)
 	}
@@ -151,13 +155,13 @@ impl<'a> TreeNode<'a> {
 #[derive(Debug)]
 pub struct PmemAllocator {
 	// start and end address of allocatable memory
-	addr_range: AVirtRange,
+	pub addr_range: AVirtRange,
 
 	// pointer and length of tree array
-	tree: *const [AtomicU8],
+	pub tree: *const [AtomicU8],
 
 	// pointer and length of index arrray
-	index: *const [AtomicUsize],
+	pub index: *const [AtomicUsize],
 
 	// maximum depth of the tree
 	depth: usize,

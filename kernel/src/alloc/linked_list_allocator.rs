@@ -1,5 +1,4 @@
 use core::mem;
-use core::sync::atomic::AtomicPtr;
 use core::cell::Cell;
 use core::cmp::max;
 

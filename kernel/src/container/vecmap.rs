@@ -1,6 +1,6 @@
 use core::cmp::Ordering;
 use core::ops::{RangeBounds, Bound};
-use core::slice::Iter;
+use core::slice::{Iter, IterMut};
 use core::iter::FusedIterator;
 
 use crate::prelude::*;
@@ -68,11 +68,15 @@ impl<K: Ord, V> VecMap<K, V> {
 	}
 
 	pub fn cap(&self) -> usize {
-		self.data.cap()
+		self.data.capacity()
 	}
 
 	pub fn allocator(&mut self) -> &dyn HeapAllocator {
 		self.data.allocator()
+	}
+
+	pub fn alloc_ref(&self) -> AllocRef {
+		self.data.alloc_ref()
 	}
 
 	pub fn get(&self, key: &K) -> Option<&V> {
@@ -81,6 +85,16 @@ impl<K: Ord, V> VecMap<K, V> {
 
 	pub fn get_mut(&mut self, key: &K) -> Option<&mut V> {
 		self.search(key).ok().map(|index| &mut self.data[index].value)
+	}
+
+	pub fn get_max_mut(&mut self) -> Option<(&K, &mut V)> {
+		let len = self.len();
+		if len == 0 {
+			None
+		} else {
+			let node = &mut self.data[len - 1];
+			Some((&node.key, &mut node.value))
+		}
 	}
 
 	pub fn pop_max(&mut self) -> Option<(K, V)> {
@@ -149,8 +163,18 @@ impl<K: Ord, V> VecMap<K, V> {
 		self.range(..key).next_back()
 	}
 
-	// panics if start > end, or start equals end and both are excluded
-	pub fn range<R: RangeBounds<K>>(&self, range: R) -> RangeIter<'_, K, V> {
+	pub fn get_gt_mut(&mut self, key: &K) -> Option<(&K, &mut V)> {
+		self.range_mut(key..).next()
+	}
+
+	pub fn get_lt_mut(&mut self, key: &K) -> Option<(&K, &mut V)> {
+		self.range_mut(..key).next_back()
+	}
+
+	// used for range and range mute methods
+	// given a range of keys, will return a start and end bound for the indexes in the vecmap
+	// that these keys start and end at
+	fn get_range_iter_bounds<R: RangeBounds<K>>(&self, range: R) -> (Bound<usize>, Bound<usize>) {
 		let start_bound = range.start_bound();
 		let end_bound = range.end_bound();
 
@@ -167,23 +191,59 @@ impl<K: Ord, V> VecMap<K, V> {
 			_ => (),
 		}
 
-		let start = range.start_bound().map(|key| {
-			match self.search(&key) {
-				Ok(index) => index,
-				Err(index) => index + 1,
-			}
-		});
+		let start = match range.start_bound() {
+			Bound::Included(key) => {
+				match self.search(key) {
+					Ok(index) => Bound::Included(index),
+					Err(index) => Bound::Included(index),
+				}
+			},
+			Bound::Excluded(key) => {
+				match self.search(key) {
+					Ok(index) => Bound::Excluded(index),
+					Err(index) => Bound::Included(index),
+				}
+			},
+			Bound::Unbounded => Bound::Unbounded,
+		};
 
-		let end = range.start_bound().map(|key| {
-			match self.search(&key) {
-				Ok(index) => index,
-				Err(index) => index - 1,
-			}
-		});
+		let end = match range.end_bound() {
+			Bound::Included(key) => {
+				match self.search(key) {
+					Ok(index) => Bound::Included(index),
+					Err(index) => Bound::Excluded(index),
+				}
+			},
+			Bound::Excluded(key) => {
+				match self.search(key) {
+					Ok(index) => Bound::Excluded(index),
+					Err(index) => Bound::Excluded(index),
+				}
+			},
+			Bound::Unbounded => Bound::Unbounded,
+		};
+
+		(start, end)
+	}
+
+	// panics if start > end, or start equals end and both are excluded
+	pub fn range<R: RangeBounds<K>>(&self, range: R) -> RangeIter<'_, K, V> {
+		let (start, end) = self.get_range_iter_bounds(range);
 
 		// panic safety: start and end should already be in the vec
 		let slice_iter = self.data[(start, end)].iter();
 		RangeIter {
+			inner: slice_iter,
+		}
+	}
+
+	// panics if start > end, or start equals end and both are excluded
+	pub fn range_mut<R: RangeBounds<K>>(&mut self, range: R) -> RangeIterMut<'_, K, V> {
+		let (start, end) = self.get_range_iter_bounds(range);
+
+		// panic safety: start and end should already be in the vec
+		let slice_iter = self.data[(start, end)].iter_mut();
+		RangeIterMut {
 			inner: slice_iter,
 		}
 	}
@@ -226,3 +286,28 @@ impl<K: Ord, V> DoubleEndedIterator for RangeIter<'_, K, V> {
 
 impl<K: Ord, V> ExactSizeIterator for RangeIter<'_, K, V> {}
 impl<K: Ord, V> FusedIterator for RangeIter<'_, K, V> {}
+
+pub struct RangeIterMut<'a, K: Ord, V> {
+	inner: IterMut<'a, MapNode<K, V>>,
+}
+
+impl<'a, K: Ord, V> Iterator for RangeIterMut<'a, K, V> {
+	type Item = (&'a K, &'a mut V);
+
+	fn next(&mut self) -> Option<Self::Item> {
+		self.inner.next().map(|node| (&node.key, &mut node.value))
+	}
+
+	fn size_hint(&self) -> (usize, Option<usize>) {
+		self.inner.size_hint()
+	}
+}
+
+impl<K: Ord, V> DoubleEndedIterator for RangeIterMut<'_, K, V> {
+	fn next_back(&mut self) -> Option<Self::Item> {
+		self.inner.next_back().map(|node| (&node.key, &mut node.value))
+	}
+}
+
+impl<K: Ord, V> ExactSizeIterator for RangeIterMut<'_, K, V> {}
+impl<K: Ord, V> FusedIterator for RangeIterMut<'_, K, V> {}

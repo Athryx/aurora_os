@@ -13,7 +13,7 @@ align 8
 ap_data:
 .cr3:
 	resd 1
-.idc;
+.idc:
 	resd 1
 .stacks:
 	resq 1

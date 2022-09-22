@@ -1,3 +1,4 @@
+use crate::prelude::*;
 use crate::container::LinkedList;
 use crate::container::Vec;
 use crate::alloc::root_alloc_ref;
@@ -32,8 +33,8 @@ impl ThreadMap {
     }
 
     // each cpu will call this function to make sure there are enough elments in each vector
-    // that stores a cpu local data structur in the thread map
-    pub fn ensure_cpu(&mut self) {
-        self.current_thread.push(LinkedList::new()).expect("could not set up thread map cpu local data");
+    // that stores a cpu local data structure in the thread map
+    pub fn ensure_cpu(&mut self) -> KResult<()> {
+        self.current_thread.push(LinkedList::new())
     }
 }

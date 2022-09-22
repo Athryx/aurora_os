@@ -123,7 +123,7 @@ int_handler_ %+ %1 %+ :
 	iretq
 
 	; do not change any registers
-	.restore
+	.restore:
 	load_old_regs
 
 	add rsp, registers_size
@@ -165,7 +165,7 @@ int_handler_ %+ %1 %+ :
 	iretq
 
 	; do not change any registers
-	.restore
+	.restore:
 	load_old_regs
 
 	add rsp, registers_size
@@ -208,7 +208,7 @@ int_handler_ %+ %1 %+ :
 	iretq
 
 	; do not change any registers
-	.restore
+	.restore:
 	load_old_regs
 
 	add rsp, registers_size

@@ -32,12 +32,16 @@ lazy_static! {
 	pub static ref KERNEL_VMA: usize = unsafe { &__KERNEL_VMA } as *const _ as usize;
 	pub static ref KERNEL_LMA: usize = unsafe { &__KERNEL_LMA } as *const _ as usize;
 
-	// NOTE: these are virtual addressess
-	// don't use for referencing ap code
 	pub static ref AP_PHYS_START: usize = unsafe { &__AP_PHYS_START } as *const _ as usize;
 	pub static ref AP_CODE_START: usize = unsafe { &__AP_CODE_START } as *const _ as usize;
 	pub static ref AP_CODE_END: usize = unsafe { &__AP_CODE_END } as *const _ as usize;
 	pub static ref AP_DATA: usize = unsafe { &ap_data } as *const _ as usize;
+
+	// the physical memory range that the code zone will be copied to
+	pub static ref AP_CODE_RANGE: AVirtRange = AVirtRange::new_aligned(
+		PhysAddr::new(*AP_CODE_START).to_virt(),
+		*AP_CODE_END - *AP_CODE_START,
+	);
 
 	pub static ref TEXT_START: usize = unsafe { &__TEXT_START } as *const _ as usize;
 	pub static ref TEXT_END: usize = unsafe { &__TEXT_END } as *const _ as usize;

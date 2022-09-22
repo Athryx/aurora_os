@@ -3,28 +3,27 @@ use crate::process::Process;
 use super::stack::Stack;
 
 #[derive(Debug, Clone, Copy)]
-struct Regsiters {
-    rax: usize,
-    rbx: usize,
-    rcx: usize,
-    rdx: usize,
-    rdi: usize,
-    rsi: usize,
-    rbp: usize,
-    rsp: usize,
-    r8: usize,
-    r9: usize,
-    r10: usize,
-    r11: usize,
-    r12: usize,
-    r13: usize,
-    r14: usize,
-    r15: usize,
-    rflags: usize,
-    rip: usize,
-    cs: usize,
-    ss: usize,
-    // TODO: maybe save other segment registers?
+pub struct Registers {
+    pub rax: usize,
+    pub rbx: usize,
+    pub rcx: usize,
+    pub rdx: usize,
+    pub rdi: usize,
+    pub rsi: usize,
+    pub rbp: usize,
+    pub rsp: usize,
+    pub r8: usize,
+    pub r9: usize,
+    pub r10: usize,
+    pub r11: usize,
+    pub r12: usize,
+    pub r13: usize,
+    pub r14: usize,
+    pub r15: usize,
+    pub rflags: usize,
+    pub rip: usize,
+    pub cs: usize,
+    pub ss: usize,
 }
 
 crate::make_id_type!(Tid);
@@ -40,7 +39,7 @@ pub enum ThreadState {
 pub struct Thread {
     tid: Tid,
     pub process: Weak<Process>,
-    regs: Regsiters,
+    regs: Registers,
     stack: Stack,
 
     list_node_data: ListNodeData<Thread>,

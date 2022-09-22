@@ -1,5 +1,4 @@
 mod linked_list_allocator;
-mod pmem_allocator;
 mod pmem_manager;
 mod heap_allocator;
 mod page_allocator;
@@ -12,7 +11,8 @@ pub use page_allocator::{PageAllocator, PaRef};
 
 use spin::Once;
 
-use crate::mb2::MemoryMap;
+use crate::prelude::*;
+use crate::{mb2::MemoryMap, mem::Allocation};
 use pmem_manager::PmemManager;
 use linked_list_allocator::LinkedListAllocator;
 use cap_allocator::CapAllocator;
@@ -48,7 +48,7 @@ pub fn root_alloc_ref() -> OrigRef {
 }
 
 // safety: must call before ever calling zm
-pub unsafe fn init(mem_map: &MemoryMap) {
+pub unsafe fn init(mem_map: &MemoryMap) -> KResult<()> {
 	unsafe {
 		let mut total_pages = 0;
 		PMEM_MANAGER.call_once(|| {
@@ -65,5 +65,7 @@ pub unsafe fn init(mem_map: &MemoryMap) {
 			Arc::new(CapAllocator::new_root(total_pages), heap_ref())
 				.expect("failed to initilize root cap allocator")
 		});
+
+		Ok(())
 	}
 }

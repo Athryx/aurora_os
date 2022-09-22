@@ -3,6 +3,7 @@ use core::sync::atomic::AtomicUsize;
 use crate::container::Box;
 use crate::alloc::root_alloc_ref;
 use crate::arch::x64::{gs_addr, wrmsr, GSBASE_MSR, GSBASEK_MSR};
+use crate::int::idt::Idt;
 
 crate::make_id_type!(Prid);
 
@@ -15,6 +16,8 @@ pub struct GsData {
     pub temp_syscall_return_rip: AtomicUsize,
     /// Id of the current processor
     pub prid: Prid,
+    /// interrupt descriptor table for current cpu
+    pub idt: Idt,
 }
 
 pub fn init(gs_data: GsData) {

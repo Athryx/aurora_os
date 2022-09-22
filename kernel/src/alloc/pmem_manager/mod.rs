@@ -1,3 +1,6 @@
+mod pmem_allocator;
+mod zone_map;
+
 use core::mem::MaybeUninit;
 use core::cmp::min;
 use core::alloc::Layout;
@@ -5,31 +8,31 @@ use core::slice;
 use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 use crate::prelude::*;
+use pmem_allocator::PmemAllocator;
+use zone_map::ZoneMap;
+use crate::consts::{AP_CODE_RANGE, AP_CODE_START, AP_CODE_END};
 use crate::mb2::{MemoryMap, MemoryRegionType};
-use crate::container::VecMap;
 use crate::mem::{Allocation, PageLayout};
-use super::pmem_allocator::PmemAllocator;
 use super::linked_list_allocator::LinkedListAllocator;
 use super::fixed_page_allocator::FixedPageAllocator;
 use super::{PageAllocator, PaRef, OrigAllocator, OrigRef};
 
 // metadata range
 enum MetaRange {
-	Main(usize, AVirtRange),
-	Meta(usize, UVirtRange),
+	Main(AVirtRange),
+	Meta(UVirtRange),
 }
 
-type MainMap = VecMap<usize, AVirtRange>;
-type MetaMap = VecMap<usize, UVirtRange>;
-
+type MainMap = ZoneMap<AVirtRange>;
+type MetaMap = ZoneMap<UVirtRange>;
 
 impl MetaRange {
 	fn new(size: usize, main_map: &mut MainMap, meta_map: &mut MetaMap) -> Option<Self> {
-		match meta_map.remove_gt(&size) {
-			Some((size, range)) => Some(MetaRange::Meta(size, range)),
+		match meta_map.remove_zone_at_least_size(size) {
+			Some(range) => Some(MetaRange::Meta(range)),
 			None => {
-				match main_map.remove_gt(&size) {
-					Some((size, range)) => Some(MetaRange::Main(size, range)),
+				match main_map.remove_zone_at_least_size(size) {
+					Some(range) => Some(MetaRange::Main(range)),
 					None => None,
 				}
 			},
@@ -38,19 +41,19 @@ impl MetaRange {
 
 	fn insert_into(&self, main_map: &mut MainMap, meta_map: &mut MetaMap) {
 		match *self {
-			Self::Main(size, range) => {
-				main_map.insert(size, range).unwrap();
+			Self::Main(range) => {
+				main_map.insert(range).unwrap();
 			},
-			Self::Meta(size, range) => {
-				meta_map.insert(size, range).unwrap();
+			Self::Meta(range) => {
+				meta_map.insert(range).unwrap();
 			},
 		}
 	}
 
 	fn range(&self) -> UVirtRange {
 		match self {
-			Self::Main(_, range) => range.as_unaligned(),
-			Self::Meta(_, range) => *range,
+			Self::Main(range) => range.as_unaligned(),
+			Self::Meta(range) => *range,
 		}
 	}
 }
@@ -68,7 +71,17 @@ impl PmemManager {
 		// iterator over usable memory zones as a VirtRange
 		let usable = mem_map.iter()
 			.filter(|zone| matches!(zone, MemoryRegionType::Usable(_)))
-			.filter_map(|mem| mem.range().to_virt().as_inside_aligned());
+			.filter_map(|mem| mem.range().to_virt().as_inside_aligned())
+            .flat_map(|mem| {
+                // FIXME: this is really ugly code
+                // filters out ap code zone from usable memory range
+                if mem.contains_range(&*AP_CODE_RANGE) {
+                    let (start, end) = mem.split_at(*AP_CODE_RANGE);
+                    [start, end].into_iter()
+                } else {
+                    [Some(mem), None].into_iter()
+                }.filter_map(|elem| elem)
+            });
 
 		// biggest usable virt range
 		// align to pages because we will use this for the initial allocator
@@ -109,22 +122,11 @@ impl PmemManager {
 			OrigRef::new_raw(temp)
 		};
 
-		// maximum number of level zones that could exist
-		// TODO: find out how to actually calculate this, but this is good enough for now
-		let max_zones = usable.clone()
-			.fold(0, |acc, range| {
-				acc + 2 * log2(range.size()) - 1
-			});
-
 		// holds zones of memory that have a size of power of 2 and an alignmant equal to their size
-		// TODO: maybe use a better data structure than vec
-		// because some elements are removed from the middle, vec is not an optimal data structure,
-		// but it is the only one written at the moment, and this code is run once and is not performance critical
-		let mut zones = VecMap::try_with_capacity(aref.downgrade(), max_zones)
-			.expect("not enough memory to initialize physical memory manager");
+		let mut zones = ZoneMap::new(aref.downgrade());
 
 		// holds zones taken from zones vecmap that are used to store metadata
-		let mut metadata_zones: VecMap<usize, UVirtRange> = VecMap::new(aref.downgrade());
+		let mut metadata_zones = ZoneMap::new(aref.downgrade());
 
 		for region in usable {
 			let mut start = region.as_usize();
@@ -134,7 +136,7 @@ impl PmemManager {
 				let size = min(align_of(start), 1 << log2(end - start));
 				// because region is aligned, this should be aligned
 				let range = AVirtRange::new(VirtAddr::new(start), size);
-				zones.insert(range.size(), range).expect("vec was not made big enough");
+				zones.insert(range).expect("not enough memory to build zone map for pmem manager");
 
 				start += size;
 			}
@@ -148,7 +150,7 @@ impl PmemManager {
 		let size = allocator_count * size_of::<PmemAllocator>();
 
 		// get a region of memory to store all of the allocators
-		let (_, orig_allocator_range) = zones.remove_gt(&size).unwrap();
+		let orig_allocator_range = zones.remove_zone_at_least_size(size).unwrap();
 		let mut orig_allocator_range = orig_allocator_range.as_unaligned();
 
 		assert!(!init_heap_vrange.contains_range(&orig_allocator_range), "tried to use memory range for allocator initilizer heap to store allocator objects");
@@ -158,7 +160,7 @@ impl PmemManager {
 
 		// store the other part in the metadata array
 		if orig_allocator_range.size() != 0 {
-			metadata_zones.insert(orig_allocator_range.size(), orig_allocator_range).unwrap();
+			metadata_zones.insert(orig_allocator_range).unwrap();
 		}
 
 		let allocator_slice = unsafe {
@@ -171,7 +173,7 @@ impl PmemManager {
 		// total amount of allocatable memory
 		let mut total_mem_size = 0;
 
-		while let Some((current_size, current_zone)) = zones.pop_max() {
+		while let Some(current_zone) = zones.remove_largest_zone() {
 			let (unaligned_tree_size, index_size) = PmemAllocator::required_tree_index_size(current_zone, PAGE_SIZE).unwrap();
 			let tree_size = align_up(unaligned_tree_size, size_of::<usize>());
 
@@ -179,7 +181,7 @@ impl PmemManager {
 				data
 			} else {
 				// give up on using this zone, use it for metadata instead
-				metadata_zones.insert(current_size, current_zone.as_unaligned()).unwrap();
+				metadata_zones.insert(current_zone.as_unaligned()).unwrap();
 				continue;
 			};
 
@@ -195,7 +197,7 @@ impl PmemManager {
 
 				// put this zone back into the metadata map
 				if range.size() != 0 {
-					metadata_zones.insert(range.size(), range).unwrap();
+					metadata_zones.insert(range).unwrap();
 				}
 			} else {
 				if let Some(index_data) = MetaRange::new(index_size, &mut zones, &mut metadata_zones) {
@@ -208,15 +210,15 @@ impl PmemManager {
 
 					// put this zone back into the metadata map
 					if orig_tree_range.size() != 0 {
-						metadata_zones.insert(orig_tree_range.size(), orig_tree_range).unwrap();
+						metadata_zones.insert(orig_tree_range).unwrap();
 					}
 
 					if orig_index_range.size() != 0 {
-						metadata_zones.insert(orig_index_range.size(), orig_index_range).unwrap();
+						metadata_zones.insert(orig_index_range).unwrap();
 					}
 				} else {
 					// give up on using this zone, use it for metadata instead
-					metadata_zones.insert(current_size, current_zone.as_unaligned()).unwrap();
+					metadata_zones.insert(current_zone.as_unaligned()).unwrap();
 
 					// restore old zones before moving on to next zone
 					tree_data.insert_into(&mut zones, &mut metadata_zones);

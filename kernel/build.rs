@@ -60,9 +60,9 @@ fn asm(out_dir: &str) {
 	let files = vec![
 		"boot/boot.asm",
 		"boot/long_init.asm",
-		//"boot/ap_boot.asm",
+		"boot/ap_boot.asm",
 		"misc.asm",
-		//"int/int.asm",
+		"int/int.asm",
 		//"syscall/syscall.asm",
 		//"resources.asm",
 	];
