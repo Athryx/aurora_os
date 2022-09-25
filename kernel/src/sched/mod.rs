@@ -1,13 +1,13 @@
+mod stack;
 mod thread;
 mod thread_map;
-mod stack;
 
 use spin::Once;
-
-use crate::prelude::*;
 pub use thread::Registers;
 use thread::Thread;
 use thread_map::ThreadMap;
+
+use crate::prelude::*;
 use crate::sync::IMutex;
 
 static THREAD_MAP: Once<IMutex<ThreadMap>> = Once::new();

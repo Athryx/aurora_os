@@ -1,14 +1,13 @@
 max_width = 200
 unstable_features = true
 
-blank_lines_upper_bound = 150
-brace_style = "SameLineWhere"
-format_macro_matchers = true
-hard_tabs = true
-match_block_trailing_comma = true
-imports_granularity = "Module"
+blank_lines_upper_bound = 2
 overflow_delimited_expr = true
-reorder_imports = false
+format_macro_matchers = true
+match_block_trailing_comma = true
+
+imports_granularity = "Module"
 group_imports = "StdExternalCrate"
+
 struct_lit_single_line = false
 use_field_init_shorthand = true

@@ -1,9 +1,8 @@
-use crate::prelude::*;
-use crate::container::LinkedList;
-use crate::container::Vec;
-use crate::alloc::root_alloc_ref;
-use crate::gs_data::prid;
 use super::thread::Thread;
+use crate::alloc::root_alloc_ref;
+use crate::container::{LinkedList, Vec};
+use crate::gs_data::prid;
+use crate::prelude::*;
 
 #[derive(Debug)]
 pub struct ThreadMap {

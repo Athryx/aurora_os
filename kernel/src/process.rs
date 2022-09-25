@@ -1,9 +1,9 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::prelude::*;
-use crate::cap::{CapObject, StrongCapability, CapFlags};
 use crate::alloc::OrigRef;
+use crate::cap::{CapFlags, CapObject, StrongCapability};
 use crate::make_id_type;
+use crate::prelude::*;
 
 make_id_type!(Pid);
 
@@ -16,13 +16,16 @@ pub struct Process {
 
 impl Process {
     pub fn new(allocer: OrigRef) -> KResult<StrongCapability<Self>> {
-        StrongCapability::new(Process {
-            pid: Pid::from(NEXT_PID.fetch_add(1, Ordering::Relaxed)),
-        }, CapFlags::READ | CapFlags::PROD | CapFlags::WRITE, allocer)
+        StrongCapability::new(
+            Process {
+                pid: Pid::from(NEXT_PID.fetch_add(1, Ordering::Relaxed)),
+            },
+            CapFlags::READ | CapFlags::PROD | CapFlags::WRITE,
+            allocer,
+        )
     }
 }
 
 impl CapObject for Process {
-    fn cap_drop(&self) {
-    }
+    fn cap_drop(&self) {}
 }

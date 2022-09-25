@@ -1,7 +1,7 @@
 use core::arch::asm;
 
-use crate::prelude::*;
 use crate::arch::x64::CPUPrivLevel;
+use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy)]
 enum IntHandlerType {
@@ -91,7 +91,7 @@ impl Idt {
 
     pub fn new() -> Self {
         let mut out = Idt {
-            entries: [IdtEntry::none(); Self::NUM_ENTRIES]
+            entries: [IdtEntry::none(); Self::NUM_ENTRIES],
         };
 
         // CPU exception interrupt vectors

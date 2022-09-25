@@ -1,6 +1,6 @@
-use crate::prelude::*;
 use crate::alloc::AllocRef;
-use crate::container::{VecMap, Vec};
+use crate::container::{Vec, VecMap};
+use crate::prelude::*;
 
 // TODO: maybe use a better data structure than vec
 // because some elements are removed from the middle, vec is not an optimal data structure,

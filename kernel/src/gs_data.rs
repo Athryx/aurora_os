@@ -1,8 +1,8 @@
 use core::sync::atomic::AtomicUsize;
 
-use crate::container::Box;
 use crate::alloc::root_alloc_ref;
-use crate::arch::x64::{gs_addr, wrmsr, GSBASE_MSR, GSBASEK_MSR};
+use crate::arch::x64::{gs_addr, wrmsr, GSBASEK_MSR, GSBASE_MSR};
+use crate::container::Box;
 use crate::int::idt::Idt;
 
 crate::make_id_type!(Prid);
@@ -21,19 +21,14 @@ pub struct GsData {
 }
 
 pub fn init(gs_data: GsData) {
-    let (ptr, _) = Box::into_raw(
-        Box::new(gs_data, root_alloc_ref())
-            .expect("Failed to allocate gs data struct")
-    );
+    let (ptr, _) = Box::into_raw(Box::new(gs_data, root_alloc_ref()).expect("Failed to allocate gs data struct"));
 
     wrmsr(GSBASE_MSR, ptr as u64);
     wrmsr(GSBASEK_MSR, ptr as u64);
 }
 
 pub fn cpu_local_data() -> &'static GsData {
-    unsafe {
-        (gs_addr() as *const GsData).as_ref().unwrap()
-    }
+    unsafe { (gs_addr() as *const GsData).as_ref().unwrap() }
 }
 
 pub fn prid() -> Prid {

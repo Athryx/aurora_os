@@ -1,6 +1,6 @@
-use crate::container::{Weak, ListNodeData, ListNode};
-use crate::process::Process;
 use super::stack::Stack;
+use crate::container::{ListNode, ListNodeData, Weak};
+use crate::process::Process;
 
 #[derive(Debug, Clone, Copy)]
 pub struct Registers {

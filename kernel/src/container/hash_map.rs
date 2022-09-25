@@ -1,10 +1,12 @@
-use core::{hash::{Hash, Hasher}, iter::FusedIterator, ops::{Index, IndexMut}};
+use core::hash::{Hash, Hasher};
+use core::iter::FusedIterator;
+use core::ops::{Index, IndexMut};
 
 use siphasher::sip::SipHasher;
 
-use crate::prelude::*;
-use crate::alloc::AllocRef;
 use super::{vec, Vec};
+use crate::alloc::AllocRef;
+use crate::prelude::*;
 
 enum HashMapCell<K, V> {
     Empty,
@@ -173,7 +175,7 @@ impl<'a, K: Hash + Eq, V> Iterator for Iter<'a, K, V> {
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(data) = self.0.next() {
             if let HashMapCell::Occupied(key, value) = data {
-                return Some((key, value))
+                return Some((key, value));
             }
         }
         None
@@ -190,7 +192,7 @@ impl<'a, K: Hash + Eq, V> Iterator for IterMut<'a, K, V> {
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(data) = self.0.next() {
             if let HashMapCell::Occupied(key, value) = data {
-                return Some((key, value))
+                return Some((key, value));
             }
         }
         None
@@ -207,7 +209,7 @@ impl<K: Hash + Eq, V> Iterator for IntoIter<K, V> {
     fn next(&mut self) -> Option<Self::Item> {
         while let Some(data) = self.0.next() {
             if let HashMapCell::Occupied(key, value) = data {
-                return Some((key, value))
+                return Some((key, value));
             }
         }
         None

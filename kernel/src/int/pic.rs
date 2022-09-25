@@ -32,37 +32,36 @@ const PICS_DISABLE_OFFSET: u8 = 0xf8;
 
 // from osdev wiki
 // offsets must be multiple of 8
-pub fn remap(moffset: u8, soffset: u8)
-{
-	// save masks
-	let s1 = inb(PICM_DATA);
-	let s2 = inb(PICS_DATA);
+pub fn remap(moffset: u8, soffset: u8) {
+    // save masks
+    let s1 = inb(PICM_DATA);
+    let s2 = inb(PICS_DATA);
 
-	// tell pics its time to remap
-	outb(PICM_COMMAND, ICW1_INIT | ICW1_ICW4);
-	outb(PICS_COMMAND, ICW1_INIT | ICW1_ICW4);
+    // tell pics its time to remap
+    outb(PICM_COMMAND, ICW1_INIT | ICW1_ICW4);
+    outb(PICS_COMMAND, ICW1_INIT | ICW1_ICW4);
 
-	// tell them offset
-	outb(PICM_DATA, moffset);
-	outb(PICS_DATA, soffset);
+    // tell them offset
+    outb(PICM_DATA, moffset);
+    outb(PICS_DATA, soffset);
 
-	// tell master pic it has slave pic chained at pin 2
-	outb(PICM_DATA, 0b100);
-	outb(PICS_DATA, 0b10);
+    // tell master pic it has slave pic chained at pin 2
+    outb(PICM_DATA, 0b100);
+    outb(PICS_DATA, 0b10);
 
-	outb(PICM_DATA, ICW4_8086);
-	outb(PICS_DATA, ICW4_8086);
+    outb(PICM_DATA, ICW4_8086);
+    outb(PICS_DATA, ICW4_8086);
 
-	// restore masks from earlier
-	outb(PICM_DATA, s1);
-	outb(PICS_DATA, s2);
+    // restore masks from earlier
+    outb(PICM_DATA, s1);
+    outb(PICS_DATA, s2);
 }
 
 // disable the pic
 pub fn disable() {
-	// need to remap it to higher interrupt number so spurious interrupts dont cause problems
-	remap(PICM_DISABLE_OFFSET, PICS_DISABLE_OFFSET);
-	// mask all incoming interrupts, spurious interrupts might still occur
-	outb(PICM_DATA, 0xff);
-	outb(PICS_DATA, 0xff);
+    // need to remap it to higher interrupt number so spurious interrupts dont cause problems
+    remap(PICM_DISABLE_OFFSET, PICS_DISABLE_OFFSET);
+    // mask all incoming interrupts, spurious interrupts might still occur
+    outb(PICM_DATA, 0xff);
+    outb(PICS_DATA, 0xff);
 }

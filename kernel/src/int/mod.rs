@@ -2,7 +2,6 @@ use crate::sched::Registers;
 
 pub mod idt;
 pub mod pic;
-//pub mod apic;
 
 #[no_mangle]
 extern "C" fn rust_int_handler(int_num: u8, regs: &mut Registers, error_code: u64) -> bool {
@@ -10,6 +9,4 @@ extern "C" fn rust_int_handler(int_num: u8, regs: &mut Registers, error_code: u6
 }
 
 #[no_mangle]
-extern "C" fn eoi() {
-
-}
+extern "C" fn eoi() {}
