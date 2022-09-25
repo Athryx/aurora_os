@@ -128,15 +128,15 @@ impl<K: Hash + Eq, V> HashMap<K, V> {
     pub fn remove(&mut self, key: &K) -> Option<V> {
         let i = self.get_index_of_key(key)?;
         if let HashMapCell::Occupied(_, value) = core::mem::replace(&mut self.data[i], HashMapCell::Deleted) {
-            return Some(value);
+            Some(value)
         } else {
-            return None;
+            None
         }
     }
 
     pub fn get(&self, key: &K) -> Option<&V> {
         if let HashMapCell::Occupied(_, ref value) = self.data[self.get_index_of_key(key)?] {
-            return Some(value);
+            Some(value)
         } else {
             unreachable!();
         }
@@ -146,7 +146,7 @@ impl<K: Hash + Eq, V> HashMap<K, V> {
         // do this to make borrow checker happy
         let index = self.get_index_of_key(key)?;
         if let HashMapCell::Occupied(_, ref mut value) = self.data[index] {
-            return Some(value);
+            Some(value)
         } else {
             unreachable!();
         }
@@ -173,7 +173,7 @@ impl<'a, K: Hash + Eq, V> Iterator for Iter<'a, K, V> {
     type Item = (&'a K, &'a V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(data) = self.0.next() {
+        for data in self.0.by_ref() {
             if let HashMapCell::Occupied(key, value) = data {
                 return Some((key, value));
             }
@@ -190,7 +190,7 @@ impl<'a, K: Hash + Eq, V> Iterator for IterMut<'a, K, V> {
     type Item = (&'a K, &'a mut V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(data) = self.0.next() {
+        for data in self.0.by_ref() {
             if let HashMapCell::Occupied(key, value) = data {
                 return Some((key, value));
             }
@@ -207,7 +207,7 @@ impl<K: Hash + Eq, V> Iterator for IntoIter<K, V> {
     type Item = (K, V);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while let Some(data) = self.0.next() {
+        for data in self.0.by_ref() {
             if let HashMapCell::Occupied(key, value) = data {
                 return Some((key, value));
             }

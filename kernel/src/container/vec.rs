@@ -148,7 +148,7 @@ impl<T> Vec<T> {
     }
 
     pub fn clear(&mut self) {
-        while let Some(_) = self.pop() {}
+        while self.pop().is_some() {}
     }
 
     pub fn as_ptr(&self) -> *const T {
@@ -259,14 +259,14 @@ impl<T> Vec<T> {
         out
     }
 
-    pub fn iter<'a>(&'a self) -> Iter<'a, T> {
+    pub fn iter(&self) -> Iter<T> {
         Iter {
             inner: RawIter::new(self.as_slice()),
             marker: PhantomData,
         }
     }
 
-    pub fn iter_mut<'a>(&'a self) -> IterMut<'a, T> {
+    pub fn iter_mut(&self) -> IterMut<T> {
         IterMut {
             inner: RawIter::new(self.as_slice()),
             marker: PhantomData,
@@ -361,7 +361,7 @@ impl<T> Iterator for RawIter<T> {
             None
         } else {
             let out = self.start as *mut T;
-            self.start = self.start + Self::elem_size();
+            self.start += Self::elem_size();
             Some(out)
         }
     }
@@ -377,7 +377,7 @@ impl<T> DoubleEndedIterator for RawIter<T> {
         if self.start == self.end {
             None
         } else {
-            self.start = self.start - Self::elem_size();
+            self.start -= Self::elem_size();
             Some(self.start as *mut T)
         }
     }

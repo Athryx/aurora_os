@@ -206,7 +206,7 @@ impl HeapZone {
         };
 
         if let Some(nnode) = nnode {
-            if cnode.merge(&nnode) {
+            if cnode.merge(nnode) {
                 self.list.remove_node(nnode);
             }
         }

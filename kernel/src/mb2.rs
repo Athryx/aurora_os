@@ -291,10 +291,8 @@ impl BootInfo<'_> {
 
                 let regions = MemoryRegionType::new(region, initrd_range.expect("no initrd"));
 
-                for region in regions {
-                    if let Some(region) = region {
-                        memory_map.push(region);
-                    }
+                for region in regions.into_iter().flatten() {
+                    memory_map.push(region);
                 }
 
                 unsafe {

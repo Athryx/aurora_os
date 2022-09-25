@@ -13,14 +13,12 @@ fn asm(out_dir: &str) {}
 #[cfg(target_arch = "x86_64")]
 fn asm_file(file: &str, out_dir: &str) {
     let file = format!("{}/{}", ASM_DIR, file);
-    let out_name = file.replace("/", "-");
+    let out_name = file.replace('/', "-");
     let out_file = format!("lib{}.a", out_name);
     println!("cargo:rerun-if-changed={}", file);
 
-    let status;
-
-    if env::var("DEBUG").unwrap() == "true" {
-        status = Command::new("nasm")
+    let status = if env::var("DEBUG").unwrap() == "true" {
+        Command::new("nasm")
             .arg(file)
             .arg("-o")
             .arg(format!("{}/{}", out_dir, out_file))
@@ -31,9 +29,9 @@ fn asm_file(file: &str, out_dir: &str) {
             .arg("-F")
             .arg("Dwarf")
             .status()
-            .expect("couldn't run nasm");
+            .expect("couldn't run nasm")
     } else {
-        status = Command::new("nasm")
+        Command::new("nasm")
             .arg(file)
             .arg("-o")
             .arg(format!("{}/{}", out_dir, out_file))
@@ -43,8 +41,8 @@ fn asm_file(file: &str, out_dir: &str) {
             .arg("-F")
             .arg("Dwarf")
             .status()
-            .expect("couldn't run nasm");
-    }
+            .expect("couldn't run nasm")
+    };
 
     if !status.success() {
         panic!("nasm failed with {}", status);

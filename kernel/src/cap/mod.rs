@@ -188,11 +188,9 @@ impl<T: CapObject> Clone for StrongCapability<T> {
 
 impl<T: CapObject> Drop for StrongCapability<T> {
     fn drop(&mut self) {
-        if self.do_refcount {
-            if self.object.count.fetch_sub(1, Ordering::Release) == 1 {
-                fence(Ordering::Acquire);
-                self.object.object.cap_drop();
-            }
+        if self.do_refcount && self.object.count.fetch_sub(1, Ordering::Release) == 1 {
+            fence(Ordering::Acquire);
+            self.object.object.cap_drop();
         }
     }
 }

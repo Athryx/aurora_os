@@ -31,10 +31,7 @@ impl MetaRange {
     fn new(size: usize, main_map: &mut MainMap, meta_map: &mut MetaMap) -> Option<Self> {
         match meta_map.remove_zone_at_least_size(size) {
             Some(range) => Some(MetaRange::Meta(range)),
-            None => match main_map.remove_zone_at_least_size(size) {
-                Some(range) => Some(MetaRange::Main(range)),
-                None => None,
-            },
+            None => main_map.remove_zone_at_least_size(size).map(MetaRange::Main),
         }
     }
 
@@ -81,7 +78,7 @@ impl PmemManager {
                 } else {
                     [Some(mem), None].into_iter()
                 }
-                .filter_map(|elem| elem)
+                .flatten()
             });
 
         // biggest usable virt range
@@ -191,31 +188,29 @@ impl PmemManager {
                 if range.size() != 0 {
                     metadata_zones.insert(range).unwrap();
                 }
+            } else if let Some(index_data) = MetaRange::new(index_size, &mut zones, &mut metadata_zones) {
+                let mut orig_tree_range = tree_data.range();
+                let mut orig_index_range = index_data.range();
+
+                // shouldn't fail now
+                tree_range = orig_tree_range.take_layout(Layout::from_size_align(tree_size, size_of::<usize>()).unwrap()).unwrap();
+                index_range = orig_index_range.take_layout(Layout::from_size_align(index_size, size_of::<usize>()).unwrap()).unwrap();
+
+                // put this zone back into the metadata map
+                if orig_tree_range.size() != 0 {
+                    metadata_zones.insert(orig_tree_range).unwrap();
+                }
+
+                if orig_index_range.size() != 0 {
+                    metadata_zones.insert(orig_index_range).unwrap();
+                }
             } else {
-                if let Some(index_data) = MetaRange::new(index_size, &mut zones, &mut metadata_zones) {
-                    let mut orig_tree_range = tree_data.range();
-                    let mut orig_index_range = index_data.range();
+                // give up on using this zone, use it for metadata instead
+                metadata_zones.insert(current_zone.as_unaligned()).unwrap();
 
-                    // shouldn't fail now
-                    tree_range = orig_tree_range.take_layout(Layout::from_size_align(tree_size, size_of::<usize>()).unwrap()).unwrap();
-                    index_range = orig_index_range.take_layout(Layout::from_size_align(index_size, size_of::<usize>()).unwrap()).unwrap();
-
-                    // put this zone back into the metadata map
-                    if orig_tree_range.size() != 0 {
-                        metadata_zones.insert(orig_tree_range).unwrap();
-                    }
-
-                    if orig_index_range.size() != 0 {
-                        metadata_zones.insert(orig_index_range).unwrap();
-                    }
-                } else {
-                    // give up on using this zone, use it for metadata instead
-                    metadata_zones.insert(current_zone.as_unaligned()).unwrap();
-
-                    // restore old zones before moving on to next zone
-                    tree_data.insert_into(&mut zones, &mut metadata_zones);
-                    continue;
-                };
+                // restore old zones before moving on to next zone
+                tree_data.insert_into(&mut zones, &mut metadata_zones);
+                continue;
             }
 
             // technically undefined behavior to make a slice of uninitilized AtomicU8s, but in practice it shouldn't matter
