@@ -16,7 +16,7 @@ do
 	fi
 done
 
-if [[ $1 != sysroot ]] && [[ $1 != test ]] && [[ $1 != clean ]] && [[ $1 != fmt ]]
+if [[ $1 != sysroot ]] && [[ $1 != clean ]] && [[ $1 != fmt ]]
 then
 	./gen-img.sh $KERNEL $INITRD $IMG
 fi
@@ -31,7 +31,7 @@ then
 elif [[ $1 = bochs ]]
 then
 	$TERM -e bochs -f bochsrc
-elif [[ -z $1 ]] || [[ $1 = release ]]
+elif [[ -z $1 ]] || [[ $1 = release ]] || [[ $1 = test ]]
 then
 	qemu-system-x86_64 -m 5120 -smp cpus=4,cores=4 -debugcon stdio -drive file=$IMG,format=raw
 fi

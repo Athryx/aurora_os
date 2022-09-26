@@ -20,6 +20,9 @@
 #![feature(map_first_last)]*/
 #![allow(dead_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
+#![feature(custom_test_frameworks)]
+#![test_runner(crate::test_runner)]
+#![reexport_test_harness_main = "test_main"]
 
 mod acpi;
 mod alloc;
@@ -28,18 +31,17 @@ mod cap;
 mod container;
 mod int;
 mod mem;
-//mod vmem;
 mod sched;
 mod sync;
+mod util;
+//mod vmem;
 //mod time;
 
 mod consts;
 mod gs_data;
 mod hwa_iter;
-mod id;
 mod io;
 mod mb2;
-mod misc;
 mod prelude;
 mod process;
 
@@ -110,7 +112,8 @@ pub extern "C" fn _start(boot_info_addr: usize) -> ! {
     // TEMP
     eprintln!("{:?}", *crate::consts::AP_DATA);
 
-    test();
+    #[cfg(test)]
+    test_main();
 
     loop {
         hlt();
@@ -125,11 +128,21 @@ pub extern "C" fn _ap_start(id: usize, stack_top: usize) -> ! {
     }
 }
 
-use alloc::{zm, PageAllocator};
+#[cfg(test)]
+fn test_runner(tests: &[&dyn Fn()]) {
+    eprintln!("Running {} tests", tests.len());
+    for test in tests {
+        test();
+    }
+    eprintln!("All tests passed");
+}
 
-use mem::PageLayout;
-
+#[test_case]
 fn test() {
+    use alloc::{zm, PageAllocator};
+
+    use mem::PageLayout;
+
     unsafe {
         let a1 = zm().alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE)).unwrap();
         let a2 = zm().alloc(PageLayout::from_size_align_unchecked(2 * PAGE_SIZE, PAGE_SIZE)).unwrap();

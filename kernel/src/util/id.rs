@@ -1,3 +1,4 @@
+/// Creates an id type, which is similar to an integer
 #[macro_export]
 macro_rules! make_id_type {
     ($type:ident, $int_type:ident) => {
@@ -27,8 +28,10 @@ macro_rules! make_id_type {
     };
 }
 
-// use this one if the id type needs to have validation take place
-// also doesn't make Default implementation
+/// Creates an id type, which is similar to an integer
+///
+/// This version does not generate Default or From implementations
+/// Use this if additional validation is needed for the id
 #[macro_export]
 macro_rules! make_id_type_no_from {
     ($type:ident, $int_type:ident) => {

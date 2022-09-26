@@ -7,16 +7,21 @@ use crate::consts::PAGE_SIZE;
 use crate::mem::MemOwner;
 use crate::prelude::*;
 
-// must be power of 2 for correct results
+mod id;
+
+/// Aligns `addr` up to the power 2 alignment `align`
+/// `align` must be a power of 2
 pub const fn align_up(addr: usize, align: usize) -> usize {
     (addr + align - 1) & !(align - 1)
 }
 
-// must be power of 2 for correct results
+/// Aligns `addr` down to the power 2 alignment `align`
+/// `align` must be a power of 2
 pub const fn align_down(addr: usize, align: usize) -> usize {
     addr & !(align - 1)
 }
 
+/// Returns the alignment of `addr`
 pub fn align_of(addr: usize) -> usize {
     if addr == 0 {
         return 1 << 63;
@@ -33,10 +38,12 @@ pub fn align_of(addr: usize) -> usize {
     1 << out
 }
 
+/// Returns true if `addr` is page aligned
 pub fn page_aligned(addr: usize) -> bool {
     align_of(addr) >= PAGE_SIZE
 }
 
+/// Gets the bits specified by the range `bits` from the number `n`
 pub const fn get_bits(n: usize, bits: Range<usize>) -> usize {
     if bits.end == 0 {
         return 0;
@@ -53,6 +60,8 @@ pub const fn get_bits(n: usize, bits: Range<usize>) -> usize {
     (temp & n).wrapping_shr(l as _)
 }
 
+/// Gets the bits specified by the range `bits` from the number `n`, just like `get_bits`,
+/// But it does not shift the bits back to the 0 position
 pub const fn get_bits_raw(n: usize, bits: Range<usize>) -> usize {
     let l = if bits.start > 63 { 63 } else { bits.start };
     let h = if bits.end > 63 { 63 } else { bits.end };
@@ -65,6 +74,7 @@ pub const fn get_bits_raw(n: usize, bits: Range<usize>) -> usize {
     (temp & n).wrapping_shr(l as _) << l
 }
 
+/// Sets `len` bytes starting at `mem` to the value `data`
 pub unsafe fn memset(mem: *mut u8, len: usize, data: u8) {
     for i in 0..len {
         unsafe {
@@ -73,7 +83,7 @@ pub unsafe fn memset(mem: *mut u8, len: usize, data: u8) {
     }
 }
 
-// rounds down
+/// Finds the log2 of `n`, rounded down to the nearest integer
 #[inline]
 pub fn log2(n: usize) -> usize {
     if n == 0 {
@@ -91,8 +101,7 @@ pub fn log2(n: usize) -> usize {
     out
 }
 
-// rounds up
-// TODO: make faster
+/// Finds the log2 of `n`, rounded up to the nearest integer
 pub fn log2_up(n: usize) -> usize {
     if n == 1 {
         1
@@ -101,6 +110,7 @@ pub fn log2_up(n: usize) -> usize {
     }
 }
 
+/// Const version of [`log2`]
 pub const fn log2_const(n: usize) -> usize {
     if n == 0 {
         return 0;
@@ -114,6 +124,7 @@ pub const fn log2_const(n: usize) -> usize {
     out - 1
 }
 
+/// Const version of [`log2_up`]
 pub const fn log2_up_const(n: usize) -> usize {
     if n == 1 {
         1
@@ -122,38 +133,27 @@ pub const fn log2_up_const(n: usize) -> usize {
     }
 }
 
+// FIXME: these are very bad, try to remove them
+/// Changes the lifetime of `r`
+///
+/// VERY UNSAFE, DO NOT USE
 pub unsafe fn unbound<'a, 'b, T>(r: &'a T) -> &'b T {
     unsafe { (r as *const T).as_ref().unwrap() }
 }
 
+/// Changes the lifetime of `r`
+///
+/// VERY UNSAFE, DO NOT USE
 pub unsafe fn unbound_mut<'a, 'b, T>(r: &'a mut T) -> &'b mut T {
     unsafe { (r as *mut T).as_mut().unwrap() }
 }
 
-pub fn optac<T, F>(opt: Option<T>, f: F) -> bool
-where
-    F: FnOnce(T) -> bool,
-{
-    match opt {
-        Some(val) => f(val),
-        None => false,
-    }
-}
-
-pub fn optnac<T, F>(opt: Option<T>, f: F) -> bool
-where
-    F: FnOnce(T) -> bool,
-{
-    match opt {
-        Some(val) => f(val),
-        None => true,
-    }
-}
-
+/// Returns true if `ptr` is aligned as necessary for the given type `T`, and if it is non null
 pub fn aligned_nonnull<T>(ptr: *const T) -> bool {
     core::mem::align_of::<T>() == align_of(ptr as usize) && !ptr.is_null()
 }
 
+/// Creates a `str` from a pointer to a cstring
 pub unsafe fn from_cstr<'a>(ptr: *const u8) -> Result<&'a str, Utf8Error> {
     let mut len = 0;
     let start = ptr;
@@ -172,30 +172,13 @@ pub unsafe fn from_cstr<'a>(ptr: *const u8) -> Result<&'a str, Utf8Error> {
     }
 }
 
+/// Moves `object` to the heap specified by `allocer`
 pub fn to_heap<T>(object: T, allocer: &dyn OrigAllocator) -> KResult<*mut T> {
     Ok(MemOwner::new(object, allocer)?.ptr_mut())
 }
 
-/*pub fn to_heap<V>(object: V) -> *mut V
-{
-    Box::into_raw(Box::new(object))
-}
-
-pub unsafe fn from_heap<V>(ptr: *const V) -> V
-{
-    *Box::from_raw(ptr as *mut _)
-}
-
-// TODO: make this not require defualt
-pub fn copy_to_heap<T: Copy + Default>(slice: &[T]) -> Vec<T>
-{
-    let mut out = Vec::with_capacity(slice.len());
-    out.resize(slice.len(), T::default());
-    out.copy_from_slice(slice);
-    out
-}*/
-
 // code from some reddit post
+/// Create an array of len `len` and type `ty` by running the expression `val` and using its result for each element
 #[macro_export]
 macro_rules! init_array (
 	($ty:ty, $len:expr, $val:expr) => (

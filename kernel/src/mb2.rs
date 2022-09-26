@@ -4,7 +4,6 @@ use crate::acpi::Rsdt;
 use crate::consts;
 use crate::hwa_iter::{HwaIter, HwaTag};
 use crate::mem::PhysAddr;
-use crate::misc::from_cstr;
 use crate::prelude::*;
 
 // multiboot tag type ids
