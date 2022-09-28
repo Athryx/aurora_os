@@ -39,7 +39,6 @@ mod util;
 
 mod consts;
 mod gs_data;
-mod hwa_iter;
 mod io;
 mod mb2;
 mod prelude;
@@ -68,6 +67,9 @@ fn panic(info: &PanicInfo) -> ! {
     }
 }
 
+/// Initilizes all kernel subsystems, and starts all other cpu cores
+///
+/// Ran once on the startup core
 fn init(boot_info_addr: usize) -> KResult<()> {
     unsafe { mem::init(*consts::KERNEL_VMA) }
 
@@ -100,7 +102,9 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     Ok(())
 }
 
-// rust entry point of the kernel after boot.asm calls this
+/// Rust entry point of the kernel on the startup core
+///
+/// Called by boot.asm
 #[no_mangle]
 pub extern "C" fn _start(boot_info_addr: usize) -> ! {
     bochs_break();
@@ -120,7 +124,11 @@ pub extern "C" fn _start(boot_info_addr: usize) -> ! {
     }
 }
 
-// rust entry point on ap cores, called by ap_start.asm
+/// Rust entry point of kernel on ap cores
+///
+/// Called by ap_boot.asm
+/// `id` is a unique id for each cpu core
+/// `stack_top` is the virtual memory address of the current stack for the ap core
 #[no_mangle]
 pub extern "C" fn _ap_start(id: usize, stack_top: usize) -> ! {
     loop {

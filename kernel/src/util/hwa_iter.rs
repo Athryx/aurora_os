@@ -1,3 +1,5 @@
+//! Utility for iterating over arrays with different tag types that are commonly provided by multipboot and acpi
+
 use core::iter::FusedIterator;
 use core::marker::PhantomData;
 use core::mem::size_of_val;
@@ -27,8 +29,8 @@ pub trait HwaTag {
     }
 }
 
-// hardware array iterator
-// iterates over arrays of different sized elements with different type elements
+/// Hardware array iterator
+/// Iterates over arrays of different sized elements with different type elements
 pub struct HwaIter<'a, T: HwaTag> {
     // start address of elements
     addr: usize,

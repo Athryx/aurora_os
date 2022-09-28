@@ -68,18 +68,7 @@ impl PmemManager {
         let usable = mem_map
             .iter()
             .filter(|zone| matches!(zone, MemoryRegionType::Usable(_)))
-            .filter_map(|mem| mem.range().to_virt().as_inside_aligned())
-            .flat_map(|mem| {
-                // FIXME: this is really ugly code
-                // filters out ap code zone from usable memory range
-                if mem.contains_range(&*AP_CODE_RANGE) {
-                    let (start, end) = mem.split_at(*AP_CODE_RANGE);
-                    [start, end].into_iter()
-                } else {
-                    [Some(mem), None].into_iter()
-                }
-                .flatten()
-            });
+            .filter_map(|mem| mem.range().to_virt().as_inside_aligned());
 
         // biggest usable virt range
         // align to pages because we will use this for the initial allocator

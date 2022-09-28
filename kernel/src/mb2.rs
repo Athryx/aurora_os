@@ -2,9 +2,9 @@ use core::slice::{self, Iter};
 
 use crate::acpi::Rsdt;
 use crate::consts;
-use crate::hwa_iter::{HwaIter, HwaTag};
 use crate::mem::PhysAddr;
 use crate::prelude::*;
+use crate::util::{HwaIter, HwaTag};
 
 // multiboot tag type ids
 const END: u32 = 0;
@@ -140,18 +140,23 @@ impl MemoryRegionType {
         }
     }
 
-    fn new(region: &Mb2MemoryRegion, initrd_range: UPhysRange) -> [Option<Self>; 4] {
+    fn new(region: &Mb2MemoryRegion, initrd_range: UPhysRange) -> [Option<Self>; 8] {
+        let split_range_on_zone = |range: Option<UPhysRange>, split_range: UPhysRange| -> (Option<UPhysRange>, Option<UPhysRange>) {
+            match range {
+                Some(range) => range.split_at(split_range),
+                None => (None, None),
+            }
+        };
         let (prange1, prange2) = UPhysRange::new(PhysAddr::new(region.addr as usize), region.len as usize).split_at(*consts::KERNEL_PHYS_RANGE);
 
-        let (prange1, prange3) = match prange1 {
-            Some(prange) => prange.split_at(initrd_range),
-            None => (None, None),
-        };
+        let (prange1, prange3) = split_range_on_zone(prange1, initrd_range);
+        let (prange2, prange4) = split_range_on_zone(prange2, initrd_range);
 
-        let (prange2, prange4) = match prange2 {
-            Some(prange) => prange.split_at(initrd_range),
-            None => (None, None),
-        };
+        let ap_code_zone = consts::AP_PHYS_CODE_RANGE.as_unaligned();
+        let (prange1, prange5) = split_range_on_zone(prange1, ap_code_zone);
+        let (prange2, prange6) = split_range_on_zone(prange2, ap_code_zone);
+        let (prange3, prange7) = split_range_on_zone(prange3, ap_code_zone);
+        let (prange4, prange8) = split_range_on_zone(prange4, ap_code_zone);
 
         let convert_func = |prange| match region.typ {
             USABLE => Self::Usable(prange),
@@ -161,7 +166,16 @@ impl MemoryRegionType {
             _ => Self::Reserved(prange),
         };
 
-        [prange1.map(convert_func), prange2.map(convert_func), prange3.map(convert_func), prange4.map(convert_func)]
+        [
+            prange1.map(convert_func),
+            prange2.map(convert_func),
+            prange3.map(convert_func),
+            prange4.map(convert_func),
+            prange5.map(convert_func),
+            prange6.map(convert_func),
+            prange7.map(convert_func),
+            prange8.map(convert_func),
+        ]
     }
 
     pub fn range(&self) -> UPhysRange {

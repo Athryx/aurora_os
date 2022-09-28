@@ -1,6 +1,6 @@
 use super::{Sdt, SdtHeader};
-use crate::hwa_iter::{HwaIter, HwaTag};
 use crate::prelude::*;
+use crate::util::{HwaIter, HwaTag};
 
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]

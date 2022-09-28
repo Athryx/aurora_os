@@ -14,7 +14,7 @@ pub enum DMutexErr {
     Dead,
 }
 
-// a mutex which can be permanently disabled, and all waiting threads will unblock
+/// A mutex which can be permanently disabled, and all waiting threads will unblock
 #[derive(Debug)]
 pub struct DMutex<T: ?Sized> {
     alive: AtomicBool,
@@ -115,6 +115,7 @@ impl<T> DerefMut for DMutexGuard<'_, T> {
     }
 }
 
+/// Like [`DMutex`], but also disables interrupts when locked
 #[derive(Debug)]
 pub struct DIMutex<T: ?Sized> {
     alive: AtomicBool,

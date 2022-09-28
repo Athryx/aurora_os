@@ -1,3 +1,5 @@
+//! Constants about kernel executable sections and other related memory constants from the linker
+
 use crate::prelude::*;
 
 pub const PAGE_SIZE: usize = 4096;
@@ -37,6 +39,10 @@ lazy_static! {
     pub static ref AP_CODE_END: usize = unsafe { &__AP_CODE_END } as *const _ as usize;
     pub static ref AP_DATA: usize = unsafe { &ap_data } as *const _ as usize;
 
+    pub static ref AP_PHYS_CODE_RANGE: APhysRange = APhysRange::new_aligned(
+        PhysAddr::new(*AP_CODE_START),
+        *AP_CODE_END - *AP_CODE_START,
+    );
     // the physical memory range that the code zone will be copied to
     pub static ref AP_CODE_RANGE: AVirtRange = AVirtRange::new_aligned(
         PhysAddr::new(*AP_CODE_START).to_virt(),

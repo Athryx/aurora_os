@@ -20,6 +20,7 @@ pub struct GsData {
     pub idt: Idt,
 }
 
+/// Sets the current cpu's local data
 pub fn init(gs_data: GsData) {
     let (ptr, _) = Box::into_raw(Box::new(gs_data, root_alloc_ref()).expect("Failed to allocate gs data struct"));
 
@@ -27,10 +28,12 @@ pub fn init(gs_data: GsData) {
     wrmsr(GSBASEK_MSR, ptr as u64);
 }
 
+/// Gets the current cpu's local data
 pub fn cpu_local_data() -> &'static GsData {
     unsafe { (gs_addr() as *const GsData).as_ref().unwrap() }
 }
 
+/// Gets the current processors id
 pub fn prid() -> Prid {
     cpu_local_data().prid
 }

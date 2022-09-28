@@ -4,7 +4,7 @@ use spin::{Mutex, MutexGuard};
 
 use crate::arch::x64::IntDisable;
 
-// A Mutex that also disables interrupts when locked
+/// A Mutex that also disables interrupts when locked
 #[derive(Debug)]
 pub struct IMutex<T: ?Sized>(Mutex<T>);
 

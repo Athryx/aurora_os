@@ -1,3 +1,5 @@
+//! A collection of miscallaneous utility functions
+
 use core::arch::asm;
 use core::ops::Range;
 use core::str::Utf8Error;
@@ -7,7 +9,10 @@ use crate::consts::PAGE_SIZE;
 use crate::mem::MemOwner;
 use crate::prelude::*;
 
+mod hwa_iter;
 mod id;
+
+pub use hwa_iter::*;
 
 /// Aligns `addr` up to the power 2 alignment `align`
 /// `align` must be a power of 2
