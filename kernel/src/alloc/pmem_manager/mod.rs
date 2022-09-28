@@ -72,7 +72,10 @@ impl PmemManager {
 
         // biggest usable virt range
         // align to pages because we will use this for the initial allocator
-        let max = usable.clone().reduce(|z1, z2| if z1.size() > z2.size() { z1 } else { z2 }).expect("no usable memory zones found");
+        let max = usable
+            .clone()
+            .reduce(|z1, z2| if z1.size() > z2.size() { z1 } else { z2 })
+            .expect("no usable memory zones found");
 
         // get the size of the largest power of 2 aligned chunk of memory
         // we will use this memory for the temporary bump allocator to store heap data needed to set up buddy allocators
@@ -113,7 +116,9 @@ impl PmemManager {
                 let size = min(align_of(start), 1 << log2(end - start));
                 // because region is aligned, this should be aligned
                 let range = AVirtRange::new(VirtAddr::new(start), size);
-                zones.insert(range).expect("not enough memory to build zone map for pmem manager");
+                zones
+                    .insert(range)
+                    .expect("not enough memory to build zone map for pmem manager");
 
                 start += size;
             }
@@ -136,14 +141,21 @@ impl PmemManager {
         );
 
         // only get part that is needed to store all allocator objects
-        let allocator_range = orig_allocator_range.take_layout(Layout::array::<PmemAllocator>(allocator_count).unwrap()).unwrap();
+        let allocator_range = orig_allocator_range
+            .take_layout(Layout::array::<PmemAllocator>(allocator_count).unwrap())
+            .unwrap();
 
         // store the other part in the metadata array
         if orig_allocator_range.size() != 0 {
             metadata_zones.insert(orig_allocator_range).unwrap();
         }
 
-        let allocator_slice = unsafe { slice::from_raw_parts_mut(allocator_range.as_usize() as *mut MaybeUninit<PmemAllocator>, allocator_count) };
+        let allocator_slice = unsafe {
+            slice::from_raw_parts_mut(
+                allocator_range.as_usize() as *mut MaybeUninit<PmemAllocator>,
+                allocator_count,
+            )
+        };
 
         // index of current allocator
         let mut i = 0;
@@ -152,7 +164,8 @@ impl PmemManager {
         let mut total_mem_size = 0;
 
         while let Some(current_zone) = zones.remove_largest_zone() {
-            let (unaligned_tree_size, index_size) = PmemAllocator::required_tree_index_size(current_zone, PAGE_SIZE).unwrap();
+            let (unaligned_tree_size, index_size) =
+                PmemAllocator::required_tree_index_size(current_zone, PAGE_SIZE).unwrap();
             let tree_size = align_up(unaligned_tree_size, size_of::<usize>());
 
             let tree_data = if let Some(data) = MetaRange::new(tree_size, &mut zones, &mut metadata_zones) {
@@ -170,8 +183,12 @@ impl PmemManager {
                 let mut range = tree_data.range();
 
                 // shouldn't fail now
-                tree_range = range.take_layout(Layout::from_size_align(tree_size, size_of::<usize>()).unwrap()).unwrap();
-                index_range = range.take_layout(Layout::from_size_align(index_size, size_of::<usize>()).unwrap()).unwrap();
+                tree_range = range
+                    .take_layout(Layout::from_size_align(tree_size, size_of::<usize>()).unwrap())
+                    .unwrap();
+                index_range = range
+                    .take_layout(Layout::from_size_align(index_size, size_of::<usize>()).unwrap())
+                    .unwrap();
 
                 // put this zone back into the metadata map
                 if range.size() != 0 {
@@ -182,8 +199,12 @@ impl PmemManager {
                 let mut orig_index_range = index_data.range();
 
                 // shouldn't fail now
-                tree_range = orig_tree_range.take_layout(Layout::from_size_align(tree_size, size_of::<usize>()).unwrap()).unwrap();
-                index_range = orig_index_range.take_layout(Layout::from_size_align(index_size, size_of::<usize>()).unwrap()).unwrap();
+                tree_range = orig_tree_range
+                    .take_layout(Layout::from_size_align(tree_size, size_of::<usize>()).unwrap())
+                    .unwrap();
+                index_range = orig_index_range
+                    .take_layout(Layout::from_size_align(index_size, size_of::<usize>()).unwrap())
+                    .unwrap();
 
                 // put this zone back into the metadata map
                 if orig_tree_range.size() != 0 {
@@ -204,9 +225,12 @@ impl PmemManager {
 
             // technically undefined behavior to make a slice of uninitilized AtomicU8s, but in practice it shouldn't matter
             // they are initilized to 0 later anyways
-            let tree_slice = unsafe { slice::from_raw_parts_mut(tree_range.as_usize() as *mut AtomicU8, unaligned_tree_size) };
+            let tree_slice = unsafe {
+                slice::from_raw_parts_mut(tree_range.as_usize() as *mut AtomicU8, unaligned_tree_size)
+            };
 
-            let index_slice = unsafe { slice::from_raw_parts_mut(index_range.as_usize() as *mut AtomicUsize, index_size) };
+            let index_slice =
+                unsafe { slice::from_raw_parts_mut(index_range.as_usize() as *mut AtomicUsize, index_size) };
 
             let allocator = unsafe { PmemAllocator::from(current_zone, tree_slice, index_slice, PAGE_SIZE) };
 
@@ -217,7 +241,8 @@ impl PmemManager {
             i += 1;
         }
 
-        let allocator_slice = unsafe { slice::from_raw_parts_mut(allocator_range.as_usize() as *mut PmemAllocator, i) };
+        let allocator_slice =
+            unsafe { slice::from_raw_parts_mut(allocator_range.as_usize() as *mut PmemAllocator, i) };
 
         allocator_slice.sort_unstable_by(|a, b| a.start_addr().cmp(&b.start_addr()));
 
@@ -232,7 +257,8 @@ impl PmemManager {
 
     // gets index in search dealloc, where the zindex is not set
     fn get_index_of_allocation(&self, allocation: Allocation) -> Result<usize, usize> {
-        self.allocers.binary_search_by(|allocer| allocer.start_addr().cmp(&allocation.as_usize()))
+        self.allocers
+            .binary_search_by(|allocer| allocer.start_addr().cmp(&allocation.as_usize()))
     }
 }
 

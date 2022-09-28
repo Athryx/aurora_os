@@ -38,7 +38,11 @@ impl<T> RawVec<T> {
             Ok(RawVec::new(allocer))
         } else {
             let layout = Layout::array::<T>(cap).unwrap();
-            let ptr = allocer.allocator().alloc(layout).ok_or(SysErr::OutOfMem)?.as_mut_ptr();
+            let ptr = allocer
+                .allocator()
+                .alloc(layout)
+                .ok_or(SysErr::OutOfMem)?
+                .as_mut_ptr();
 
             Ok(RawVec {
                 ptr: NonNull::new(ptr).unwrap(),

@@ -216,7 +216,10 @@ impl<T: CapObject> WeakCapability<T> {
                     return None;
                 }
 
-                match arc.count.compare_exchange_weak(count, count + 1, Ordering::Relaxed, Ordering::Relaxed) {
+                match arc
+                    .count
+                    .compare_exchange_weak(count, count + 1, Ordering::Relaxed, Ordering::Relaxed)
+                {
                     Ok(_) => {
                         return Some(StrongCapability {
                             object: arc,

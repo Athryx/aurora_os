@@ -141,13 +141,16 @@ impl MemoryRegionType {
     }
 
     fn new(region: &Mb2MemoryRegion, initrd_range: UPhysRange) -> [Option<Self>; 8] {
-        let split_range_on_zone = |range: Option<UPhysRange>, split_range: UPhysRange| -> (Option<UPhysRange>, Option<UPhysRange>) {
+        let split_range_on_zone = |range: Option<UPhysRange>,
+                                   split_range: UPhysRange|
+         -> (Option<UPhysRange>, Option<UPhysRange>) {
             match range {
                 Some(range) => range.split_at(split_range),
                 None => (None, None),
             }
         };
-        let (prange1, prange2) = UPhysRange::new(PhysAddr::new(region.addr as usize), region.len as usize).split_at(*consts::KERNEL_PHYS_RANGE);
+        let (prange1, prange2) = UPhysRange::new(PhysAddr::new(region.addr as usize), region.len as usize)
+            .split_at(*consts::KERNEL_PHYS_RANGE);
 
         let (prange1, prange3) = split_range_on_zone(prange1, initrd_range);
         let (prange2, prange4) = split_range_on_zone(prange2, initrd_range);
@@ -255,7 +258,8 @@ impl BootInfo<'_> {
 
         // add 8 to get past initial entry which is always there
         let start = unsafe { (addr as *const Mb2Start).as_ref().unwrap() };
-        let iter: HwaIter<TagHeader> = unsafe { HwaIter::from_align(addr + size_of::<Mb2Start>(), start.size(), 8) };
+        let iter: HwaIter<TagHeader> =
+            unsafe { HwaIter::from_align(addr + size_of::<Mb2Start>(), start.size(), 8) };
 
         let mut initrd_range = None;
         let mut initrd_slice = None;

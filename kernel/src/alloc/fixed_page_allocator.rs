@@ -21,7 +21,10 @@ impl FixedPageAllocator {
 
 impl PageAllocator for FixedPageAllocator {
     fn alloc(&self, layout: PageLayout) -> Option<Allocation> {
-        if self.alloced.load(Ordering::Acquire) || layout.size() > self.mem.size() || layout.align() > align_of(self.mem.as_usize()) {
+        if self.alloced.load(Ordering::Acquire)
+            || layout.size() > self.mem.size()
+            || layout.align() > align_of(self.mem.as_usize())
+        {
             None
         } else {
             self.alloced.store(true, Ordering::Release);

@@ -152,15 +152,33 @@ fn test() {
     use mem::PageLayout;
 
     unsafe {
-        let a1 = zm().alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a2 = zm().alloc(PageLayout::from_size_align_unchecked(2 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a3 = zm().alloc(PageLayout::from_size_align_unchecked(2 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a4 = zm().alloc(PageLayout::from_size_align_unchecked(10 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a5 = zm().alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a6 = zm().alloc(PageLayout::from_size_align_unchecked(15 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a7 = zm().alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a8 = zm().alloc(PageLayout::from_size_align_unchecked(1 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a9 = zm().alloc(PageLayout::from_size_align_unchecked(5 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+        let a1 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a2 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(2 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a3 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(2 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a4 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(10 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a5 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a6 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(15 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a7 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a8 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(1 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a9 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(5 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
         eprintln!("{:x?}", a1);
         eprintln!("{:x?}", a2);
         eprintln!("{:x?}", a3);
@@ -180,15 +198,33 @@ fn test() {
         zm().dealloc(a7);
         zm().dealloc(a6);
 
-        let a1 = zm().alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a2 = zm().alloc(PageLayout::from_size_align_unchecked(2 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a3 = zm().alloc(PageLayout::from_size_align_unchecked(2 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a4 = zm().alloc(PageLayout::from_size_align_unchecked(10 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a5 = zm().alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a6 = zm().alloc(PageLayout::from_size_align_unchecked(15 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a7 = zm().alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a8 = zm().alloc(PageLayout::from_size_align_unchecked(1 * PAGE_SIZE, PAGE_SIZE)).unwrap();
-        let a9 = zm().alloc(PageLayout::from_size_align_unchecked(5 * PAGE_SIZE, PAGE_SIZE)).unwrap();
+        let a1 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a2 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(2 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a3 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(2 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a4 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(10 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a5 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a6 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(15 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a7 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(4 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a8 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(1 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
+        let a9 = zm()
+            .alloc(PageLayout::from_size_align_unchecked(5 * PAGE_SIZE, PAGE_SIZE))
+            .unwrap();
         eprintln!("{:x?}", a1);
         eprintln!("{:x?}", a2);
         eprintln!("{:x?}", a3);

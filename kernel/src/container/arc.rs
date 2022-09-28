@@ -168,7 +168,12 @@ impl<T: ?Sized> Weak<T> {
                 panic!("Weak ref count is to high");
             }
 
-            match self.inner().strong.compare_exchange_weak(strong_count, strong_count + 1, Ordering::Relaxed, Ordering::Relaxed) {
+            match self.inner().strong.compare_exchange_weak(
+                strong_count,
+                strong_count + 1,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
                 Ok(_) => unsafe {
                     return Some(Arc::from_ptr(self.ptr.as_ptr()));
                 },

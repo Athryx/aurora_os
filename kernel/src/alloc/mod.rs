@@ -24,7 +24,9 @@ static PMEM_MANAGER: Once<PmemManager> = Once::new();
 // must call init before using
 // panics if init has not been called
 pub fn zm() -> &'static PmemManager {
-    PMEM_MANAGER.get().expect("zone manager (PmemManager) has not been initilized")
+    PMEM_MANAGER
+        .get()
+        .expect("zone manager (PmemManager) has not been initilized")
 }
 
 static HEAP: Once<LinkedListAllocator> = Once::new();
@@ -40,7 +42,9 @@ pub fn heap_ref() -> OrigRef {
 static ROOT_ALLOCATOR: Once<Arc<CapAllocator>> = Once::new();
 
 pub fn root_alloc() -> &'static CapAllocator {
-    ROOT_ALLOCATOR.get().expect("root allocator accessed before it was initilized")
+    ROOT_ALLOCATOR
+        .get()
+        .expect("root allocator accessed before it was initilized")
 }
 
 pub fn root_alloc_ref() -> OrigRef {
@@ -59,7 +63,10 @@ pub unsafe fn init(mem_map: &MemoryMap) -> KResult<()> {
 
         HEAP.call_once(|| LinkedListAllocator::new(PaRef::new(zm())));
 
-        ROOT_ALLOCATOR.call_once(|| Arc::new(CapAllocator::new_root(total_pages), heap_ref()).expect("failed to initilize root cap allocator"));
+        ROOT_ALLOCATOR.call_once(|| {
+            Arc::new(CapAllocator::new_root(total_pages), heap_ref())
+                .expect("failed to initilize root cap allocator")
+        });
 
         Ok(())
     }

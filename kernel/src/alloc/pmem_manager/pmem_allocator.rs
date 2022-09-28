@@ -182,7 +182,10 @@ impl PmemAllocator {
 			// because vrange size and level_size are both power of 2, they are guarenteed to divide eachother evenly
 			&& vrange.size() >= level_size
         {
-            Some((2 * (vrange.size() / level_size) - 1, size_of::<usize>() * vrange.size() / level_size))
+            Some((
+                2 * (vrange.size() / level_size) - 1,
+                size_of::<usize>() * vrange.size() / level_size,
+            ))
         } else {
             None
         }
@@ -192,15 +195,27 @@ impl PmemAllocator {
     ///
     /// # Safety
     /// must not have a mutable reference to tree or index alive once you start calling other allocator methods
-    pub unsafe fn from(vrange: AVirtRange, tree: *mut [AtomicU8], index: *mut [AtomicUsize], level_size: usize) -> Self {
-        unsafe { Self::try_from(vrange, tree, index, level_size).expect("failed to make physical memory allocator") }
+    pub unsafe fn from(
+        vrange: AVirtRange,
+        tree: *mut [AtomicU8],
+        index: *mut [AtomicUsize],
+        level_size: usize,
+    ) -> Self {
+        unsafe {
+            Self::try_from(vrange, tree, index, level_size).expect("failed to make physical memory allocator")
+        }
     }
 
     /// creates a new physical memory allocator, and returns None if the invariants are not upheld
     ///
     /// # Safety
     /// must not have a mutable reference to tree or index alive once you start calling other allocator methods
-    pub unsafe fn try_from(vrange: AVirtRange, tree: *mut [AtomicU8], index: *mut [AtomicUsize], level_size: usize) -> Option<Self> {
+    pub unsafe fn try_from(
+        vrange: AVirtRange,
+        tree: *mut [AtomicU8],
+        index: *mut [AtomicUsize],
+        level_size: usize,
+    ) -> Option<Self> {
         if Self::required_tree_index_size(vrange, level_size)? == (tree.len(), index.len()) {
             // this is needed because Atomics do not have clone
             // might be slow, but shouldn't matter because this is done once
@@ -270,7 +285,11 @@ impl PmemAllocator {
 
     // returns Some(node) on failure, where node is the TreeNode that caused a problem
     fn try_alloc<'a>(&'a self, node: TreeNode<'a>) -> Option<TreeNode<'a>> {
-        if node.data().compare_exchange(0, TreeStatus::BUSY.bits(), Ordering::AcqRel, Ordering::Relaxed).is_err() {
+        if node
+            .data()
+            .compare_exchange(0, TreeStatus::BUSY.bits(), Ordering::AcqRel, Ordering::Relaxed)
+            .is_err()
+        {
             return Some(node);
         }
 
@@ -284,18 +303,20 @@ impl PmemAllocator {
 
             let child_type = child.child_type();
 
-            let res = current.data().fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                let mut flags = unsafe { TreeStatus::from_bits_unchecked(n) };
+            let res = current
+                .data()
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                    let mut flags = unsafe { TreeStatus::from_bits_unchecked(n) };
 
-                if flags.contains(TreeStatus::OCCUPY) {
-                    return None;
-                }
+                    if flags.contains(TreeStatus::OCCUPY) {
+                        return None;
+                    }
 
-                flags.clear_coal(child_type);
-                flags.set_occupy(child_type);
+                    flags.clear_coal(child_type);
+                    flags.set_occupy(child_type);
 
-                Some(flags.bits())
-            });
+                    Some(flags.bits())
+                });
 
             if res.is_err() {
                 self.dealloc_node(node, child);
@@ -389,17 +410,19 @@ impl PmemAllocator {
 
             let mut flags = TreeStatus::empty();
 
-            let res = current.data().fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                flags = unsafe { TreeStatus::from_bits_unchecked(n) };
+            let res = current
+                .data()
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
+                    flags = unsafe { TreeStatus::from_bits_unchecked(n) };
 
-                if flags.get_coal(child_type) {
-                    flags.clear_occupy(child_type);
-                    flags.clear_coal(child_type);
-                    Some(flags.bits())
-                } else {
-                    None
-                }
-            });
+                    if flags.get_coal(child_type) {
+                        flags.clear_occupy(child_type);
+                        flags.clear_coal(child_type);
+                        Some(flags.bits())
+                    } else {
+                        None
+                    }
+                });
 
             if res.is_err() || flags.get_occupy(buddy_type) {
                 break;

@@ -35,7 +35,8 @@ impl PageSize {
     }
 
     pub fn from_usize(n: usize) -> Self {
-        Self::try_from_usize(n).expect("tried to convert integer to PageSize, but it wasn't a valid page size")
+        Self::try_from_usize(n)
+            .expect("tried to convert integer to PageSize, but it wasn't a valid page size")
     }
 
     pub fn try_from_usize(n: usize) -> Option<Self> {
@@ -58,7 +59,14 @@ impl fmt::Display for RangeAlignError {
 
 // TODO: maybe test in constructors if end is invalid phys or virt address
 macro_rules! impl_addr_range {
-    ($addr:ident, $frame:ident, $range_trait:ident, $aligned_range:ident, $unaligned_range:ident, $iter:ident) => {
+    (
+        $addr:ident,
+        $frame:ident,
+        $range_trait:ident,
+        $aligned_range:ident,
+        $unaligned_range:ident,
+        $iter:ident
+    ) => {
         #[derive(Debug, Clone, Copy)]
         pub enum $frame {
             K4($addr),
@@ -171,7 +179,10 @@ macro_rules! impl_addr_range {
                 Self: Sized;
 
             fn get_take_size(&self) -> Option<PageSize> {
-                PageSize::try_from_usize(min(align_down_to_page_size(self.size()), align_down_to_page_size(align_of(self.addr().as_usize()))))
+                PageSize::try_from_usize(min(
+                    align_down_to_page_size(self.size()),
+                    align_down_to_page_size(align_of(self.addr().as_usize())),
+                ))
             }
 
             fn take(&mut self, size: PageSize) -> Option<$frame> {
@@ -355,7 +366,10 @@ macro_rules! impl_addr_range {
                 } else if self.contains(end + 1usize) && !self.contains(begin - 1usize) {
                     (Some(Self::new(end, send - end)), None)
                 } else {
-                    (Some(Self::new(sbegin, (begin - sbegin) as usize)), Some(Self::new(end, send - end)))
+                    (
+                        Some(Self::new(sbegin, (begin - sbegin) as usize)),
+                        Some(Self::new(end, send - end)),
+                    )
                 }
             }
         }
@@ -379,7 +393,8 @@ macro_rules! impl_addr_range {
         impl $aligned_range {
             /// Panics if addr and size are not page aligned
             pub fn new(addr: $addr, size: usize) -> Self {
-                Self::try_new_aligned(addr, size).expect("invalid address and size passed to AlignedRange::new()")
+                Self::try_new_aligned(addr, size)
+                    .expect("invalid address and size passed to AlignedRange::new()")
             }
 
             /// Aligns address up, and end address up
@@ -514,7 +529,10 @@ macro_rules! impl_addr_range {
                 } else if self.contains(end + 1usize) && !self.contains(begin - 1usize) {
                     (Some(Self::new_aligned(end, send - end)), None)
                 } else {
-                    (Some(Self::new_aligned(sbegin, (begin - sbegin) as usize)), Some(Self::new_aligned(end, send - end)))
+                    (
+                        Some(Self::new_aligned(sbegin, (begin - sbegin) as usize)),
+                        Some(Self::new_aligned(end, send - end)),
+                    )
                 }
             }
         }
@@ -535,7 +553,10 @@ macro_rules! impl_addr_range {
                     return None;
                 }
 
-                let size = min(align_of(self.start.as_usize()), 1 << log2(self.end - self.start));
+                let size = min(
+                    align_of(self.start.as_usize()),
+                    1 << log2(self.end - self.start),
+                );
                 let size = align_down_to_page_size(size);
                 self.start += size;
                 let size = PageSize::from_usize(size);

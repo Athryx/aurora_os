@@ -22,7 +22,8 @@ pub struct GsData {
 
 /// Sets the current cpu's local data
 pub fn init(gs_data: GsData) {
-    let (ptr, _) = Box::into_raw(Box::new(gs_data, root_alloc_ref()).expect("Failed to allocate gs data struct"));
+    let (ptr, _) =
+        Box::into_raw(Box::new(gs_data, root_alloc_ref()).expect("Failed to allocate gs data struct"));
 
     wrmsr(GSBASE_MSR, ptr as u64);
     wrmsr(GSBASEK_MSR, ptr as u64);

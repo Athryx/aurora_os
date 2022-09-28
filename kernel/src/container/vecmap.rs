@@ -54,7 +54,11 @@ impl<K: Ord, V> VecMap<K, V> {
         })
     }
 
-    pub fn try_with_capacity_compare(allocator: AllocRef, cap: usize, compare: fn(&K, &K) -> Ordering) -> KResult<Self> {
+    pub fn try_with_capacity_compare(
+        allocator: AllocRef,
+        cap: usize,
+        compare: fn(&K, &K) -> Ordering,
+    ) -> KResult<Self> {
         Ok(VecMap {
             data: Vec::try_with_capacity(allocator, cap)?,
             compare: Some(compare),
@@ -239,8 +243,13 @@ impl<K: Ord, V> VecMap<K, V> {
     // if key is contained in the map, Ok(index of element) is returned
     // else, Err(index where element should go) is returned
     fn search(&self, key: &K) -> Result<usize, usize> {
-        self.data
-            .binary_search_by(|node| if let Some(compare) = self.compare { compare(&node.key, key) } else { node.key.cmp(key) })
+        self.data.binary_search_by(|node| {
+            if let Some(compare) = self.compare {
+                compare(&node.key, key)
+            } else {
+                node.key.cmp(key)
+            }
+        })
     }
 }
 

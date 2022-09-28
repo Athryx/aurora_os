@@ -11,7 +11,10 @@ pub use crate::arch::x64::bochs_break;
 pub use crate::consts::PAGE_SIZE;
 pub use crate::container::{Box, Vec};
 pub use crate::gs_data::{cpu_local_data, prid};
-pub use crate::mem::{phys_to_virt, virt_to_phys, APhysRange, AVirtRange, PhysAddr, PhysRange, PhysRangeInner, UPhysRange, UVirtRange, VirtAddr, VirtRange, VirtRangeInner};
+pub use crate::mem::{
+    phys_to_virt, virt_to_phys, APhysRange, AVirtRange, PhysAddr, PhysRange, PhysRangeInner, UPhysRange,
+    UVirtRange, VirtAddr, VirtRange, VirtRangeInner,
+};
 pub use crate::util::*;
 pub use crate::{eprint, eprintln, init_array, print, println, rprint, rprintln};
 

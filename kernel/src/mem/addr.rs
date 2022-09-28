@@ -55,7 +55,10 @@ impl PhysAddr {
     pub fn to_virt(self) -> VirtAddr {
         match VirtAddr::try_new(self.0 + unsafe { MEM_OFFSET }) {
             Some(addr) => addr,
-            None => panic!("could not convert physical address {:x} to virtual address", self.0),
+            None => panic!(
+                "could not convert physical address {:x} to virtual address",
+                self.0
+            ),
         }
     }
 }

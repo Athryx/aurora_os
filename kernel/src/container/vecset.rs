@@ -19,8 +19,14 @@ impl<T: Ord> VecSet<T> {
         Ok(VecSet(VecMap::try_with_capacity(allocator, cap)?))
     }
 
-    pub fn try_with_capacity_compare(allocator: AllocRef, cap: usize, compare: fn(&T, &T) -> Ordering) -> KResult<Self> {
-        Ok(VecSet(VecMap::try_with_capacity_compare(allocator, cap, compare)?))
+    pub fn try_with_capacity_compare(
+        allocator: AllocRef,
+        cap: usize,
+        compare: fn(&T, &T) -> Ordering,
+    ) -> KResult<Self> {
+        Ok(VecSet(VecMap::try_with_capacity_compare(
+            allocator, cap, compare,
+        )?))
     }
 
     pub fn len(&self) -> usize {

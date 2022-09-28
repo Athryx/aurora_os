@@ -49,7 +49,12 @@ impl CapAllocator {
     // TODO: implement all extra features of prealloc
     // this is a temporary hack to stop malicous processess causing a kernel stack overflow
     // try to find a better way to avoid stack overflow without limiting prealloc depth
-    fn prealloc_inner(&self, page_data_lock: &mut IMutexGuard<CapAllocatorPageData>, bytes: usize, recurse_depth: &mut usize) -> KResult<()> {
+    fn prealloc_inner(
+        &self,
+        page_data_lock: &mut IMutexGuard<CapAllocatorPageData>,
+        bytes: usize,
+        recurse_depth: &mut usize,
+    ) -> KResult<()> {
         *recurse_depth -= 1;
         if *recurse_depth == 0 {
             // FIXME:
@@ -104,7 +109,10 @@ impl CapAllocator {
     // marks bytes as dealloced
     pub fn dealloc_bytes(&self, bytes: usize) {
         let mut page_data = self.page_data.lock();
-        assert!(page_data.used_size >= bytes, "tried to free to many bytes from this allocator");
+        assert!(
+            page_data.used_size >= bytes,
+            "tried to free to many bytes from this allocator"
+        );
         page_data.prealloc_size += bytes;
         page_data.used_size -= bytes;
     }
