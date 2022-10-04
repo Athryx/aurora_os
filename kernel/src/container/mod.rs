@@ -9,6 +9,7 @@ mod vecset;
 //mod nlvecmap;
 
 pub use arc::*;
+pub use hash_map::*;
 pub use linked_list::*;
 pub use r#box::*;
 pub use vec::*;
