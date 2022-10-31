@@ -437,8 +437,12 @@ argc: argument count
 
 
 19: fn event_send(event: Cap<Event>, | count: usize, | arg1: usize, | arg2: usize, | arg3: usize, | arg4: usize, | arg5: usize, | arg6: usize, | arg7: usize, | arg8: usize) -> SysErr
-sends a {count} messages to an event
+sends {count} messages to an event
+For example, if {count} is 2, and 3 threads are waiting on an event, 2 threads will be woken (unless event_send_all is specified)
 ignores all arguments grater than the number of arguments the event takes
+this call is non blocking, so if more messages are sent then threads that are waiting,
+the sender will not block, the event will simply remember to send these messegas later
+If event_send is called again on the same event while there are still messages to be sent, the old messages will be cleared and the new message will be sent
 
 options:
 bit 0 (event_send_all):
@@ -468,13 +472,41 @@ r13: arg 7
 r14: arg 8
 r15: unused
 
+If an async callback function is called, the kernel will automatically make a new stack frame
+The layout of this stack frame is described below:
+skip 128 bytes below old_rsp to preserve data in the red zone
+start stack frame:
+old_rip
+old_rflags
+old_rax
+old_rbx
+old_rcx
+old_rdx
+old_rbp
+old_rsi
+old_rdi
+old_r8
+old_r9
+old_r10
+old_r11
+old_r12
+old_r13
+old_r14
+old_r15
 
-20: fn event_listen(event: Cap<Event>, timout: | usize) -> CUSTOM
+rsp will point to the top of the stack where old_rflags is located
+
+The async event handler can use this information to return to old code without a syscall
+// TODO: figure out an architecture independant way to do this,
+// might not work currently on architectures which don't have a jmp instruction that works with memory operand
+
+
+20: fn event_listen(event: Cap<Event>, | timout: usize) -> CUSTOM
 synchronously listens on an event
 if the current thread is asynchronously listening on the event, the asynchronous listen will be aborted
 
 options:
-bit 1 (event_timeout):
+bit 0 (event_timeout):
 if the thread has not been unblocked by {timeout_nsec} nanoseconds after boot, the thread will be unblocked,
 and OkTimeout will be returned
 
@@ -488,7 +520,7 @@ return value:
 event listener return abi
 
 
-21: fn event_nblisten(event: Cap<Event>, timout: | usize) -> CUSTOM
+21: fn event_nblisten(event: Cap<Event>, | timout: usize) -> CUSTOM
 polls an event object to see if it contains an event, returns event if it has event, or returns OkUnreach if it doesn't
 
 required capability permissions:
@@ -504,10 +536,13 @@ event listener return abi
 22: fn event_alisten(event: Cap<Event>, handler: usize) -> SysErr
 asynchronously listens for an event
 calls the handler with the event handler abi when an event is recieved
-use the eret syscall to return from the event handler
+will keep recieveing events until event_aabort is called, or the event_oneshot option is specified
 
-if the capability to the event is destroyed before the handler is called, the handler may still be called
+if the capability to the event is destroyed before the handler is called, the handler may still be called, so long as the underlying event object still exists
 if the thread terminates before the event fires, it will also cancel the asynchronous listen operation
+
+options:
+bit 0 (event_oneshot): will stop listening on the event after the first event is recieved
 
 required capability permissions:
 {event}: cap_prod
@@ -526,15 +561,10 @@ syserr code:
 InvlOp: thread is not already asynchronously listening on this event object
 
 
-24: fn eret()
-returns from an asynchronous event handler
-does nothing if not in a event handler
-
-
 25: fn channel_new(allocator: Cap<Allocator>, msg_size: usize, max_caps: usize) -> (err: SysErr, channel: Cap<Channel>)
 creates a new channel object that sends messages up to {msg_size} words
 {msg_size} can either be 0, in which case no messages are sent, and channel can be used as a synchronization primitive,
-or it has to be at least 4
+or it has to be at least 3
 {max_caps} specifies the maximum amount of capabilities that can be sent over this channel
 {max_caps} may be bigger than the amount that could actually be sent over the channel if {msg_size} is too small
 
@@ -547,7 +577,7 @@ required capability permissions:
 {allocator}: cap_prod
 
 syserr code:
-InvlArgs: {msg_size} was either 1, 2, or 3, which is not allowed
+InvlArgs: {msg_size} was either 1 or 2, which is not allowed
 
 return value:
 channel: cid of channel

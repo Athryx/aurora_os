@@ -1,0 +1,20 @@
+Servers for userspace:
+
+ipc_server:
+provides listings of all other ipc servers, manages app permisions
+
+user_server:
+provides a way to elevate permissions or get the permissions of a certain user
+this will pretty much just store the key to a set of permissions for the root and each user
+
+ahci_server:
+provides access to ahci drives, used by filesystem_server
+
+filesystem_server:
+has the filesystem
+
+hwio_server:
+pretty simple server that just stores capabilities to kernel objects used for hardware io (MmioAllocator and PortAllocator)
+
+app_server:
+launches applications and sets their initial permissions

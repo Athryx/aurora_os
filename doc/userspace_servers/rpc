@@ -1,0 +1,7 @@
+Rpc calls are done over channels
+rpc methods are called with the channel_call or channel_acall syscalls and they are replied to by the channel_reply_recv syscall
+
+the first data word number specifies which method is being called on the channel
+all subsequent data words are the serialized arguments to the rpc method
+
+uses the serialization format specified in the serialization file

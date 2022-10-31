@@ -1,0 +1,8 @@
+perm_subclass(perm_id) -> (new_perm_id, control_channel, spawner)
+subclass permissions to make a new set of permissions that are the same or less than the original
+
+perm_delete(perm_id)
+deletes the permission and terminates processess spawned with that perm's and any subperm's spawner
+
+connect(perm_id, service) -> (service_channel)
+connects to a given service
