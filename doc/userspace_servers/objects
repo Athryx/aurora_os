@@ -1,0 +1,8 @@
+objects can be registered at a given name with the namespace server
+
+types of objects so far:
+
+Data: just stores data in memory
+Stream: sends data from a reader to a writer (determine if bideriectional or not)
+Service: can do ipc calls to a service
+Directory: contains other objects

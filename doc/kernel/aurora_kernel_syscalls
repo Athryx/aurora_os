@@ -10,7 +10,7 @@ specify atomicity of syscalls
 specify more advanced mmio allocation syscalls
 specify more advanced spawner syscalls
 
-maybe copy on write memory
+copy on write memory, cache memory, lazily allocated memory
 
 more advanced read syscalls
 
@@ -116,37 +116,40 @@ memory that can be mapped into a process
 2: Event
 used to signal other threads about an event
 
-3: Channel
+3: EventPool
+listens to many events at once and writes the fired events into a ring buffer in a Memory capability
+
+4: Channel
 used for ipc, and can be used to send capabilities to other processess
 
-4: Key
+5: Key
 a globally unique identifier, used to authenticate actions with other servers
 
-5: Interrupt
+6: Interrupt
 represents a hardware interrupt
 
-6: Port
+7: Port
 represents an io port that can be used from userspace
 
-7: Spawner
+8: Spawner
 gives permission to create processess and can kill processess that were spawned on it
 used to prevent malicious processess from spawning other processess and not killing them, which would leak memory
 
-8: Allocator
+9: Allocator
 represents permission to allocate a certain amount of memory for use by other objects
 
-9: RootOom
+10: RootOom
 used by the kernel to inform the userspace paging process that an out of memory event has occured on the root allocator
 normally a channel is used, but their are special requirements for the RootOom object,
 since it cannot allocate memory from a parent allocator like a channel can
 
-10: MmioAllocator
+11: MmioAllocator
 allows memory mapped io to be allocated
 
-11: IntAllocator
+12: IntAllocator
 allows interrupts to be created
 
-12: PortAllocator
+13: PortAllocator
 allows ports to be created
 
 // Thread id

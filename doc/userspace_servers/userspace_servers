@@ -1,6 +1,6 @@
 Servers for userspace:
 
-ipc_server:
+namespace_server:
 provides listings of all other ipc servers, manages app permisions
 
 user_server:
