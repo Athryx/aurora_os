@@ -19,7 +19,7 @@ global_info_table: ru Cap<Mem>
 a capability to the global information table
 
 kcontrol: rwu Cap<Event>
-# TODO: this should maybe be a channel
+# TODO: this should probably just be a key that can be passed to dedicated syscalls
 an event that can be used to issue certain privalidged commands to the kernel, such as power off and panic
 
 spawner: rwpu Cap<Spawner>

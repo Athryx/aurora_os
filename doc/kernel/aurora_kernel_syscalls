@@ -213,6 +213,10 @@ on x86_64, the registers correspond as follows:
 
 all other registers are set to 0
 
+options:
+bit 0 (thread_autostart): if set, the thread will start as soon as it is created
+otherwise, it will start in a suspended state
+
 required capability permissions:
 {process}: cap_write
 
@@ -221,22 +225,27 @@ tid:
 thread id
 
 
-// TODO: specify process capability and prune opperations
-4: fn thread_block(reason: usize, | nsec: usize | thread_id: tid) -> SysErr
-blocks the calling thread with reason {reason}
+4: fn thread_set_state(process: Cap<Process>, thread_id: tid, state: usize, | nsec: usize | wait_thread_id: tid) -> SysErr
+changes the state of the thread in {process} with id {thread_id} to {state}
 
-reason:
+valid states:
 0: yield, sets thread to ready state and switches to another thread, if available
 if no threads other than the idle thread are ready to run, the current thread will continue to run
 1: destroy, switches to another thread and terminates the current thread
 2: sleep, will sleep until {nsec} nanoseconds after boot
-3: join, will block until thread with id {thread_id} terminates
-4: await, will wait until any pending asynchronous events are recieved
-if there are no pending asynchronous events, this will do nothing, and the thread will continue to run as normal
-any other number will do nothing
+3: join, will block until thread with id {wait_thread_id} terminates
+4: suspend, will stop the execution of the specified thread
+returns InvlArgs if the specified thread is already suspended
+5: resume, will restart a suspended thread
+returns InvlArgs if the specified thread is not suspended
+
+_: any other number will do nothing and return InvlArgs
+
+required capability permissions:
+{process}: cap_write
 
 syserr code:
-InvlArgs: invalid reason passed to thread_block
+InvlArgs: invalid state passed to thread_set_state
 
 
 // TODO: specify exception codes
@@ -523,7 +532,7 @@ return value:
 event listener return abi
 
 
-21: fn event_nblisten(event: Cap<Event>, | timout: usize) -> CUSTOM
+21: fn event_nblisten(event: Cap<Event>) -> CUSTOM
 polls an event object to see if it contains an event, returns event if it has event, or returns OkUnreach if it doesn't
 
 required capability permissions:
@@ -534,34 +543,6 @@ OkUnreach: event object contained no events
 
 return value:
 event listener return abi
-
-
-22: fn event_alisten(event: Cap<Event>, handler: usize) -> SysErr
-asynchronously listens for an event
-calls the handler with the event handler abi when an event is recieved
-will keep recieveing events until event_aabort is called, or the event_oneshot option is specified
-
-if the capability to the event is destroyed before the handler is called, the handler may still be called, so long as the underlying event object still exists
-if the thread terminates before the event fires, it will also cancel the asynchronous listen operation
-
-options:
-bit 0 (event_oneshot): will stop listening on the event after the first event is recieved
-
-required capability permissions:
-{event}: cap_prod
-
-syserr code:
-InvlOp: thread is already asynchronously listening on this event object
-
-
-23: fn event_aabort(event: Cap<Event>) -> SysErr
-stops asynchronously listening on the event
-
-required capability permissions:
-{event}: cap_prod
-
-syserr code:
-InvlOp: thread is not already asynchronously listening on this event object
 
 
 25: fn channel_new(allocator: Cap<Allocator>, msg_size: usize, max_caps: usize) -> (err: SysErr, channel: Cap<Channel>)
