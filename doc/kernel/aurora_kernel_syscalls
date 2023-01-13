@@ -19,8 +19,6 @@ syscalls that can act on many capabilities at once by taking in an array
 fast_* syscalls which will be commonly used operations that would normally be performed in multiple syscalls,
 but performed in 1 syscall to reduce context switch overhead
 
-make virtual MmioAllocator, IntAllocator, and PortAllocator for containers (not needed for a long time)
-
 IMPLEMANTATION ISSUES:
 nothing implemented
 
@@ -162,9 +160,8 @@ type tid = usize;
 // when picking an id for a capability, the kernel ensures that the bottom 7 bits match the CapFlags that represent information about the capability
 type Cap<T> = usize;
 
-// specifies something that can consume an event
-// Null signifies that the current thread should block until the event occurs
-type EventConsumer = EventPool | Null
+// capabilities which can emit events
+type EventEmitter = Process | Interrupt | Lock | Allocator
 
 
 0: fn print_debug(a1: usize, a2: usize, a3: usize, a4: usize, a5: usize, a6: usize, a7: usize, a8: usize, a9: usize, a10: usize)
@@ -252,18 +249,7 @@ required capability permissions:
 {process}: cap_write
 
 syserr code:
-InvlArgs: invalid state passed to thread_set_state
-
-
-// TODO: specify exception codes
-5: fn process_bind_except(process: Cap<Process>, event: Cap<Event>) -> err: SysErr
-binds the event object referenced by {event} to recieve exceptions from the process
-the previous event that was bound to recieve exceptions, if any, will no longer recieve exceptions
-
-required capability permissions:
-{process}: cap_write
-{event}: cap_write
-
+InvlArgs: invalid state or thread_id passed to thread_set_state
 
 
 6: fn cap_clone<T>(process: Cap<Process>, cap: Cap<T>) -> (err: SysErr, cap_new: Cap<T>)
@@ -429,7 +415,36 @@ pages: size of memory in pages
 bytes: size of memory in bytes
 
 
-17: fn event_pool_new(allocator: Cap<Allocator>, mem: Cap<Mem>) -> (err: SysErr, event: Cap<EventPool>)
+|===================|
+| Events            |
+|===================|
+all *_handle_event syscalls take in the following options:
+bit 0-1 (handle_event_mode):
+0: block the current thread until an event occurs (this overwrites any current event handler)
+will return the event data in the first 3 return values after the syserr code
+1: set the specified thread pool to handle the event once, then remove the handler
+2: set the specified thread pool to handle all future events
+3: remove any registered event handler
+if a thread is currently waiting on the event emitter, it will return with a syserr of Interrupted
+
+all handle_event syscalls have these required capability permissions:
+{event_pool}: cap_prod
+
+syserr code:
+Interrupted: a thread was unregistered as an event handler while waiting on an event
+
+
+17: fn process_exception_handle_event(process: Cap<Process>, | event_pool: Cap<EventPool>)
+an event that occurs when an exception occurs in a process, such as a paging violation
+the thread that caused the exception will be set to a suspended state
+
+event data:
+word 0: exception type
+word 1: tid of thread where exception occured
+word 2: additional information depending on exception type
+
+
+17: fn event_pool_new(allocator: Cap<Allocator>, mem: Cap<Mem>) -> (err: SysErr, event_pool: Cap<EventPool>)
 creates a new event pool
 events sent to the event pool will be written into {mem}
 
@@ -443,7 +458,7 @@ required capability permissions:
 {mem}: cap_write
 
 return value:
-event: cid of the new event pool
+event_pool: cid of the new event pool
 
 
 18: fn event_pool_set_buffer(event_pool: Cap<EventPool>, mem: Cap<Mem>) -> SysErr
@@ -622,32 +637,42 @@ after the capabilities, there will be all the data words
 the data words continue to the end of the message
 
 
-29: fn channel_send(channel: Cap<Channel>, msg_buff: Cap<Mem>) -> SysErr
+29: fn channel_send(channel: Cap<Channel>, msg_buff: Cap<Mem>, | event_pool: Cap<EventPool>) -> SysErr
 sends a message, blocks until someone recieves the message
 {msg_buff} specifies the message buffer to send the message from
 even if the capability to the channel and message buffer are destroyed, the thread will remain blocked
 if the channel object is destroyed, the thread will unblock immidiately
 if the message buffer object is destroyed, the thread may only unblock when it would have recieved a message
 
+options:
+bit 0 (channel_send_async): instead of blocking the thread until the message is sent,
+an event will be sent to {event_pool} when the message is sent
+
 required capability permissions:
 {channel}: cap_prod
 {msg_buf}: cap_read
+{event_pool}: cap_prod
 
 syserr code:
 InvlArgs: {msg_buff} does not reference memory that is big enough to hold a message,
 or the cap_count option in {msg_buff} is greater than the maximum amount of capabilities that can be sent over this channel
 
 
-30: fn channel_recv(channel: Cap<Channel>, msg_buff: Cap<Mem>) -> SysErr
+30: fn channel_recv(channel: Cap<Channel>, msg_buff: Cap<Mem>, | event_pool: Cap<EventPool>) -> SysErr
 recieves a message, blocks until someone sends a message
 {msg_buff} specifies the message buffer to recieve the message into
 even if the capability to the channel and message buffer are destroyed, the thread will remain blocked
 if the channel object is destroyed, the thread will unblock immidiately
 if the message buffer object is destroyed, the thread may only unblock when it would have recieved a message
 
+options:
+bit 0 (channel_recv_async): instead of blocking the thread until a message is recieved,
+an event will be sent to {event_pool} when a message is recieved
+
 required capability permissions:
 {channel}: cap_write
 {msg_buf}: cap_write
+{event_pool}: cap_prod
 
 syserr code:
 InvlArgs: {msg_buff} does not reference memory that is big enough to hold a message
@@ -682,51 +707,6 @@ Obscured: {channel} has conn_sc_resist set
 OkUnreach: nobody was waiting to send a message
 
 
-33: fn channel_asend(channel: Cap<Channel>, msg_buff: Cap<Mem>, event: Cap<event>, func: usize) -> SysErr
-asynchronously send a message
-{msg_buff} specifies the message buffer to send the message from
-{event} specifies the event capability to signal once the message is sent
-{func} specifies the callback to call once the message is sent
-
-channel_asend will asynchronously listen on {event} with callback {func},
-and will signal {event} once the message is sent
-
-{event} must take 1 argument, and the cid of {msg_buf} will be passed in this argument
-
-the callback will may still be called even if the capability to the channel, message buffer, or event are destroyed
-
-required capability permissions:
-{channel}: cap_prod
-{msg_buf}: cap_read
-{event}: cap_write
-
-syserr code:
-InvlArgs: {msg_buff} does not reference memory that is big enough to hold a message, or {event} does not take in 1 argument,
-or the cap_count option in {msg_buff} is greater than the maximum amount of capabilities that can be sent over this channel
-
-
-34: fn channel_arecv(channel: Cap<Channel>, msg_buff: Cap<Mem>, event: Cap<event>, func: usize) -> SysErr
-asynchronously recieve a message
-{msg_buff} specifies the message buffer to recieve a message into
-{event} specifies the event capability to signal once a message is recieved
-{func} specifies the callback to call once a message is recieved
-
-channel_asend will asynchronously listen on {event} with callback {func},
-and will signal {event} once the message is sent
-
-{event} must take 1 argument, and the cid of {msg_buf} will be passed in this argument
-
-the callback will may still be called even if the capability to the channel, message buffer, or event are destroyed
-
-required capability permissions:
-{channel}: cap_write
-{msg_buf}: cap_write
-{event}: cap_write
-
-syserr code:
-InvlArgs: {msg_buff} does not reference memory that is big enough to hold a message, or {event} does not take in 1 argument
-
-
 35: fn channel_reply_recv(reply_channel: Cap<Channel>, recv_channel: Cap<Channel>, msg_buff: Cap<Mem>) -> SysErr
 reply to a channel, destroy it, than listen to another channel
 reply_recv first does a nbsend to {reply_cap}, and will then destroy the capability {reply_cap}
@@ -745,7 +725,7 @@ InvlArgs: {msg_buff} does not reference memory that is big enough to hold a mess
 or {reply_channel} and {recv_channel} do not have equal msg_size and max_caps properties
 
 
-36: fn channel_call(channel: Cap<Channel>, msg_buff: Cap<Mem>) -> SysErr
+36: fn channel_call(channel: Cap<Channel>, msg_buff: Cap<Mem>, | event_pool: Cap<EventPool>) -> SysErr
 call a channel
 call first creates a reply channel with cap_prod and cap_write permissions, and the same msg_size and max_caps properties, and then performs send on {channel}
 call will send a capability to the reply channel wth cap_prod permissions in the reply slot in the message
@@ -757,37 +737,14 @@ after the message is recieved, call destroys the reply channel capability
 
 this operation may still take place even if the {channel} or {msg_buf} capabilities are destroyed while blocking
 
-required capability permissions:
-{channel}: cap_prod
-{msg_buff}: cap_read | cap_write
-
-syserr code:
-InvlArgs: {msg_buff} does not reference memory that is big enough to hold a message,
-or the cap_count option in {msg_buff} is greater than the maximum amount of capabilities that can be sent over this channel
-
-
-37: fn channel_acall(channel: Cap<Channel>, msg_buff: Cap<Mem>, event: Cap<Event>, func: usize) -> SysErr
-asynchronously call a channel
-
-acall will first wait on {event}
-{event} must take 1 argument, and the cid of {msg_buf} will be passed in this argument
-
-acall first creates a reply channel with cap_prod and cap_write permissions, and the same msg_size and max_caps properties, and then performs asend on {channel}
-acall will send a capability to the reply channel wth cap_prod permissions in the reply slot in the message
-acall will not use the event capability to listen for asend completion, it will instead use an internal kernel event system
-
-after the message is recieved, call than performs an arecv on the reply capability, and will wait for a responce from the server
-after the message is recieved, acall destroys the reply channel capability
-acall will then signal {event}, and the operation will be complete
-
-{msg_buff} specifies the message buffer to send from and recieve into
-
-this operation may still take place even if the {channel}, {msg_buf}, or {event} capabilities are destroyed while asynchronously waiting
+options:
+bit 0 (channel_call_async): instead of blocking the thread until the call is completed,
+an event will be sent to {event_pool} when the call is completed
 
 required capability permissions:
 {channel}: cap_prod
 {msg_buff}: cap_read | cap_write
-{event}: cap_write
+{event_pool}: cap_prod
 
 syserr code:
 InvlArgs: {msg_buff} does not reference memory that is big enough to hold a message,
@@ -979,6 +936,7 @@ required capability permissions:
 
 
 // TODO: specify oom event fromat, and when InvlArgs is thrown because insufficient channel size
+// TODO: remove
 51: fn allocator_bind_oom_handler(allocator: Cap<Allocator>, channel: Cap<Channel>) -> SysErr
 bind a channel to recieve oom events from the allocator
 if another oom channel was registered, that one will no longer recieve oom events
