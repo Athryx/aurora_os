@@ -13,6 +13,7 @@
 #![feature(dropck_eyepatch)]
 #![feature(ptr_metadata)]
 #![feature(let_chains)]
+#![feature(return_position_impl_trait_in_trait)]
 /*#![feature(arc_new_cyclic)]
 #![feature(const_btree_new)]
 #![feature(alloc_prelude)]
@@ -38,6 +39,7 @@ mod util;
 //mod time;
 
 mod consts;
+mod gdt;
 mod gs_data;
 mod io;
 mod mb2;
@@ -52,6 +54,7 @@ use arch::x64::*;
 use gs_data::{GsData, Prid};
 use int::idt::Idt;
 use mb2::BootInfo;
+use sync::IMutex;
 //use time::pit;
 use prelude::*;
 
@@ -69,10 +72,9 @@ fn panic(info: &PanicInfo) -> ! {
 
 /// Initilizes all kernel subsystems, and starts all other cpu cores
 ///
-/// Ran once on the startup core
+/// Runs once on the startup core
 fn init(boot_info_addr: usize) -> KResult<()> {
-    unsafe { mem::init(*consts::KERNEL_VMA) }
-
+    // clear the vga text buffer
     io::WRITER.lock().clear();
 
     let boot_info = unsafe { BootInfo::new(boot_info_addr) };
@@ -81,12 +83,20 @@ fn init(boot_info_addr: usize) -> KResult<()> {
         alloc::init(&boot_info.memory_map)?;
     }
 
+    // initialize the cpu local data
     gs_data::init(GsData {
+        self_addr: AtomicUsize::new(0),
         temp_syscall_return_rip: AtomicUsize::new(0),
         prid: Prid::from(0),
         idt: Idt::new(),
+        gdt: IMutex::new(gdt::Gdt::new()),
+        tss: IMutex::new(gdt::Tss::new()),
     });
 
+    // initalize the gdt from the gdt and tss stored in the cpu local data
+    gdt::init();
+
+    // initislise the scheduler
     sched::init()?;
 
     //pit::disable();

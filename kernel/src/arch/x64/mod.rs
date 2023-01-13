@@ -310,7 +310,3 @@ extern "C" {
 pub fn gs_addr() -> usize {
     unsafe { asm_gs_addr() }
 }
-
-pub fn raw_prid() -> usize {
-    unsafe { asm_prid() }
-}

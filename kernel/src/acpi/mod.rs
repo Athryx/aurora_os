@@ -10,15 +10,16 @@ pub mod madt;
 use hpet::Hpet;
 use madt::Madt;
 
+/// Type of the acpi table
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SdtType {
-    // root system descriptor table
+    /// root system descriptor table
     Rsdt,
-    // extended system descriptor table (64 bit version of rsdp)
+    /// extended system descriptor table (64 bit version of rsdp)
     Xsdt,
-    // multiple APIC description table
+    /// multiple APIC description table
     Madt,
-    // High precision event timer table
+    /// High precision event timer table
     Hpet,
 }
 

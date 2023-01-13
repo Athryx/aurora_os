@@ -5,12 +5,6 @@ global asm_prid
 
 asm_gs_addr:
 	swapgs
-	mov rax, [gs:gs_data_ptr.ptr]
-	swapgs
-	ret
-
-asm_prid:
-	swapgs
-	mov rax, [gs:gs_data_ptr.prid]
+	mov rax, [gs:gs_data.self_addr]
 	swapgs
 	ret

@@ -1,10 +1,7 @@
 use core::ops::{Add, AddAssign, Sub, SubAssign};
 
 use crate::prelude::*;
-
-// mutex is too slow
-// offset of kernel virtual memory mapping of physical memory
-static mut MEM_OFFSET: usize = 0;
+use crate::consts::KERNEL_VMA;
 
 pub fn phys_to_virt(addr: usize) -> usize {
     unsafe {
@@ -17,12 +14,6 @@ pub fn virt_to_phys(addr: usize) -> usize {
     unsafe {
         // safety: to_phys will check safety of physical address
         VirtAddr::new_unchecked(addr).to_phys().as_usize()
-    }
-}
-
-pub unsafe fn set_mem_offset(offset: usize) {
-    unsafe {
-        MEM_OFFSET = offset;
     }
 }
 
@@ -53,7 +44,7 @@ impl PhysAddr {
     }
 
     pub fn to_virt(self) -> VirtAddr {
-        match VirtAddr::try_new(self.0 + unsafe { MEM_OFFSET }) {
+        match VirtAddr::try_new(self.0 + *KERNEL_VMA) {
             Some(addr) => addr,
             None => panic!(
                 "could not convert physical address {:x} to virtual address",
@@ -97,10 +88,10 @@ impl VirtAddr {
 
     pub fn to_phys(self) -> PhysAddr {
         let addr = self.0;
-        if addr < unsafe { MEM_OFFSET } {
+        if addr < *KERNEL_VMA {
             panic!("could not convert virtual address {:x} to physical address", addr);
         }
-        PhysAddr::new(addr - unsafe { MEM_OFFSET })
+        PhysAddr::new(addr - *KERNEL_VMA)
     }
 }
 

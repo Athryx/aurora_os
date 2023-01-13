@@ -13,7 +13,3 @@ pub use allocation::{Allocation, HeapAllocation};
 pub use mem_owner::MemOwner;
 pub use page_layout::PageLayout;
 pub use range::*;
-
-pub unsafe fn init(mem_offset: usize) {
-    unsafe { addr::set_mem_offset(mem_offset) }
-}

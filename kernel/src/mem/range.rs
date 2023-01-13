@@ -177,6 +177,14 @@ macro_rules! impl_addr_range {
             fn split_at(&self, range: Self) -> (Option<Self>, Option<Self>)
             where
                 Self: Sized;
+            
+            /// Same behavior as split_at, but returns an iterator over the ranges instead of a tuple of options
+            fn split_at_iter(&self, range: Self) -> impl Iterator<Item = Self>
+            where Self: Sized {
+                let (first_out, second_out) = self.split_at(range);
+                first_out.into_iter()
+                    .chain(second_out)
+            }
 
             fn get_take_size(&self) -> Option<PageSize> {
                 PageSize::try_from_usize(min(

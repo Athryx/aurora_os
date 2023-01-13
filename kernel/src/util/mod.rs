@@ -159,6 +159,9 @@ pub fn aligned_nonnull<T>(ptr: *const T) -> bool {
 }
 
 /// Creates a `str` from a pointer to a cstring
+/// 
+/// # Safety
+/// `ptr` must point to the start of a valid cstring, which must be terminated by a null byte
 pub unsafe fn from_cstr<'a>(ptr: *const u8) -> Result<&'a str, Utf8Error> {
     let mut len = 0;
     let start = ptr;

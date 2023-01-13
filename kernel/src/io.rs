@@ -1,3 +1,5 @@
+//! Provides utilites for writing debug text to the vga text buffer or the qemu debug port
+
 use core::fmt::{self, Write};
 
 use lazy_static::lazy_static;
@@ -11,9 +13,11 @@ use crate::sync::IMutex;
 const VGA_BUF_WIDTH: usize = 80;
 const VGA_BUF_HEIGHT: usize = 25;
 
+/// Port number of the debug console in qemu
 const DEBUGCON_PORT: u16 = 0xe9;
 
 lazy_static! {
+    /// The writer for the vga text buffer, used by print!() and friends
     pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
         xpos: 0,
         ypos: 0,
@@ -21,15 +25,22 @@ lazy_static! {
         buffer: unsafe { ((*consts::KERNEL_VMA + 0xb8000) as *mut Buffer).as_mut().unwrap() },
     });
 }
+
+/// The writer for the qemu debug port, used by eprint!() and friends
 pub static E_WRITER: IMutex<PortWriter> = IMutex::new(PortWriter::new(DEBUGCON_PORT));
-// doesn't lock, so ideal for calling from interrupt handlers, but it is not synchronized
+
+/// The writer for the qemu debug port, used by rprint!() and friends
+/// 
+/// Doesn't lock, so ideal for calling from interrupt handlers, but it is not synchronized
 pub static mut R_WRITER: PortWriter = PortWriter::new(DEBUGCON_PORT);
 
+/// Represents the vga text buffer
 #[repr(transparent)]
 struct Buffer {
     chars: [[Volatile<ScreenChar>; VGA_BUF_WIDTH]; VGA_BUF_HEIGHT],
 }
 
+/// A color code for the vga text buffer
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -52,6 +63,7 @@ pub enum Color {
     White = 15,
 }
 
+/// A combination of 2 color codes representing the foreground and background color
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 struct ColorCode(u8);
@@ -62,6 +74,7 @@ impl ColorCode {
     }
 }
 
+// A character in the vga text buffer, has a glyph and a color
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
 struct ScreenChar {
@@ -78,6 +91,7 @@ impl ScreenChar {
     }
 }
 
+/// Writes characters to a buffer
 pub struct Writer {
     xpos: usize,
     ypos: usize,
@@ -165,11 +179,13 @@ impl Write for Writer {
     }
 }
 
+/// Prints to the vga text buffer
 #[macro_export]
 macro_rules! print {
 	($($arg:tt)*) => ($crate::io::_print(format_args!($($arg)*)));
 }
 
+/// Prints to the vga text buffer
 #[macro_export]
 macro_rules! println {
 	() => ($crate::print!("\n"));
@@ -181,6 +197,7 @@ pub fn _print(args: fmt::Arguments) {
     WRITER.lock().write_fmt(args).unwrap();
 }
 
+/// Writes strings to a port
 pub struct PortWriter {
     port: u16,
 }
@@ -210,11 +227,13 @@ impl Write for PortWriter {
     }
 }
 
+/// Prints to the qemu debug port
 #[macro_export]
 macro_rules! eprint {
 	($($arg:tt)*) => ($crate::io::_eprint(format_args!($($arg)*)));
 }
 
+/// Prints to the qemu debug port
 #[macro_export]
 macro_rules! eprintln {
 	() => ($crate::eprint!("\n"));
@@ -226,11 +245,13 @@ pub fn _eprint(args: fmt::Arguments) {
     E_WRITER.lock().write_fmt(args).unwrap();
 }
 
+/// Prints to the qemu debug port, but does not lock the writer, so it can always write, even from interrupt handlers
 #[macro_export]
 macro_rules! rprint {
 	($($arg:tt)*) => ($crate::io::_rprint(format_args!($($arg)*)));
 }
 
+/// Prints to the qemu debug port, but does not lock the writer, so it can always write, even from interrupt handlers
 #[macro_export]
 macro_rules! rprintln {
 	() => ($crate::rprint!("\n"));

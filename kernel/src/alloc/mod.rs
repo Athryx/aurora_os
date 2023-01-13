@@ -1,3 +1,7 @@
+//! Functions related to memory managemant
+//! 
+//! This module includes the physical page allocator, the kernel heap, as well as the capability object allocator
+
 mod alloc_ref;
 mod cap_allocator;
 mod fixed_page_allocator;
@@ -15,14 +19,15 @@ use spin::Once;
 
 use crate::container::Arc;
 use crate::mb2::MemoryMap;
-use crate::mem::Allocation;
 use crate::prelude::*;
 
 
 static PMEM_MANAGER: Once<PmemManager> = Once::new();
 
-// must call init before using
-// panics if init has not been called
+/// Returns the zone manager (which manages all physical pages on the system)
+/// 
+/// # Panics
+/// Panics if the zone manager has not yet been initialized
 pub fn zm() -> &'static PmemManager {
     PMEM_MANAGER
         .get()
@@ -31,32 +36,51 @@ pub fn zm() -> &'static PmemManager {
 
 static HEAP: Once<LinkedListAllocator> = Once::new();
 
+/// Returns the kernel heap allocator
+/// 
+/// # Panics
+/// Panics if the heap allocator has not yet been initilized
 pub fn heap() -> &'static LinkedListAllocator {
     HEAP.get().expect("heap not yet initilized")
 }
 
+/// Returns an orig ref to the heap allocator
+/// 
+/// # Panics
+/// Panics if the heap allocator has not yet been initilized
 pub fn heap_ref() -> OrigRef {
     OrigRef::new(heap())
 }
 
 static ROOT_ALLOCATOR: Once<Arc<CapAllocator>> = Once::new();
 
+/// Returns the root CapAllocator
+/// 
+/// # Panics
+/// Panics if the root CapAllocator has not yet been intialized
 pub fn root_alloc() -> &'static CapAllocator {
     ROOT_ALLOCATOR
         .get()
         .expect("root allocator accessed before it was initilized")
 }
 
+/// Returns the root CapAllocator
+/// 
+/// # Panics
+/// Panics if the root CapAllocator has not yet been intialized
 pub fn root_alloc_ref() -> OrigRef {
     OrigRef::new(root_alloc())
 }
 
-// safety: must call before ever calling zm
+
+/// Initilizes the memory allocation subsystem
+/// 
+/// # Safety
+/// Must call with a valid memory map
 pub unsafe fn init(mem_map: &MemoryMap) -> KResult<()> {
-    unsafe {
         let mut total_pages = 0;
         PMEM_MANAGER.call_once(|| {
-            let (pmem_manager, pages) = PmemManager::new(mem_map);
+            let (pmem_manager, pages) = unsafe { PmemManager::new(mem_map) };
             total_pages = pages;
             pmem_manager
         });
@@ -69,5 +93,4 @@ pub unsafe fn init(mem_map: &MemoryMap) -> KResult<()> {
         });
 
         Ok(())
-    }
 }

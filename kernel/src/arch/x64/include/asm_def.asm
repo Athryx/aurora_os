@@ -114,17 +114,11 @@ struc int_data
 	.ss resq 1
 endstruc
 
-; ptr to gsdata
-; temp is extra register used in syscall entry to store old rip because there are not enough registers
-struc gs_data_ptr
-	.ptr resq 1
-	.temp resq 1
-	.prid resq 1
-endstruc
-
+; structure that a pointer is stored in the gs_base msr
 struc gs_data
-	.call_rsp resq 1
-	.call_save_rsp resq 1
+	.self_addr resq 1
+	.temp_syscall_return_rip resq 1
+	; nothing else matters for assembly
 endstruc
 
 

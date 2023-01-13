@@ -140,28 +140,8 @@ impl MemoryRegionType {
         }
     }
 
-    fn new(region: &Mb2MemoryRegion, initrd_range: UPhysRange) -> [Option<Self>; 8] {
-        let split_range_on_zone = |range: Option<UPhysRange>,
-                                   split_range: UPhysRange|
-         -> (Option<UPhysRange>, Option<UPhysRange>) {
-            match range {
-                Some(range) => range.split_at(split_range),
-                None => (None, None),
-            }
-        };
-        let (prange1, prange2) = UPhysRange::new(PhysAddr::new(region.addr as usize), region.len as usize)
-            .split_at(*consts::KERNEL_PHYS_RANGE);
-
-        let (prange1, prange3) = split_range_on_zone(prange1, initrd_range);
-        let (prange2, prange4) = split_range_on_zone(prange2, initrd_range);
-
-        let ap_code_zone = consts::AP_PHYS_CODE_RANGE.as_unaligned();
-        let (prange1, prange5) = split_range_on_zone(prange1, ap_code_zone);
-        let (prange2, prange6) = split_range_on_zone(prange2, ap_code_zone);
-        let (prange3, prange7) = split_range_on_zone(prange3, ap_code_zone);
-        let (prange4, prange8) = split_range_on_zone(prange4, ap_code_zone);
-
-        let convert_func = |prange| match region.typ {
+    fn new<'a>(region: &'a Mb2MemoryRegion, initrd_range: UPhysRange) -> impl Iterator<Item = Self> + 'a {
+        let convert_to_memory_region = |prange| match region.typ {
             USABLE => Self::Usable(prange),
             ACPI => Self::Acpi(prange),
             HIBERNATE_PRESERVE => Self::HibernatePreserve(prange),
@@ -169,16 +149,11 @@ impl MemoryRegionType {
             _ => Self::Reserved(prange),
         };
 
-        [
-            prange1.map(convert_func),
-            prange2.map(convert_func),
-            prange3.map(convert_func),
-            prange4.map(convert_func),
-            prange5.map(convert_func),
-            prange6.map(convert_func),
-            prange7.map(convert_func),
-            prange8.map(convert_func),
-        ]
+        UPhysRange::new(PhysAddr::new(region.addr as usize), region.len as usize)
+            .split_at_iter(*consts::KERNEL_PHYS_RANGE)
+            .flat_map(move |range| range.split_at_iter(initrd_range))
+            .flat_map(|range| range.split_at_iter(consts::AP_PHYS_CODE_RANGE.as_unaligned()))
+            .map(convert_to_memory_region)
     }
 
     pub fn range(&self) -> UPhysRange {
@@ -273,6 +248,7 @@ impl BootInfo<'_> {
             match data {
                 Mb2Elem::End => break,
                 Mb2Elem::Module(data) => {
+                    // look for initrd in module
                     if unsafe { data.string() } == "initrd" {
                         let size = (data.mod_end - data.mod_start) as usize;
                         let paddr = PhysAddr::new(data.mod_start as usize);
@@ -308,7 +284,7 @@ impl BootInfo<'_> {
 
                 let regions = MemoryRegionType::new(region, initrd_range.expect("no initrd"));
 
-                for region in regions.into_iter().flatten() {
+                for region in regions {
                     memory_map.push(region);
                 }
 
