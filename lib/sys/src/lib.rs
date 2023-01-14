@@ -21,7 +21,8 @@ pub enum SysErr {
     InvlPtr = 12,
     ResLimit = 13,
     Obscured = 14,
-    Unknown = 15,
+    InvlSyscall = 15,
+    Unknown = 16,
 }
 
 impl SysErr {
@@ -54,6 +55,7 @@ impl SysErr {
             Self::InvlPtr => "invalid pointer",
             Self::ResLimit => "operation could not be performed due to a resource limit",
             Self::Obscured => "operation does not return information about error state",
+            Self::InvlSyscall => "invalid syscall number",
             Self::Unknown => "unknown error",
         }
     }

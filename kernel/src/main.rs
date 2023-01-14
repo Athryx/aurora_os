@@ -45,6 +45,7 @@ mod io;
 mod mb2;
 mod prelude;
 mod process;
+mod syscall;
 
 use core::panic::PanicInfo;
 use core::sync::atomic::AtomicUsize;
@@ -86,7 +87,8 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     // initialize the cpu local data
     gs_data::init(GsData {
         self_addr: AtomicUsize::new(0),
-        temp_syscall_return_rip: AtomicUsize::new(0),
+        call_rsp: AtomicUsize::new(0),
+        call_save_rsp: AtomicUsize::new(0),
         prid: Prid::from(0),
         idt: Idt::new(),
         gdt: IMutex::new(gdt::Gdt::new()),
@@ -95,6 +97,11 @@ fn init(boot_info_addr: usize) -> KResult<()> {
 
     // initalize the gdt from the gdt and tss stored in the cpu local data
     gdt::init();
+
+    // load idt
+    cpu_local_data().idt.load();
+
+    syscall::init();
 
     // initislise the scheduler
     sched::init()?;

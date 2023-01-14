@@ -2,7 +2,7 @@
 
 global syscall_entry
 
-extern syscalls
+extern rust_syscall_entry
 
 section .text
 bits 64
@@ -10,22 +10,17 @@ syscall_entry:
 	; kernel stack pointer should be 16 byte aligned
 	; iretq clears gs_base msr, so we have to keep it in gs_base_k, and use swapgs to access it
 	swapgs
-	mov [gs:gs_data_ptr.temp], rcx			; save return rip in temp register
-	mov r10, [gs:gs_data_ptr.ptr]			; load pointer to gs data
+	mov [gs:gs_data.call_save_rsp], rsp		; save caller rsp
+	mov rsp, [gs:gs_data.call_rsp]			; load kernel rsp
 
-	mov rcx, rsp
-	mov [r10 + gs_data.call_save_rsp], rsp	; save caller rsp
-	mov rsp, [r10 + gs_data.call_rsp]		; load kernel rsp
+	; all values on stack will be part of the rust SyscallVals struct
 
-	push r11		; save old flags
-	push rcx		; save old rsp
-
-	mov rcx, [gs:gs_data_ptr.temp]			; restore return rip
+	push rcx								; save return rip
+	push r11								; save old flags
+	push qword [gs:gs_data.call_save_rsp]	; put caller rsp on stack
 
 	swapgs
 	sti
-
-	push rcx		; save return rip
 
 	push r15		; push args on stack
 	push r14
@@ -45,26 +40,17 @@ syscall_entry:
 	shl rax, 32		; cant use and because it messes things up
 	shr rax, 32
 
-	cmp rax, 41		; make sure it is a valid syscall
-	jg .invalid_syscall
+	mov rdi, rax	; arg1: sycall number
 
-	mov rdi, rsp
+	mov rsi, rsp	; arg2: reference to syscall vals on stack
 	sub rsp, 8		; align stack
 
-	mov r10, syscalls
-	mov rax, [r10 + rax * 8]
-	call rax		; stack is already 16 byte aligned
+	mov rax, rust_syscall_entry
+	call rax
 
-	add rsp, 8		; put stack pointer to right place
-	pop rax
+	add rsp, 16		; put stack pointer to right place from earlier alignmant, and ignore options on stack
 
-	jmp .valid_syscall
-
-.invalid_syscall:
-	add rsp, 8
-	mov rax, -1 
-
-.valid_syscall:
+	mov rax, 0
 	pop rbx
 	pop rdx
 	pop rsi
@@ -76,20 +62,16 @@ syscall_entry:
 	pop r14
 	pop r15
 
-	pop rcx			; restore return rip
-
 	cli
 	swapgs
 
-	mov r10, [gs:gs_data_ptr.ptr]		; get gs ptr
-	mov [gs:gs_data_ptr.temp], rcx		; return rip in temporary location
-	mov rcx, [r10 + gs_data.call_save_rsp]	; get save rsp and put in rcx
+	; TODO: maybe remove, there aren't any syscalls that change rsp, so this might not be necessary
+	pop qword [gs:gs_data.call_save_rsp]	; restore return rsp
 
-
-	pop r10			; read old rsp
 	pop r11			; restore flags
-	mov rsp, rcx	; restore save rsp
+	pop rcx			; restore return rip
 
-	mov rcx, [gs:gs_data_ptr.temp]	; load return rip from temporary location
+	mov rsp, [gs:gs_data.call_save_rsp]
+
 	swapgs
 	o64 sysret

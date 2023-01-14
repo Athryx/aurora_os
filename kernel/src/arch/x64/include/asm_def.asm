@@ -117,7 +117,8 @@ endstruc
 ; structure that a pointer is stored in the gs_base msr
 struc gs_data
 	.self_addr resq 1
-	.temp_syscall_return_rip resq 1
+	.call_rsp resq 1
+	.call_save_rsp resq 1
 	; nothing else matters for assembly
 endstruc
 

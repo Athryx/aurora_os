@@ -149,11 +149,10 @@ impl Idt {
         // Used for scheduler to switch threads
         make_idt_entry_r0!(out, 128);
 
-        out.load();
         out
     }
 
-    fn load(&self) {
+    pub fn load(&self) {
         let idt_pointer = IdtPointer {
             limit: (size_of::<[IdtEntry; Self::NUM_ENTRIES]>() - 1) as _,
             base: &self.entries as *const _ as _,

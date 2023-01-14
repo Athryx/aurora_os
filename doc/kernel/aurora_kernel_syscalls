@@ -51,6 +51,8 @@ bit 31 (weak_auto_destroy): automatically destoy a weak capability if it is dead
 
 syserr codes:
 syserr codes that mey be returned by all syscalls:
+InvlSyscall: the requested syscall number does not exist
+
 Ok: operation completed succesfully
 
 OutOfMem: not enough memory available to perform operation

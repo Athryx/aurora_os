@@ -19,8 +19,12 @@ pub struct GsData {
     /// We need this because lea doesn't work with the gs register,
     /// so the assembly looks at this field and returns the pointer to the rust code
     pub self_addr: AtomicUsize,
-    /// Used by assembly code to temporarily set the syscall return rip
-    pub temp_syscall_return_rip: AtomicUsize,
+    /// This is the kernel rsp that will be loaded whenever a syscall is made
+    /// 
+    /// This is switched when switching to a different thread
+    pub call_rsp: AtomicUsize,
+    /// This is the old userspace rsp to return to from a syscall handler
+    pub call_save_rsp: AtomicUsize,
     /// Id of the current processor
     pub prid: Prid,
     /// Interrupt descriptor table for current cpu
