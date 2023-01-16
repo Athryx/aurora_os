@@ -5,6 +5,8 @@ use crate::cap::{CapFlags, CapObject, StrongCapability};
 use crate::make_id_type;
 use crate::prelude::*;
 
+mod vmem_manager;
+
 make_id_type!(Pid);
 
 static NEXT_PID: AtomicUsize = AtomicUsize::new(0);

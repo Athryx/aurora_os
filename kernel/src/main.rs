@@ -13,6 +13,7 @@
 #![feature(dropck_eyepatch)]
 #![feature(ptr_metadata)]
 #![feature(let_chains)]
+#![feature(try_blocks)]
 #![feature(return_position_impl_trait_in_trait)]
 /*#![feature(arc_new_cyclic)]
 #![feature(const_btree_new)]
