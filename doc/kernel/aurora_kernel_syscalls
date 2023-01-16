@@ -254,6 +254,10 @@ syserr code:
 InvlArgs: invalid state or thread_id passed to thread_set_state
 
 
+|=======================|
+| Capability Management |
+|=======================|
+
 6: fn cap_clone<T>(process: Cap<Process>, cap: Cap<T>) -> (err: SysErr, cap_new: Cap<T>)
 clones the capability {cap} into {process} with different privalidges
 
@@ -309,16 +313,10 @@ InvlArgs: {weak} was not a weak capability
 
 
 
-10: fn mem_map(process: Cap<Process>, mem: Cap<Mem>, at_addr: usize) -> (err: SysErr, addr: usize, len: usize)
-maps a capability {mem} that can be mapped into memory into the memory of process {process}
+10: fn mem_map(process: Cap<Process>, mem: Cap<Mem>, addr: usize) -> SysErr
+maps a capability {mem} that can be mapped into memory into the memory of process {process} starting at address {addr}
 the mapped memory read, write, and execute permissions depend on cap_read, cap_write, and cap_prod permissions respectively
-if {at_addr} is not 0, mem_map tries to map the memory starting at {at_addr}, fails if the memory is already occupied, or it is reserved and map_force is not used
-mem_map will never map the page starting at addres 0, even if map_force is used
-
-options:
-bit 0 (map_force):
-when used with map_at, allows mapping memory to reserved memory zones
-does nothing if map_at is not used
+will fail if {mem} overlaps with any other mapped memory
 
 required capability permissions:
 {process}: cap_write
@@ -329,48 +327,15 @@ InvlVirtAddr: {at_addr} is non canonical
 InvlAlign: {at_addr} is not page aligned
 InvlMemZone: the value passed in for {at_addr} causes the mapped memory to overlap with other virtual memory or reserved memory
 
-return value:
-addr: address of mapped memory
-
-len: length of mapped memory in pages
-
 
 11: fn mem_unmap(process: Cap<Process>, mem: Cap<Mem>) -> SysErr
-unmaps memory mapped by cmap
+unmaps memory mapped by mem_map
 
 required capability permissions:
 {process}: cap_write
 
-return value:
 syserr code:
 InvlOp: {mem} is not mapped into {process} address space
-
-
-12: fn mem_reserve(process: Cap<Process>, addr: usize, pages: usize) -> SysErr
-reserves memory starting at address {addr} that is {pages} pages long
-this memory range cannot have a memory object mapped to it unless mem_map is callod with map_force
-
-required capability permissions:
-{process}: cap_write
-
-return value:
-syserr code:
-InvlVirtAddr: {addr} is non canonical
-InvlAlign: {addr} is not page aligned
-InvlMemZone: the value passed in for {addr} and {pages} causes the reserved memory to overlap with another area of reserved memory
-
-
-13: fn mem_unreserve(process: Cap<Process>, addr: usize) -> SysErr
-gets rid of a memory reservation
-{addr} must point to the start of the reservation, and cannot point inside the reservation
-
-required capability permissions:
-{process}: cap_write
-
-return value:
-syserr code:
-InvlVirtAddr: {addr} is non canonical
-InvlAddr: {addr} does not point to memory reservation
 
 
 14: fn mem_new(allocator: Cap<Allocator>, pages: usize) -> (err: SysErr, mem: Cap<Mem>)
@@ -417,9 +382,9 @@ pages: size of memory in pages
 bytes: size of memory in bytes
 
 
-|===================|
-| Events            |
-|===================|
+|=======================|
+| Events                |
+|=======================|
 all *_handle_event syscalls take in the following options:
 bit 0-1 (handle_event_mode):
 0: block the current thread until an event occurs (this overwrites any current event handler)
