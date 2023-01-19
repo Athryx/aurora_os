@@ -3,9 +3,12 @@
 use bitflags::bitflags;
 use lazy_static::lazy_static;
 
+use crate::mem::PhysFrame;
+use crate::mem::VirtFrame;
 use crate::prelude::*;
 use crate::consts;
 use crate::sync::IMutex;
+use crate::sync::IMutexGuard;
 use crate::{alloc::{PaRef, AllocRef}, mem::Allocation};
 use page_table::{PageTable, PageTablePointer};
 
@@ -16,6 +19,9 @@ mod page_table;
 lazy_static! {
 	static ref HIGHER_HALF_PAGE_POINTER: PageTablePointer = PageTablePointer::new(*consts::KZONE_PAGE_TABLE_POINTER,
 		PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::GLOBAL);
+    
+    /// Most permissive page table flags used by parent tables
+    static ref PARENT_FLAGS: PageTableFlags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER;
 }
 
 bitflags! {
@@ -36,6 +42,26 @@ impl PageMappingFlags {
 	}
 }
 
+/// Use to take a large as possible page size for use with huge pages
+struct PageMappingTaker {
+    virt_range: AVirtRange,
+    phys_range: APhysRange,
+}
+
+impl PageMappingTaker {
+    fn take(&mut self) -> Option<(PhysFrame, VirtFrame)> {
+        let take_size = core::cmp::min(
+            self.phys_range.get_take_size()?,
+            self.virt_range.get_take_size()?,
+        );
+
+        Some((
+            self.phys_range.take(take_size)?,
+            self.virt_range.take(take_size)?,
+        ))
+    }
+}
+
 /// Fields in virt addr space that need ot be mutated so they will all be behind a lock
 struct VirtAddrSpaceInner {
     /// All virtual memory which is currently in use
@@ -52,7 +78,7 @@ impl VirtAddrSpaceInner {
     /// 
     /// The index is the place where the virt_range can be inserted to maintain ordering in the list
     fn virt_range_unoccupied(&self, virt_range: AVirtRange) -> Option<usize> {
-        match self.mem_zones.binary_search_by_key(&virt_range.addr(), |range| range.addr()) {
+        match self.mem_zones.binary_search_by_key(&virt_range.addr(), AVirtRange::addr) {
             // If we find the address it is occupied
             Ok(_) => None,
             Err(index) => {
@@ -101,12 +127,12 @@ impl VirtAddrSpaceInner {
         Err(SysErr::InvlMemZone)
     }
 
-    fn remove_virt_addr_entries(&mut self, memory: &[AVirtRange]) -> KResult<()> {
+    fn remove_virt_addr_entries(&mut self, memory: &[(AVirtRange, PhysAddr)]) -> KResult<()> {
         // TODO: figure out if this atomic removing is even necessary, we might not need 2 passess
 
-        for virt_range in memory {
+        for (virt_range, _) in memory {
             let index = self.mem_zones
-                .binary_search_by_key(&virt_range.addr(), |range| range.addr())
+                .binary_search_by_key(&virt_range.addr(), AVirtRange::addr)
                 .map_err(|_| SysErr::InvlMemZone)?;
             
             if self.mem_zones[index] != *virt_range {
@@ -114,15 +140,99 @@ impl VirtAddrSpaceInner {
             }
         }
 
-        for virt_range in memory {
+        for (virt_range, _) in memory {
             let index = self.mem_zones
-                .binary_search_by_key(&virt_range.addr(), |range| range.addr())
+                .binary_search_by_key(&virt_range.addr(), AVirtRange::addr)
                 .map_err(|_| SysErr::InvlMemZone)?;
             
             self.mem_zones.remove(index);
         }
 
         Ok(())
+    }
+
+    fn map_frame(&mut self, virt_frame: VirtFrame, phys_frame: PhysFrame, flags: PageMappingFlags) -> KResult<()> {
+        let virt_addr = virt_frame.start_addr().as_usize();
+        let page_table_indicies = [
+            get_bits(virt_addr, 39..48),
+			get_bits(virt_addr, 30..39),
+			get_bits(virt_addr, 21..30),
+			get_bits(virt_addr, 12..21),
+        ];
+
+        let (depth, huge_flag) = match virt_frame {
+            VirtFrame::K4(_) => (4, PageTableFlags::NONE),
+            VirtFrame::M2(_) => (3, PageTableFlags::HUGE),
+            VirtFrame::G1(_) => (2, PageTableFlags::HUGE),
+        };
+
+        let mut page_table = unsafe {
+            self.cr3.as_mut_ptr().as_mut().unwrap()
+        };
+
+        for level in 0..depth {
+            let index = page_table_indicies[level];
+
+            if level == depth - 1 {
+                let flags = PageTableFlags::PRESENT | huge_flag | flags.into();
+                page_table.add_entry(index, PageTablePointer::new(phys_frame.start_addr(), flags));
+            } else {
+                page_table = page_table
+                    .get_or_alloc(index, self.page_allocator.allocator(), *PARENT_FLAGS)
+                    .ok_or(SysErr::OutOfMem)?;
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Unmaps the given virtual memory frame
+    /// 
+    /// This function still works even if the frame isn't fully mapped, it will try and remove and partially mapped parent tables
+    fn unmap_frame(&mut self, virt_frame: VirtFrame) {
+        let virt_addr = virt_frame.start_addr().as_usize();
+        let page_table_indicies = [
+            get_bits(virt_addr, 39..48),
+			get_bits(virt_addr, 30..39),
+			get_bits(virt_addr, 21..30),
+			get_bits(virt_addr, 12..21),
+        ];
+
+        let depth = match virt_frame {
+            VirtFrame::K4(_) => 4,
+            VirtFrame::M2(_) => 3,
+            VirtFrame::G1(_) => 2,
+        };
+
+        let mut tables = [self.cr3.as_mut_ptr(), null_mut(), null_mut(), null_mut()];
+
+        for a in 1..depth {
+            unsafe {
+                tables[a] = if let Some(page_table) = tables[a - 1].as_mut() {
+                    page_table.get(page_table_indicies[a - 1])
+                } else {
+                    break
+                };
+            }
+        }
+
+        for i in (0..depth).rev() {
+            let current_table = unsafe {
+                if let Some(table) = tables[i].as_mut() {
+                    table
+                } else {
+                    continue;
+                }
+            };
+
+            current_table.remove(page_table_indicies[i]);
+
+            if i != 0 && current_table.entry_count() == 0 {
+                unsafe {
+                    current_table.dealloc(self.page_allocator.allocator());
+                }
+            }
+        }
     }
 }
 
@@ -139,7 +249,8 @@ impl VirtAddrSpace {
         let mut pml4_table = PageTable::new(page_allocator.allocator(), PageTableFlags::NONE)?;
 
         unsafe {
-            pml4_table.as_mut()
+            pml4_table.as_mut_ptr()
+                .as_mut()
                 .unwrap()
                 .add_entry(511, *HIGHER_HALF_PAGE_POINTER);
         }
@@ -164,7 +275,7 @@ impl VirtAddrSpace {
     pub unsafe fn dealloc_addr_space(&self) {
         let mut inner = self.inner.lock();
         unsafe {
-            inner.cr3.as_mut().unwrap()
+            inner.cr3.as_mut_ptr().as_mut().unwrap()
                 .dealloc_all(inner.page_allocator.allocator())
         }
     }
@@ -172,13 +283,29 @@ impl VirtAddrSpace {
     /// Maps all the virtual memory ranges in the slice to point to the corresponding physical address
     /// 
     /// If any one of the memeory regions fails, none will be mapped
-    pub fn map_memory(&self, memory: &[(AVirtRange, PhysAddr)]) -> KResult<()> {
+    pub fn map_memory(&self, memory: &[(AVirtRange, PhysAddr)], flags: PageMappingFlags) -> KResult<()> {
         let mut inner = self.inner.lock();
 
         inner.add_virt_addr_entries(memory)?;
 
         for (virt_range, phys_addr) in memory {
-            
+            let phys_range = APhysRange::new(*phys_addr, virt_range.size());
+
+            let mut frame_taker = PageMappingTaker {
+                virt_range: *virt_range,
+                phys_range,
+            };
+
+            while let Some((phys_frame, virt_frame)) = frame_taker.take() {
+                // TODO: handle out of memory condition more elegantly
+                if let Err(error) = inner.map_frame(virt_frame, phys_frame, flags) {
+                    inner.remove_virt_addr_entries(memory).unwrap();
+
+                    Self::unmap_internal(inner, memory);
+
+                    return Err(error);
+                }
+            }
         }
 
         Ok(())
@@ -186,12 +313,32 @@ impl VirtAddrSpace {
 
     /// Unmaps all the virtual memory ranges in the slice
     /// 
+    /// Phys addr must be the same memory it was mapped with
+    /// 
     /// If any one of the memeory regions fails, none will be unmapped
-    pub fn unmap_memory(&self, memory: &[AVirtRange]) -> KResult<()> {
+    // FIXME: don't require phys addr to be passed in
+    pub fn unmap_memory(&self, memory: &[(AVirtRange, PhysAddr)]) -> KResult<()> {
         let mut inner = self.inner.lock();
 
         inner.remove_virt_addr_entries(memory)?;
 
+        Self::unmap_internal(inner, memory);
+
         Ok(())
+    }
+
+    fn unmap_internal(mut inner: IMutexGuard<VirtAddrSpaceInner>, memory: &[(AVirtRange, PhysAddr)]) {
+        for (virt_range, phys_addr) in memory {
+            let phys_range = APhysRange::new(*phys_addr, virt_range.size());
+
+            let mut frame_taker = PageMappingTaker {
+                virt_range: *virt_range,
+                phys_range,
+            };
+
+            while let Some((_, virt_frame)) = frame_taker.take() {
+                inner.unmap_frame(virt_frame);
+            }
+        }
     }
 }

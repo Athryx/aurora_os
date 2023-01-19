@@ -67,25 +67,11 @@ impl PageTablePointer {
 		PageTablePointer(addr | flags.bits())
 	}
 
-	unsafe fn as_ref<'a, 'b>(&'a self) -> Option<&'b PageTable> {
+	pub fn as_mut_ptr(&mut self) -> *mut PageTable {
 		if self.0 & PageTableFlags::PRESENT.bits() == 0 {
-			None
+			null_mut()
 		} else {
-			let addr = phys_to_virt(self.0 & PAGE_ADDR_BITMASK);
-            unsafe {
-			    Some((addr as *const PageTable).as_ref().unwrap())
-            }
-		}
-	}
-
-	pub unsafe fn as_mut<'a, 'b>(&'a mut self) -> Option<&'b mut PageTable> {
-		if self.0 & PageTableFlags::PRESENT.bits() == 0 {
-			None
-		} else {
-			let addr = phys_to_virt(self.0 & PAGE_ADDR_BITMASK);
-            unsafe {
-			    Some((addr as *mut PageTable).as_mut().unwrap())
-            }
+			phys_to_virt(self.0 & PAGE_ADDR_BITMASK) as *mut PageTable
 		}
 	}
 
@@ -135,7 +121,7 @@ impl PageTable {
 	}
 
     /// Returns the number of entries that are occupied in this page table
-	fn entry_count(&self) -> usize {
+	pub fn entry_count(&self) -> usize {
         // the count is stored in the unused bits of the first entry
 		get_bits(self.0[0].0, 52..63)
 	}
@@ -159,7 +145,7 @@ impl PageTable {
 		(self.0[index].0 & PageTableFlags::PRESENT.bits()) != 0
 	}
 
-	unsafe fn dealloc(&mut self, allocer: &dyn PageAllocator) {
+	pub unsafe fn dealloc(&mut self, allocer: &dyn PageAllocator) {
 		let frame = Allocation::new(self.addr(), PAGE_SIZE);
         unsafe { allocer.dealloc(frame); }
 	}
@@ -177,7 +163,7 @@ impl PageTable {
 				}
 
                 unsafe {
-                    pointer.as_mut()
+                    pointer.as_mut_ptr().as_mut()
                         .map(|page_table| page_table.dealloc_recurse(allocer, level-1));
                 }
 			}
@@ -197,22 +183,23 @@ impl PageTable {
 		self.inc_entry_count(1);
 	}
 
-	fn get<'a, 'b>(&'a mut self, index: usize) -> &'b mut PageTable {
-		unsafe { self.0[index].as_mut().unwrap() }
+	/// Returns a pointer to the page table at the given index, or null if it doesn't exist
+	pub unsafe fn get(&mut self, index: usize) -> *mut PageTable {
+		self.0[index].as_mut_ptr()
 	}
 
-	fn get_or_alloc<'a>(
+	pub fn get_or_alloc<'a>(
 		&'a mut self,
 		index: usize,
 		allocer: &dyn PageAllocator,
 		flags: PageTableFlags,
 	) -> Option<&'a mut PageTable> {
 		if self.present(index) {
-			unsafe { self.0[index].as_mut() }
+			unsafe { self.0[index].as_mut_ptr().as_mut() }
 		} else {
 			let mut out = PageTable::new(allocer, flags)?;
 			self.add_entry(index, out);
-			unsafe { out.as_mut() }
+			unsafe { out.as_mut_ptr().as_mut() }
 		}
 	}
 
@@ -221,7 +208,7 @@ impl PageTable {
     /// # Panics
     /// 
     /// panics if `index` is out of the page table bounds
-	unsafe fn remove<T: PageAllocator>(&mut self, index: usize) {
+	pub fn remove(&mut self, index: usize) {
 		if self.present(index) {
 			self.0[index] = PageTablePointer(self.0[index].0 & !PageTableFlags::PRESENT.bits());
 			self.inc_entry_count(-1);
