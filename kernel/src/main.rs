@@ -52,10 +52,12 @@ use core::panic::PanicInfo;
 use core::sync::atomic::AtomicUsize;
 
 use acpi::SdtType;
+use alloc::{root_alloc_page_ref, root_alloc_ref};
 use arch::x64::*;
 use gs_data::{GsData, Prid};
 use int::idt::Idt;
 use mb2::BootInfo;
+use process::VirtAddrSpace;
 use sync::IMutex;
 //use time::pit;
 use prelude::*;
@@ -84,6 +86,13 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     unsafe {
         alloc::init(&boot_info.memory_map)?;
     }
+
+    // allocate the ap code zone before anything else to avoid this memory being taken
+	//let ap_code_zone = zm.oalloc_at(phys_to_virt(PhysAddr::new(*AP_CODE_START as u64)), 0).unwrap();
+	// make the virt mapper here, so that zm will choose the earliest physical memory zone to allocate the pml4 from
+	// this is necessary because we have to use a pml4 below 4 gib because aps can only load a 32 bit address at first
+	let ap_addr_space =
+        VirtAddrSpace::new(root_alloc_page_ref(), root_alloc_ref().downgrade());
 
     // initialize the cpu local data
     gs_data::init(GsData {

@@ -3,13 +3,16 @@
 use bitflags::bitflags;
 use lazy_static::lazy_static;
 
+use crate::arch::x64::get_cr3;
+use crate::arch::x64::invlpg;
+use crate::arch::x64::set_cr3;
 use crate::mem::PhysFrame;
 use crate::mem::VirtFrame;
 use crate::prelude::*;
 use crate::consts;
 use crate::sync::IMutex;
 use crate::sync::IMutexGuard;
-use crate::{alloc::{PaRef, AllocRef}, mem::Allocation};
+use crate::alloc::{PaRef, AllocRef};
 use page_table::{PageTable, PageTablePointer};
 
 use self::page_table::PageTableFlags;
@@ -265,6 +268,15 @@ impl VirtAddrSpace {
         })
     }
 
+    /// Loads this virtual address space
+    pub unsafe fn load(&self) {
+        set_cr3(self.cr3_addr.as_usize());
+    }
+
+    pub fn is_loaded(&self) {
+        get_cr3() == self.cr3_addr.as_usize();
+    }
+
     /// Deallocates all the page tables in this address space
     /// 
     /// Call this before dropping the address space otherwise there will be a memory leak
@@ -305,6 +317,9 @@ impl VirtAddrSpace {
 
                     return Err(error);
                 }
+
+                // TODO: check if address space is loaded
+                invlpg(virt_frame.start_addr().as_usize());
             }
         }
 
@@ -338,6 +353,9 @@ impl VirtAddrSpace {
 
             while let Some((_, virt_frame)) = frame_taker.take() {
                 inner.unmap_frame(virt_frame);
+
+                // TODO: check if address space is loaded
+                invlpg(virt_frame.start_addr().as_usize());
             }
         }
     }

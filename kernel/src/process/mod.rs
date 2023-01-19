@@ -6,6 +6,7 @@ use crate::make_id_type;
 use crate::prelude::*;
 
 mod vmem_manager;
+pub use vmem_manager::{VirtAddrSpace, PageMappingFlags};
 
 make_id_type!(Pid);
 

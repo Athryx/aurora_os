@@ -72,6 +72,14 @@ pub fn root_alloc_ref() -> OrigRef {
     OrigRef::new(root_alloc())
 }
 
+/// Returns the root CapAllocator
+/// 
+/// # Panics
+/// Panics if the root CapAllocator has not yet been intialized
+pub fn root_alloc_page_ref() -> PaRef {
+    PaRef::new(root_alloc())
+}
+
 
 /// Initilizes the memory allocation subsystem
 /// 
