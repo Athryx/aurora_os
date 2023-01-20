@@ -40,6 +40,7 @@ mod util;
 //mod time;
 
 mod consts;
+mod config;
 mod gdt;
 mod gs_data;
 mod io;
@@ -51,11 +52,13 @@ mod syscall;
 use core::panic::PanicInfo;
 use core::sync::atomic::AtomicUsize;
 
+use spin::Once;
+
 use acpi::SdtType;
 use alloc::{root_alloc_page_ref, root_alloc_ref};
 use arch::x64::*;
 use gs_data::{GsData, Prid};
-use int::idt::Idt;
+use int::{idt::Idt, apic};
 use mb2::BootInfo;
 use process::VirtAddrSpace;
 use sync::IMutex;
@@ -103,6 +106,7 @@ fn init(boot_info_addr: usize) -> KResult<()> {
         idt: Idt::new(),
         gdt: IMutex::new(gdt::Gdt::new()),
         tss: IMutex::new(gdt::Tss::new()),
+        local_apic: Once::new(),
     });
 
     // initalize the gdt from the gdt and tss stored in the cpu local data
@@ -122,7 +126,8 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     let madt = acpi_madt.assume_madt().unwrap();
 
     unsafe {
-        //let ap_ids = apic::init(madt);
+        let ap_ids = apic::init_io_apic(madt);
+        apic::init_local_apic();
         //apic::smp_init(ap_ids, ap_code_zone, ap_addr_space);
     }
 

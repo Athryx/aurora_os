@@ -3,7 +3,7 @@
 macro_rules! make_id_type {
     ($type:ident, $int_type:ident) => {
         #[repr(transparent)]
-        #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+        #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $type($int_type);
 
         impl $type {
@@ -36,7 +36,7 @@ macro_rules! make_id_type {
 macro_rules! make_id_type_no_from {
     ($type:ident, $int_type:ident) => {
         #[repr(transparent)]
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
         pub struct $type($int_type);
 
         impl $type {

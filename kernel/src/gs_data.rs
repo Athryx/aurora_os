@@ -1,11 +1,14 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use spin::Once;
+
 use crate::alloc::root_alloc_ref;
 use crate::arch::x64::{gs_addr, wrmsr, GSBASEK_MSR, GSBASE_MSR};
 use crate::container::Box;
 use crate::gdt::{Gdt, Tss};
+use crate::int::apic::LocalApic;
 use crate::int::idt::Idt;
-use crate::sync::IMutex;
+use crate::sync::{IMutex, IMutexGuard};
 
 crate::make_id_type!(Prid);
 
@@ -33,11 +36,21 @@ pub struct GsData {
     pub gdt: IMutex<Gdt>,
     /// Task state segment for current cpu
     pub tss: IMutex<Tss>,
+    /// Local apic for current cpu
+    pub local_apic: Once<IMutex<LocalApic>>,
 }
 
 impl GsData {
     pub fn set_self_addr(&self) {
         self.self_addr.store((self as *const _) as _, Ordering::Release);
+    }
+
+    pub fn set_local_apic(&self, local_apic: LocalApic) {
+        self.local_apic.call_once(|| IMutex::new(local_apic));
+    }
+
+    pub fn local_apic(&self) -> IMutexGuard<LocalApic> {
+        self.local_apic.get().expect("local apic not initialized").lock()
     }
 }
 

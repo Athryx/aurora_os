@@ -3,55 +3,51 @@ use core::fmt::{self, Debug, Formatter};
 
 use crate::prelude::*;
 use crate::container::Vec;
-use crate::alloc::{HeapAllocator, AllocRef};
+use crate::alloc::{HeapAllocator, OrigRef};
 
 // a non locking, synchronous vec
 pub struct NLVec<T> {
 	inner: AtomicPtr<Vec<*const T>>,
-	allocer: AllocRef,
+	allocer: OrigRef,
 }
 
-impl<T> NLVec<T>
-{
-	pub fn new(allocer: AllocRef) -> Self
-	{
-		let vec: Vec<*const T> = Vec::new();
-		let ptr = to_heap(vec);
-		NLVec(AtomicPtr::new(ptr))
+impl<T> NLVec<T> {
+	pub fn new(allocer: OrigRef) -> KResult<Self> {
+		let vec: Vec<*const T> = Vec::new(allocer.downgrade().clone());
+		let ptr = to_heap(vec, allocer.allocator())?;
+		Ok(NLVec {
+			inner: AtomicPtr::new(ptr),
+			allocer,
+		})
 	}
 
-	pub fn len(&self) -> usize
-	{
+	pub fn len(&self) -> usize {
 		self.read(|vec| vec.len())
 	}
 
-	pub fn is_empty(&self) -> bool
-	{
+	pub fn is_empty(&self) -> bool {
 		self.read(|vec| vec.is_empty())
 	}
 
-	pub fn get(&self, index: usize) -> Option<&T>
-	{
+	pub fn get(&self, index: usize) -> Option<&T> {
 		unsafe {
 			self.read(|vec| vec.get(index).map(|ref_to_ptr| *ref_to_ptr))
 				.map(|ptr| ptr.as_ref().unwrap())
 		}
 	}
 
-	pub fn insert(&self, index: usize, element: T)
-	{
+	pub fn insert(&self, index: usize, element: T) {
 		let ptr = to_heap(element);
 		self.write(|vec| vec.insert(index, ptr));
 	}
 
-	pub fn push(&self, element: T)
-	{
-		let ptr = to_heap(element);
+	pub fn push(&self, element: T) -> KResult<()> {
+		let ptr = to_heap(element, self.allocer.allocator())?;
 		self.write(|vec| vec.push(ptr));
+		Ok(())
 	}
 
-	pub fn remove(&self, index: usize) -> T
-	{
+	pub fn remove(&self, index: usize) -> T {
 		unsafe { from_heap(self.write(|vec| vec.remove(index))) }
 	}
 

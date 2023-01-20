@@ -273,8 +273,8 @@ impl VirtAddrSpace {
         set_cr3(self.cr3_addr.as_usize());
     }
 
-    pub fn is_loaded(&self) {
-        get_cr3() == self.cr3_addr.as_usize();
+    pub fn is_loaded(&self) -> bool {
+        get_cr3() == self.cr3_addr.as_usize()
     }
 
     /// Deallocates all the page tables in this address space
