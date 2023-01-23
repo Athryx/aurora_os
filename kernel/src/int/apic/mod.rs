@@ -113,12 +113,11 @@ pub unsafe fn init_io_apic(madt: &Madt) -> KResult<Vec<u8>> {
 /// 
 /// Must be called after init_io_apic
 pub unsafe fn init_local_apic() {
-    let local_apic = unsafe {
+    let mut local_apic = unsafe {
         LocalApic::new(PhysAddr::new(LOCAL_APIC_ADDR.load(Ordering::Acquire)))
     };
 
-    // do this before initializing apic timer so int::eoi can send eoi to the local apic
-    cpu_local_data().set_local_apic(local_apic);
+    local_apic.init_timer(crate::config::TIMER_PERIOD);
 
-    cpu_local_data().local_apic().init_timer(crate::config::TIMER_PERIOD);
+    cpu_local_data().set_local_apic(local_apic);
 }

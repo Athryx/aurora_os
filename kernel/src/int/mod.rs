@@ -1,3 +1,5 @@
+use core::sync::atomic::{AtomicBool, Ordering};
+
 use crate::{sched::Registers, prelude::cpu_local_data};
 
 pub mod apic;
@@ -96,8 +98,13 @@ extern "C" fn rust_int_handler(int_num: u8, regs: &mut Registers, error_code: u6
     }
 }
 
+/// Used in some scenrios to disable sending interrupts
+static EOI_ENABLED: AtomicBool = AtomicBool::new(true);
+
 /// Called by assembly code to indicate end of interrupt handler
 #[no_mangle]
 extern "C" fn eoi() {
-    cpu_local_data().local_apic().eoi();
+    if EOI_ENABLED.load(Ordering::Acquire) {
+        cpu_local_data().local_apic().eoi();
+    }
 }

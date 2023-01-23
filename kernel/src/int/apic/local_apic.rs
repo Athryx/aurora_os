@@ -8,7 +8,7 @@ use spin::Once;
 use crate::config;
 use crate::gs_data::Prid;
 use crate::prelude::*;
-use crate::int::{SPURIOUS, IRQ_APIC_TIMER, IPI_PANIC, IPI_PROCESS_EXIT};
+use crate::int::{SPURIOUS, IRQ_APIC_TIMER, IPI_PANIC, IPI_PROCESS_EXIT, EOI_ENABLED};
 use crate::container::HashMap;
 use crate::int::pit::PIT;
 use crate::arch::x64::*;
@@ -410,6 +410,7 @@ impl LocalApic {
 		}
 		self.write_reg_32(Self::TIMER_INIT_COUNT, u32::MAX);
 
+		EOI_ENABLED.store(false, Ordering::Release);
 		sti();
 
 		unsafe {
@@ -419,6 +420,7 @@ impl LocalApic {
 		while !CALIBRATE_FIRED.load(Ordering::Acquire) {}
 
 		cli();
+		EOI_ENABLED.store(true, Ordering::Release);
 
 		let new_count = self.read_reg_32(Self::TIMER_COUNT);
 		self.write_reg_32(Self::TIMER_INIT_COUNT, 0);
