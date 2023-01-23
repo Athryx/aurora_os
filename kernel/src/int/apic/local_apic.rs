@@ -278,8 +278,6 @@ pub struct LocalApic {
 	elapsed_time: u64,
     /// The tick count that the local apic timer will start at
 	timer_reset_count: u32,
-    /// Number of nanoseconds in one timer tick
-    nanosec_per_tick: u64,
 }
 
 impl LocalApic {
@@ -334,7 +332,6 @@ impl LocalApic {
 			addr: addr.to_virt().as_usize(),
 			elapsed_time: 0,
 			timer_reset_count: 0,
-            nanosec_per_tick: 0,
 		};
 
 		out.set_lvt(LvtType::Timer(LvtEntry::new_masked()));
@@ -407,8 +404,9 @@ impl LocalApic {
 
     /// Returns the nanoseconds in one local apic timer tick, or calculates it if it has not yet been calculated
 	fn nanosec_per_timer_tick(&mut self) -> u64 {
-		if self.nanosec_per_tick != 0 {
-			return self.nanosec_per_tick;
+		let nanosec_per_tick = NANOSEC_PER_TICK.load(Ordering::Acquire);
+		if nanosec_per_tick != 0 {
+			return nanosec_per_tick;
 		}
 		self.write_reg_32(Self::TIMER_INIT_COUNT, u32::MAX);
 
@@ -429,7 +427,7 @@ impl LocalApic {
 
 		let elapsed_ticks = u32::MAX - new_count;
 		let out = TIMER_CALIBRATE_TIME.as_nanos() as u64 / elapsed_ticks as u64;
-		self.nanosec_per_tick = out;
+		NANOSEC_PER_TICK.store(out, Ordering::Release);
 		out
 	}
 

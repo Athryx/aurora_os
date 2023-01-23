@@ -58,7 +58,7 @@ use acpi::SdtType;
 use alloc::{root_alloc_page_ref, root_alloc_ref};
 use arch::x64::*;
 use gs_data::{GsData, Prid};
-use int::{idt::Idt, apic};
+use int::{idt::Idt, apic, pit};
 use mb2::BootInfo;
 use process::VirtAddrSpace;
 use sync::IMutex;
@@ -120,14 +120,16 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     // initislise the scheduler
     sched::init()?;
 
-    //pit::disable();
-
     let acpi_madt = unsafe { boot_info.rsdt.get_table(SdtType::Madt).unwrap() };
     let madt = acpi_madt.assume_madt().unwrap();
 
     unsafe {
         let ap_ids = apic::init_io_apic(madt);
         apic::init_local_apic();
+        
+        // this needs to be disabled after initializing the local apic,
+        // because the local apic uses the pit to calibrate its timer
+        pit::PIT.disable();
         //apic::smp_init(ap_ids, ap_code_zone, ap_addr_space);
     }
 

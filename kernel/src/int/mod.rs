@@ -3,7 +3,7 @@ use crate::{sched::Registers, prelude::cpu_local_data};
 pub mod apic;
 pub mod idt;
 mod pic;
-mod pit;
+pub mod pit;
 
 // Interrupt vector numbers
 pub const EXC_DIVIDE_BY_ZERO: u8 = 0;
