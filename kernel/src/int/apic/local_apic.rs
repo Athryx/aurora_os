@@ -410,6 +410,7 @@ impl LocalApic {
 		}
 		self.write_reg_32(Self::TIMER_INIT_COUNT, u32::MAX);
 
+		// disable eoi so eoi doesn't deadlock because apic is not initialized yets
 		EOI_ENABLED.store(false, Ordering::Release);
 		sti();
 

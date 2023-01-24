@@ -68,8 +68,7 @@ use prelude::*;
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     eprintln!("{}", info);
-    // Comment this out for now because for some reason it can cause panic loops
-    //println!("cpu {}: {}", prid(), info);
+    println!("{}", info);
 
     loop {
         cli();
@@ -90,12 +89,11 @@ fn init(boot_info_addr: usize) -> KResult<()> {
         alloc::init(&boot_info.memory_map)?;
     }
 
-    // allocate the ap code zone before anything else to avoid this memory being taken
-	//let ap_code_zone = zm.oalloc_at(phys_to_virt(PhysAddr::new(*AP_CODE_START as u64)), 0).unwrap();
 	// make the virt mapper here, so that zm will choose the earliest physical memory zone to allocate the pml4 from
 	// this is necessary because we have to use a pml4 below 4 gib because aps can only load a 32 bit address at first
 	let ap_addr_space =
-        VirtAddrSpace::new(root_alloc_page_ref(), root_alloc_ref().downgrade());
+        VirtAddrSpace::new(root_alloc_page_ref(), root_alloc_ref().downgrade())
+        .ok_or(SysErr::OutOfMem)?;
 
     // initialize the cpu local data
     gs_data::init(GsData {
@@ -123,15 +121,16 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     let acpi_madt = unsafe { boot_info.rsdt.get_table(SdtType::Madt).unwrap() };
     let madt = acpi_madt.assume_madt().unwrap();
 
+    let ap_apic_ids = unsafe { apic::init_io_apic(madt)? };
     unsafe {
-        let ap_ids = apic::init_io_apic(madt);
         apic::init_local_apic();
-        
-        // this needs to be disabled after initializing the local apic,
-        // because the local apic uses the pit to calibrate its timer
-        pit::PIT.disable();
-        //apic::smp_init(ap_ids, ap_code_zone, ap_addr_space);
     }
+
+    // this needs to be disabled after initializing the local apic,
+    // because the local apic uses the pit to calibrate its timer
+    pit::PIT.disable();
+
+    apic::smp_init(&ap_apic_ids, ap_addr_space)?;
 
     Ok(())
 }
@@ -165,6 +164,7 @@ pub extern "C" fn _start(boot_info_addr: usize) -> ! {
 /// `stack_top` is the virtual memory address of the current stack for the ap core
 #[no_mangle]
 pub extern "C" fn _ap_start(id: usize, stack_top: usize) -> ! {
+    println!("hello from ap {id}");
     loop {
         hlt();
     }

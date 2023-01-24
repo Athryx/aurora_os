@@ -13,7 +13,7 @@ align 8
 ap_data:
 .cr3:
 	resd 1
-.idc:
+.id_counter:
 	resd 1
 .stacks:
 	resq 1
@@ -66,7 +66,7 @@ ap_long_mode_start:
 
 ; get processor id
 	mov rdi, 1				; put it in rdi so rust code gets it as first argument
-	lock xadd [ap_data.idc], edi
+	lock xadd [ap_data.id_counter], edi
 
 ; get stack pointer from AP_START_DATA
 	mov rax, [ap_data.stacks]

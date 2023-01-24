@@ -1,4 +1,4 @@
-mod stack;
+pub mod kernel_stack;
 mod thread;
 mod thread_map;
 

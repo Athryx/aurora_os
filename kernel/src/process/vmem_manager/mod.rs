@@ -81,12 +81,17 @@ impl VirtAddrSpaceInner {
     /// 
     /// The index is the place where the virt_range can be inserted to maintain ordering in the list
     fn virt_range_unoccupied(&self, virt_range: AVirtRange) -> Option<usize> {
+        // can't map anything beyond the kernel region
+        if virt_range.end_usize() > *consts::KERNEL_VMA {
+            return None;
+        }
+
         match self.mem_zones.binary_search_by_key(&virt_range.addr(), AVirtRange::addr) {
             // If we find the address it is occupied
             Ok(_) => None,
             Err(index) => {
-                if self.mem_zones.get(index - 1)?.end_addr() <= virt_range.addr()
-                    && virt_range.end_addr() <= self.mem_zones.get(index)?.addr() {
+                if (index == 0 || self.mem_zones[index - 1].end_addr() <= virt_range.addr())
+                    && (index == self.mem_zones.len() || virt_range.end_addr() <= self.mem_zones[index].addr()) {
                     Some(index)
                 } else {
                     None
@@ -275,6 +280,10 @@ impl VirtAddrSpace {
 
     pub fn is_loaded(&self) -> bool {
         get_cr3() == self.cr3_addr.as_usize()
+    }
+
+    pub fn get_cr3_addr(&self) -> PhysAddr {
+        self.cr3_addr
     }
 
     /// Deallocates all the page tables in this address space

@@ -1,13 +1,19 @@
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering, AtomicBool, AtomicU32};
+use core::time::Duration;
 
 use spin::Once;
 
-use crate::arch::x64::cpuid;
+use crate::alloc::{root_alloc, PageAllocator};
+use crate::arch::x64::{cpuid, io_wait};
+use crate::mem::PageLayout;
+use crate::{config, consts};
 use crate::int::apic::io_apic::IrqEntry;
 use crate::int::IRQ_BASE;
 use crate::prelude::*;
+use crate::process::{VirtAddrSpace, PageMappingFlags};
 use crate::sync::IMutex;
 use crate::{acpi::madt::{Madt, MadtElem}, alloc::root_alloc_ref};
+use crate::sched::kernel_stack::KernelStack;
 use io_apic::{IoApic, IoApicDest};
 use apic_modes::{PinPolarity, TriggerMode};
 use super::pic;
@@ -65,7 +71,6 @@ pub unsafe fn init_io_apic(madt: &Madt) -> KResult<Vec<u8>> {
     }
 
     assert!(IO_APIC.is_completed(), "could not find io apic");
-    assert!(ap_apic_ids.len() < crate::config::MAX_CPUS, "too many cpus for os to use");
 
     LOCAL_APIC_ADDR.store(local_apic_addr.as_usize(), Ordering::Release);
 
@@ -120,4 +125,97 @@ pub unsafe fn init_local_apic() {
     local_apic.init_timer(crate::config::TIMER_PERIOD);
 
     cpu_local_data().set_local_apic(local_apic);
+}
+
+/// The number of remaining ap cores that need to finish up booting
+static NUM_APS_TO_BOOT: AtomicUsize = AtomicUsize::new(0);
+
+/// ap boot sequence is done, set to true to tell aps to start normal operations
+static APS_GO: AtomicBool = AtomicBool::new(false);
+
+/// Data structure that communicates information to ap boot assembly
+#[repr(C)]
+struct ApData {
+    /// Pointer to pml4 table used to boot aps
+    cr3: u32,
+    /// Atomic counter used to assign ids to ap cores
+    id_counter: AtomicU32,
+    /// Address to an array of stack pointers that the aps will use
+    stacks: usize,
+}
+
+/// Initializes all other cpu cores
+pub fn smp_init(ap_apic_ids: &[u8], ap_init_addr_space: VirtAddrSpace) -> KResult<()> {
+    let num_aps = ap_apic_ids.len();
+    eprintln!("booting {} ap cores...", num_aps);
+
+    NUM_APS_TO_BOOT.store(num_aps, Ordering::Release);
+    config::set_cpu_count(num_aps + 1);
+
+    let ap_code_src_virt_range = consts::AP_CODE_SRC_RANGE.to_virt();
+    let ap_code_dest_virt_range = consts::AP_CODE_DEST_RANGE.to_virt();
+
+    // copy ap code to the trampoline location
+    unsafe {
+        let ap_code_src = ap_code_src_virt_range.as_slice();
+        let ap_code_dest = ap_code_dest_virt_range.as_slice_mut();
+
+        ap_code_dest.copy_from_slice(ap_code_src);
+    }
+
+    // map ap trampoline in ap address space
+    let ap_trampoline_virt_map_range = AVirtRange::new(
+        VirtAddr::new(consts::AP_CODE_DEST_RANGE.as_usize()),
+        consts::AP_CODE_DEST_RANGE.size(),
+    );
+    println!("bruh");
+    ap_init_addr_space.map_memory(
+        &[(
+            ap_trampoline_virt_map_range,
+            PhysAddr::new(*consts::AP_CODE_RUN_START),
+        )],
+        PageMappingFlags::READ | PageMappingFlags::WRITE | PageMappingFlags::EXEC,
+    )?;
+    println!("bruh");
+
+    // set up ap data
+    let ap_data_offset = *consts::AP_DATA - *consts::AP_CODE_RUN_START;
+	let ap_data = (ap_code_dest_virt_range.as_usize() + ap_data_offset) as *mut ApData;
+	let ap_data = unsafe { ap_data.as_mut().unwrap() };
+	// this lossy as cast is ok because ap addr space cr3 is guarenteed to be bellow 4 GiB
+	ap_data.cr3 = ap_init_addr_space.get_cr3_addr().as_usize() as u32;
+	ap_data.id_counter.store(1, Ordering::Release);
+
+    let mut stacks = Vec::try_with_capacity(root_alloc_ref().downgrade(), num_aps)?;
+    for _ in 0..num_aps {
+        // NOTE: this leaks memory on early return, shouldn't matter for now since we will panic on error
+        let allocation = root_alloc().alloc(
+            PageLayout::new_rounded(KernelStack::DEFAULT_SIZE, PAGE_SIZE).unwrap(),
+        ).ok_or(SysErr::OutOfMem)?;
+        
+        stacks.push(allocation.addr() + allocation.size() - 8)?;
+    }
+    ap_data.stacks = stacks.as_ptr() as usize;
+
+    let mut local_apic = cpu_local_data().local_apic();
+
+    // start all ap cores
+    // TODO: send init and startup ipis only to cores listed in the ap_ids vec
+	local_apic.send_ipi(Ipi::Init(IpiDest::AllExcludeThis));
+
+	io_wait(Duration::from_millis(1000));
+
+	while NUM_APS_TO_BOOT.load(Ordering::Acquire) > 0 {
+		local_apic.send_ipi(Ipi::Sipi(IpiDest::AllExcludeThis, (*consts::AP_CODE_RUN_START / 0x1000).try_into().unwrap()));
+		io_wait(Duration::from_micros(200));
+	}
+
+	APS_GO.store(true, Ordering::Release);
+
+    unsafe {
+        // safety: all aps would have initialized themselves and switched to the kernel address space by now
+        ap_init_addr_space.dealloc_addr_space();
+    }
+
+    Ok(())
 }

@@ -1,4 +1,4 @@
-use super::stack::Stack;
+use super::kernel_stack::KernelStack;
 use crate::container::{ListNode, ListNodeData, Weak};
 use crate::process::Process;
 
@@ -40,7 +40,7 @@ pub struct Thread {
     tid: Tid,
     pub process: Weak<Process>,
     regs: Registers,
-    stack: Stack,
+    stack: KernelStack,
 
     list_node_data: ListNodeData<Thread>,
 }

@@ -13,7 +13,6 @@ use zone_map::ZoneMap;
 use super::fixed_page_allocator::FixedPageAllocator;
 use super::linked_list_allocator::LinkedListAllocator;
 use super::{OrigAllocator, OrigRef, PaRef, PageAllocator};
-use crate::consts::{AP_CODE_END, AP_CODE_RANGE, AP_CODE_START};
 use crate::mb2::{MemoryMap, MemoryRegionType};
 use crate::mem::{Allocation, PageLayout};
 use crate::prelude::*;

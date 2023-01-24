@@ -152,7 +152,7 @@ impl MemoryRegionType {
         UPhysRange::new(PhysAddr::new(region.addr as usize), region.len as usize)
             .split_at_iter(*consts::KERNEL_PHYS_RANGE)
             .flat_map(move |range| range.split_at_iter(initrd_range))
-            .flat_map(|range| range.split_at_iter(consts::AP_PHYS_CODE_RANGE.as_unaligned()))
+            .flat_map(|range| range.split_at_iter(consts::AP_CODE_DEST_RANGE.as_unaligned()))
             .map(convert_to_memory_region)
     }
 
