@@ -293,7 +293,10 @@ impl PageAllocator for PmemManager {
     unsafe fn search_dealloc(&self, allocation: Allocation) {
         match self.get_index_of_allocation(allocation) {
             Ok(index) => unsafe { self.allocers[index].dealloc(allocation) },
-            Err(_) => panic!("could not find allocator that matched allocation"),
+            // if index is 0, there is no allocator that contains this allocation
+            // because there has to be an allocator with a start address befor 0
+            Err(index) if index != 0 => unsafe { self.allocers[index - 1].dealloc(allocation) },
+            _ => panic!("could not find allocator that matched allocation"),
         }
     }
 }

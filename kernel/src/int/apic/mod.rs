@@ -168,7 +168,6 @@ pub fn smp_init(ap_apic_ids: &[u8], ap_init_addr_space: VirtAddrSpace) -> KResul
         VirtAddr::new(consts::AP_CODE_DEST_RANGE.as_usize()),
         consts::AP_CODE_DEST_RANGE.size(),
     );
-    println!("bruh");
     ap_init_addr_space.map_memory(
         &[(
             ap_trampoline_virt_map_range,
@@ -176,7 +175,6 @@ pub fn smp_init(ap_apic_ids: &[u8], ap_init_addr_space: VirtAddrSpace) -> KResul
         )],
         PageMappingFlags::READ | PageMappingFlags::WRITE | PageMappingFlags::EXEC,
     )?;
-    println!("bruh");
 
     // set up ap data
     let ap_data_offset = *consts::AP_DATA - *consts::AP_CODE_RUN_START;
@@ -218,4 +216,12 @@ pub fn smp_init(ap_apic_ids: &[u8], ap_init_addr_space: VirtAddrSpace) -> KResul
     }
 
     Ok(())
+}
+
+pub fn ap_init_finished() {
+    NUM_APS_TO_BOOT.fetch_sub(1, Ordering::AcqRel);
+
+    while !APS_GO.load(Ordering::Acquire) {
+        core::hint::spin_loop();
+    }
 }

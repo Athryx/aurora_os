@@ -55,7 +55,18 @@ impl GsData {
 }
 
 /// Sets the current cpu's local data
-pub fn init(gs_data: GsData) {
+pub fn init() {
+    let gs_data = GsData {
+        self_addr: AtomicUsize::new(0),
+        call_rsp: AtomicUsize::new(0),
+        call_save_rsp: AtomicUsize::new(0),
+        prid: Prid::from(0),
+        idt: Idt::new(),
+        gdt: IMutex::new(Gdt::new()),
+        tss: IMutex::new(Tss::new()),
+        local_apic: Once::new(),
+    };
+
     let gs_data = Box::new(gs_data, root_alloc_ref()).expect("Failed to allocate gs data struct");
     gs_data.set_self_addr();
 

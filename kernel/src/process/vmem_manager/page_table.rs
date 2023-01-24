@@ -147,7 +147,8 @@ impl PageTable {
 
 	pub unsafe fn dealloc(&mut self, allocer: &dyn PageAllocator) {
 		let frame = Allocation::new(self.addr(), PAGE_SIZE);
-        unsafe { allocer.dealloc(frame); }
+		// TODO: maybe use regular dealloc and store the zindex in unused bits of page tabel entries
+        unsafe { allocer.search_dealloc(frame); }
 	}
 
 	pub unsafe fn dealloc_all(&mut self, allocer: &dyn PageAllocator) {
@@ -156,9 +157,12 @@ impl PageTable {
 
     // FIXME: this is super unsafe
 	unsafe fn dealloc_recurse(&mut self, allocer: &dyn PageAllocator, level: usize) {
+		let last_entry_index = self.0.len() - 1;
+
 		if level > 0 {
-			for pointer in self.0.iter_mut() {
-				if pointer.flags().contains(PageTableFlags::HUGE) {
+			for (i, pointer) in self.0.iter_mut().enumerate() {
+				// if level is 3 we are in the pml4 table so the higher half table pointer shouldn't be deallocated
+				if pointer.flags().contains(PageTableFlags::HUGE) || (level == 3 && i == last_entry_index) {
 					continue;
 				}
 
@@ -215,7 +219,7 @@ impl PageTable {
 		}
 	}
 
-    /// Returns the address of this page table
+    /// Returns the virtual address of this page table
 	fn addr(&self) -> usize {
 		self as *const _ as usize
 	}

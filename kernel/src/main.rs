@@ -50,19 +50,13 @@ mod process;
 mod syscall;
 
 use core::panic::PanicInfo;
-use core::sync::atomic::AtomicUsize;
-
-use spin::Once;
 
 use acpi::SdtType;
 use alloc::{root_alloc_page_ref, root_alloc_ref};
 use arch::x64::*;
-use gs_data::{GsData, Prid};
-use int::{idt::Idt, apic, pit};
+use int::{apic, pit};
 use mb2::BootInfo;
 use process::VirtAddrSpace;
-use sync::IMutex;
-//use time::pit;
 use prelude::*;
 
 #[panic_handler]
@@ -96,16 +90,7 @@ fn init(boot_info_addr: usize) -> KResult<()> {
         .ok_or(SysErr::OutOfMem)?;
 
     // initialize the cpu local data
-    gs_data::init(GsData {
-        self_addr: AtomicUsize::new(0),
-        call_rsp: AtomicUsize::new(0),
-        call_save_rsp: AtomicUsize::new(0),
-        prid: Prid::from(0),
-        idt: Idt::new(),
-        gdt: IMutex::new(gdt::Gdt::new()),
-        tss: IMutex::new(gdt::Tss::new()),
-        local_apic: Once::new(),
-    });
+    gs_data::init();
 
     // initalize the gdt from the gdt and tss stored in the cpu local data
     gdt::init();
@@ -125,10 +110,6 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     unsafe {
         apic::init_local_apic();
     }
-
-    // this needs to be disabled after initializing the local apic,
-    // because the local apic uses the pit to calibrate its timer
-    pit::PIT.disable();
 
     apic::smp_init(&ap_apic_ids, ap_addr_space)?;
 
@@ -157,6 +138,28 @@ pub extern "C" fn _start(boot_info_addr: usize) -> ! {
     }
 }
 
+/// Initializes ap cores
+fn ap_init(id: usize, stack_top: usize) -> KResult<()> {
+    // initialize the cpu local data
+    gs_data::init();
+
+    // initalize the gdt from the gdt and tss stored in the cpu local data
+    gdt::init();
+
+    // load idt
+    cpu_local_data().idt.load();
+
+    syscall::init();
+
+    unsafe {
+        apic::init_local_apic();
+    }
+
+    apic::ap_init_finished();
+
+    Ok(())
+}
+
 /// Rust entry point of kernel on ap cores
 ///
 /// Called by ap_boot.asm
@@ -164,7 +167,10 @@ pub extern "C" fn _start(boot_info_addr: usize) -> ! {
 /// `stack_top` is the virtual memory address of the current stack for the ap core
 #[no_mangle]
 pub extern "C" fn _ap_start(id: usize, stack_top: usize) -> ! {
-    println!("hello from ap {id}");
+    ap_init(id, stack_top).expect("ap init failed");
+
+    eprintln!("ap {} started", id);
+
     loop {
         hlt();
     }

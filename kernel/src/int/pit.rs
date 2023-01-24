@@ -56,6 +56,7 @@ impl Pit {
 
 	// calls the given function after the specified duration
 	// returns false if the duration given was too long
+	// disables the pit after finishing
 	pub unsafe fn one_shot(&self, duration: Duration, f: fn() -> ()) -> bool {
 		let ticks = duration.as_nanos() as u64 / NANOSEC_PER_CLOCK;
 		let ticks = match ticks.try_into() {
