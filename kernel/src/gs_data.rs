@@ -55,12 +55,12 @@ impl GsData {
 }
 
 /// Sets the current cpu's local data
-pub fn init() {
+pub fn init(prid: Prid) {
     let gs_data = GsData {
         self_addr: AtomicUsize::new(0),
         call_rsp: AtomicUsize::new(0),
         call_save_rsp: AtomicUsize::new(0),
-        prid: Prid::from(0),
+        prid,
         idt: Idt::new(),
         gdt: IMutex::new(Gdt::new()),
         tss: IMutex::new(Tss::new()),

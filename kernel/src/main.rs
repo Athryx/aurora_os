@@ -54,9 +54,10 @@ use core::panic::PanicInfo;
 use acpi::SdtType;
 use alloc::{root_alloc_page_ref, root_alloc_ref};
 use arch::x64::*;
-use int::{apic, pit};
+use int::apic;
 use mb2::BootInfo;
 use process::VirtAddrSpace;
+use gs_data::Prid;
 use prelude::*;
 
 #[panic_handler]
@@ -90,7 +91,7 @@ fn init(boot_info_addr: usize) -> KResult<()> {
         .ok_or(SysErr::OutOfMem)?;
 
     // initialize the cpu local data
-    gs_data::init();
+    gs_data::init(Prid::from(0));
 
     // initalize the gdt from the gdt and tss stored in the cpu local data
     gdt::init();
@@ -127,8 +128,7 @@ pub extern "C" fn _start(boot_info_addr: usize) -> ! {
 
     println!("aurora v0.0.1");
 
-    // TEMP
-    eprintln!("{:?}", *crate::consts::AP_DATA);
+    sti();
 
     #[cfg(test)]
     test_main();
@@ -141,7 +141,7 @@ pub extern "C" fn _start(boot_info_addr: usize) -> ! {
 /// Initializes ap cores
 fn ap_init(id: usize, stack_top: usize) -> KResult<()> {
     // initialize the cpu local data
-    gs_data::init();
+    gs_data::init(Prid::from(id));
 
     // initalize the gdt from the gdt and tss stored in the cpu local data
     gdt::init();
@@ -170,6 +170,8 @@ pub extern "C" fn _ap_start(id: usize, stack_top: usize) -> ! {
     ap_init(id, stack_top).expect("ap init failed");
 
     eprintln!("ap {} started", id);
+
+    sti();
 
     loop {
         hlt();
