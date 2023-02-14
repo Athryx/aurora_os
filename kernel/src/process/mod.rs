@@ -1,27 +1,28 @@
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering, AtomicBool};
 
-use crate::alloc::OrigRef;
+use crate::container::Arc;
+use crate::sched::Thread;
+use crate::alloc::{OrigRef, root_alloc_page_ref};
 use crate::cap::{CapFlags, CapObject, StrongCapability};
-use crate::make_id_type;
 use crate::prelude::*;
 
 mod vmem_manager;
 pub use vmem_manager::{VirtAddrSpace, PageMappingFlags};
 
-make_id_type!(Pid);
-
-static NEXT_PID: AtomicUsize = AtomicUsize::new(0);
-
 #[derive(Debug)]
 pub struct Process {
-    pid: Pid,
+    is_alive: AtomicBool,
+    num_threads_running: AtomicUsize,
+    threads: Vec<Arc<Thread>>,
 }
 
 impl Process {
     pub fn new(allocer: OrigRef) -> KResult<StrongCapability<Self>> {
         StrongCapability::new(
             Process {
-                pid: Pid::from(NEXT_PID.fetch_add(1, Ordering::Relaxed)),
+                is_alive: AtomicBool::new(true),
+                num_threads_running: AtomicUsize::new(0),
+                threads: Vec::new(allocer.clone().downgrade()),
             },
             CapFlags::READ | CapFlags::PROD | CapFlags::WRITE,
             allocer,

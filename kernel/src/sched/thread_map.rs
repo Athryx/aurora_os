@@ -1,4 +1,6 @@
-use super::thread::Thread;
+use core::sync::atomic::AtomicPtr;
+
+use super::thread::ThreadHandle;
 use crate::alloc::root_alloc_ref;
 use crate::container::{LinkedList, Vec};
 use crate::gs_data::prid;
@@ -6,34 +8,32 @@ use crate::prelude::*;
 
 #[derive(Debug)]
 pub struct ThreadMap {
-    // this is a vector where each linked list will correspond to a given cpu
-    // the linked list will only ever have 1 thread running at a time,
-    // it is just used so the threads can remove themselves from a linked list whenever they change state
-    current_thread: Vec<LinkedList<Thread>>,
-    ready_threads: LinkedList<Thread>,
-    dead_threads: LinkedList<Thread>,
+    /// Each element corresponds to a thread running on a given cpu
+    current_thread: Vec<AtomicPtr<ThreadHandle>>,
+    /// Each element corresponds to the dead thread running on a given cpu, or null if there is no dead thread
+    dead_thread: Vec<AtomicPtr<ThreadHandle>>,
+    ready_threads: LinkedList<ThreadHandle>,
+    suspended_threads: LinkedList<ThreadHandle>,
+    suspended_timeout_threads: LinkedList<ThreadHandle>,
 }
 
 impl ThreadMap {
     pub fn new() -> Self {
         ThreadMap {
             current_thread: Vec::new(root_alloc_ref().downgrade()),
+            dead_thread: Vec::new(root_alloc_ref().downgrade()),
             ready_threads: LinkedList::new(),
-            dead_threads: LinkedList::new(),
+            suspended_threads: LinkedList::new(),
+            suspended_timeout_threads: LinkedList::new(),
         }
-    }
-
-    pub fn get_current_thread(&self) -> &Thread {
-        &self.current_thread[prid().into()][0]
-    }
-
-    pub fn get_current_thread_mut(&mut self) -> &mut Thread {
-        &mut self.current_thread[prid().into()][0]
     }
 
     // each cpu will call this function to make sure there are enough elments in each vector
     // that stores a cpu local data structure in the thread map
     pub fn ensure_cpu(&mut self) -> KResult<()> {
-        self.current_thread.push(LinkedList::new())
+        self.current_thread.push(AtomicPtr::new(null_mut()))?;
+        self.dead_thread.push(AtomicPtr::new(null_mut()))
     }
 }
+
+unsafe impl Send for ThreadMap {}

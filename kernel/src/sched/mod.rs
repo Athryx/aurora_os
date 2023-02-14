@@ -4,7 +4,7 @@ mod thread_map;
 
 use spin::Once;
 pub use thread::Registers;
-use thread::Thread;
+pub use thread::Thread;
 use thread_map::ThreadMap;
 
 use crate::prelude::*;
@@ -17,13 +17,7 @@ pub fn thread_map() -> IMutexGuard<'static, ThreadMap> {
 }
 
 /// Called every time the local apic timer ticks
-pub fn timer_handler(registers: &mut Registers) -> bool {
-    false
-}
-
-/// Called on the thread schedule interrupt, which is used to voluntarily change threads by calling thread
-pub fn int_sched_handler(registers: &mut Registers) -> bool {
-    false
+pub fn timer_handler() {
 }
 
 pub fn init() -> KResult<()> {

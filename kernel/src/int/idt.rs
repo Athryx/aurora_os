@@ -146,6 +146,9 @@ impl Idt {
         make_idt_entry_r0!(out, 46);
         make_idt_entry_r0!(out, 47);
 
+        // APIC timer
+        make_idt_entry_r0!(out, 48);
+
         // Used for scheduler to switch threads
         make_idt_entry_r0!(out, 128);
 

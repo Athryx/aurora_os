@@ -81,15 +81,15 @@ pub const IPI_PANIC: u8 = 130;
 pub const SPURIOUS: u8 = 0xf0;
 
 
-fn double_fault(registers: &mut Registers) -> bool {
+fn double_fault(registers: &Registers) {
     panic!("double fault\nregisters:\n{:x?}", registers);
 }
 
-fn gp_exception(registers: &mut Registers) -> bool {
+fn gp_exception(registers: &Registers) {
     panic!("general protection exception\nregisters:\n{:x?}", registers);
 }
 
-fn page_fault(registers: &mut Registers, error_code: u64) -> bool {
+fn page_fault(registers: &Registers, error_code: u64) {
     let ring = if error_code & PAGE_FAULT_USER != 0 {
 		"user"
 	} else {
@@ -122,7 +122,7 @@ registers:
 }
 
 /// This function runs if a nother cpu panics, just halt the currnet cpu
-fn ipi_panic() -> bool {
+fn ipi_panic() {
     loop {
         cli();
         hlt();
@@ -130,29 +130,23 @@ fn ipi_panic() -> bool {
 }
 
 /// Called by each assembly interrupt handler
-/// 
-/// Returns true to indicate if registers have changed and should be reloaded
 #[no_mangle]
-extern "C" fn rust_int_handler(int_num: u8, registers: &mut Registers, error_code: u64) -> bool {
+extern "C" fn rust_int_handler(int_num: u8, registers: &Registers, error_code: u64) {
     match int_num {
         EXC_DOUBLE_FAULT => double_fault(registers),
         EXC_GENERAL_PROTECTION_FAULT => gp_exception(registers),
         EXC_PAGE_FAULT => page_fault(registers, error_code),
-        IRQ_PIT_TIMER => {
-            pit::PIT.irq_handler();
-            false
-        },
+        IRQ_PIT_TIMER => pit::PIT.irq_handler(),
         IRQ_APIC_TIMER => {
             cpu_local_data().local_apic().tick();
-            sched::timer_handler(registers)
+            sched::timer_handler();
         },
-        INT_SCHED => sched::int_sched_handler(registers),
         IPI_PANIC => ipi_panic(),
-        _ => false,
+        _ => (),
     }
 }
 
-/// Used in some scenrios to disable sending interrupts
+/// Used in some scenrios during initilization to disable sending interrupts
 static EOI_ENABLED: AtomicBool = AtomicBool::new(true);
 
 /// Called by assembly code to indicate end of interrupt handler

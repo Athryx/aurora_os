@@ -2,4 +2,4 @@
 
 cd $(dirname $0)
 
-addr2line -e iso/boot/kernel.bin $1
+addr2line -e ../boot/kernel.bin $1
