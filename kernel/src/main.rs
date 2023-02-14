@@ -139,7 +139,7 @@ pub extern "C" fn _start(boot_info_addr: usize) -> ! {
 }
 
 /// Initializes ap cores
-fn ap_init(id: usize, stack_top: usize) -> KResult<()> {
+fn ap_init(id: usize, stack_addr: usize) -> KResult<()> {
     // initialize the cpu local data
     gs_data::init(Prid::from(id));
 
@@ -150,6 +150,8 @@ fn ap_init(id: usize, stack_top: usize) -> KResult<()> {
     cpu_local_data().idt.load();
 
     syscall::init();
+
+    sched::ap_init(stack_addr)?;
 
     unsafe {
         apic::init_local_apic();

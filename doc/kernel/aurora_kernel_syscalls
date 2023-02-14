@@ -231,34 +231,47 @@ tid:
 thread id
 
 
-4: fn thread_set_state(process: Cap<Process>, thread_id: tid, state: usize, | nsec: usize | wait_thread_id: tid) -> SysErr
-changes the state of the thread in {process} with id {thread_id} to {state}
+4: fn thread_yield() -> SysErr
+yields the currently running thread and allows another ready thread to run
 
-valid states:
-0: yield, sets thread to ready state and switches to another thread, if available
-if no threads other than the idle thread are ready to run, the current thread will continue to run
-1: destroy, switches to another thread and terminates the current thread
-2: sleep, will sleep until {nsec} nanoseconds after boot
-3: join, will block until thread with id {wait_thread_id} terminates
-4: suspend, will stop the execution of the specified thread
-returns InvlArgs if the specified thread is already suspended
-5: resume, will restart a suspended thread
-returns InvlArgs if the specified thread is not suspended
 
-_: any other number will do nothing and return InvlArgs
+5: fn thread_destroy(| process: Cap<Process>, | thread_id: tid) -> SysErr
+destroys the specified thread or destroys the currently running thread
+if thread_destroy_other is set, the specified thread must be suspended to ba able to be destroyed
+
+options:
+bit 0 (thread_destroy_other): will destroy a thread with {thread_id} in {process}
+if not set, will destroy the calling thread
 
 required capability permissions:
 {process}: cap_write
 
 syserr code:
-InvlArgs: invalid state or thread_id passed to thread_set_state
+InvlArgs: thread_destroy_other was set and the other thread was not suspended
+
+
+6: fn thread_suspend(| timeout_nsec: usize) -> SysErr
+suspends the currently running thread and waits for the thread to be resumed by another thread
+
+options:
+bit 0 (suspend_timeout): the thread will be woken {timeout_nsec} nanoseconds after boot if it has not already been woken up
+
+
+7: fn thread_resume(process: Cap<Process>, thread_id: tid) -> SysErr
+resumes a thread that was previously suspended
+
+required capability permissions:
+{process}: cap_write
+
+syserr code:
+InvlArgs: the specified thread is not currently suspended suspended
 
 
 |=======================|
 | Capability Management |
 |=======================|
 
-6: fn cap_clone<T>(process: Cap<Process>, cap: Cap<T>) -> (err: SysErr, cap_new: Cap<T>)
+8: fn cap_clone<T>(process: Cap<Process>, cap: Cap<T>) -> (err: SysErr, cap_new: Cap<T>)
 clones the capability {cap} into {process} with different privalidges
 
 options:
@@ -275,7 +288,7 @@ return value:
 cap_new: cid of new capability
 
 
-7: fn cap_move<T>(process: Cap<Process>, cap: Cap<T>) -> (err: SysErr, cap_new: Cap<T>)
+9: fn cap_move<T>(process: Cap<Process>, cap: Cap<T>) -> (err: SysErr, cap_new: Cap<T>)
 makes a new capability with different privalidges in the process {process} referencing the same object, and destroys the old capability
 
 options:
@@ -292,7 +305,7 @@ return value:
 cap_new: cid of new capability
 
 
-8: fn cap_destroy<T>(process: Cap<Process>, cap: Cap<T>) -> SysErr
+10: fn cap_destroy<T>(process: Cap<Process>, cap: Cap<T>) -> SysErr
 destroys the capability {cap} in process {process}
 when the object referenced by {cap} has 0 references left, it is freed
 
@@ -313,7 +326,7 @@ InvlArgs: {weak} was not a weak capability
 
 
 
-10: fn mem_map(process: Cap<Process>, mem: Cap<Mem>, addr: usize) -> SysErr
+11: fn mem_map(process: Cap<Process>, mem: Cap<Mem>, addr: usize) -> SysErr
 maps a capability {mem} that can be mapped into memory into the memory of process {process} starting at address {addr}
 the mapped memory read, write, and execute permissions depend on cap_read, cap_write, and cap_prod permissions respectively
 will fail if {mem} overlaps with any other mapped memory
@@ -328,7 +341,7 @@ InvlAlign: {at_addr} is not page aligned
 InvlMemZone: the value passed in for {at_addr} causes the mapped memory to overlap with other virtual memory or reserved memory
 
 
-11: fn mem_unmap(process: Cap<Process>, mem: Cap<Mem>) -> SysErr
+12: fn mem_unmap(process: Cap<Process>, mem: Cap<Mem>) -> SysErr
 unmaps memory mapped by mem_map
 
 required capability permissions:

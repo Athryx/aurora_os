@@ -33,6 +33,8 @@ pub enum ThreadState {
     Ready,
     // Thread is waiting to be killed
     Dead,
+    // Thread is paused until resumed by another thread
+    Suspended,
 }
 
 #[derive(Debug)]
@@ -40,7 +42,7 @@ pub struct Thread {
     tid: Tid,
     pub process: Weak<Process>,
     regs: Registers,
-    stack: KernelStack,
+    kernel_stack: KernelStack,
 
     list_node_data: ListNodeData<Thread>,
 }

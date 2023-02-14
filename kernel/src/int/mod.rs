@@ -1,6 +1,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::{sched::Registers, prelude::cpu_local_data};
+use crate::{sched::{self, Registers}, prelude::cpu_local_data};
+use crate::arch::x64::{cli, hlt, get_cr2};
 
 pub mod apic;
 pub mod idt;
@@ -80,20 +81,73 @@ pub const IPI_PANIC: u8 = 130;
 pub const SPURIOUS: u8 = 0xf0;
 
 
+fn double_fault(registers: &mut Registers) -> bool {
+    panic!("double fault\nregisters:\n{:x?}", registers);
+}
+
+fn gp_exception(registers: &mut Registers) -> bool {
+    panic!("general protection exception\nregisters:\n{:x?}", registers);
+}
+
+fn page_fault(registers: &mut Registers, error_code: u64) -> bool {
+    let ring = if error_code & PAGE_FAULT_USER != 0 {
+		"user"
+	} else {
+		"kernel"
+	};
+
+	let action = if error_code & PAGE_FAULT_EXECUTE != 0 {
+		"instruction fetch"
+	} else if error_code & PAGE_FAULT_WRITE != 0 {
+		"write"
+	} else {
+		"read"
+	};
+
+	// can't indent because it will print tabs
+	panic!(
+		r"page fault accessing virtual address {:x}
+page fault during {} {}
+non present page: {}
+reserved bit set: {}
+registers:
+{:x?}",
+		get_cr2(),
+		ring,
+		action,
+		error_code & PAGE_FAULT_PROTECTION == 0,
+		error_code & PAGE_FAULT_RESERVED != 0,
+		registers
+	);
+}
+
+/// This function runs if a nother cpu panics, just halt the currnet cpu
+fn ipi_panic() -> bool {
+    loop {
+        cli();
+        hlt();
+    }
+}
+
 /// Called by each assembly interrupt handler
 /// 
 /// Returns true to indicate if registers have changed and should be reloaded
 #[no_mangle]
-extern "C" fn rust_int_handler(int_num: u8, regs: &mut Registers, error_code: u64) -> bool {
+extern "C" fn rust_int_handler(int_num: u8, registers: &mut Registers, error_code: u64) -> bool {
     match int_num {
+        EXC_DOUBLE_FAULT => double_fault(registers),
+        EXC_GENERAL_PROTECTION_FAULT => gp_exception(registers),
+        EXC_PAGE_FAULT => page_fault(registers, error_code),
         IRQ_PIT_TIMER => {
             pit::PIT.irq_handler();
             false
         },
         IRQ_APIC_TIMER => {
             cpu_local_data().local_apic().tick();
-            false
+            sched::timer_handler(registers)
         },
+        INT_SCHED => sched::int_sched_handler(registers),
+        IPI_PANIC => ipi_panic(),
         _ => false,
     }
 }

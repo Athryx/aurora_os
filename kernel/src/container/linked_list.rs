@@ -3,44 +3,45 @@ use core::cell::Cell;
 use core::fmt::{self, Debug, Formatter};
 use core::ops::{Index, IndexMut};
 use core::ptr::Thin;
+use core::sync::atomic::{AtomicPtr, Ordering};
 
 use crate::mem::MemOwner;
 use crate::prelude::*;
 
-#[derive(Debug, Clone)]
-pub struct ListNodeData<T: ?Sized + Thin> {
-    prev: Cell<*mut T>,
-    next: Cell<*mut T>,
+#[derive(Debug)]
+pub struct ListNodeData<T> {
+    prev: AtomicPtr<T>,
+    next: AtomicPtr<T>,
 }
 
-impl<T: ?Sized + Thin> Default for ListNodeData<T> {
+impl<T> Default for ListNodeData<T> {
     fn default() -> Self {
         Self {
-            prev: Cell::new(null_mut()),
-            next: Cell::new(null_mut()),
+            prev: AtomicPtr::new(null_mut()),
+            next: AtomicPtr::new(null_mut()),
         }
     }
 }
 
-unsafe impl<T: ?Sized + Thin> Send for ListNodeData<T> {}
+unsafe impl<T> Send for ListNodeData<T> {}
 
-pub trait ListNode: Thin {
+pub trait ListNode: Sized {
     fn list_node_data(&self) -> &ListNodeData<Self>;
 
     fn prev_ptr(&self) -> *mut Self {
-        self.list_node_data().prev.get()
+        self.list_node_data().prev.load(Ordering::Acquire)
     }
 
     fn next_ptr(&self) -> *mut Self {
-        self.list_node_data().next.get()
+        self.list_node_data().next.load(Ordering::Acquire)
     }
 
     fn set_prev(&self, prev: *mut Self) {
-        self.list_node_data().prev.set(prev)
+        self.list_node_data().prev.store(prev, Ordering::Release);
     }
 
     fn set_next(&self, next: *mut Self) {
-        self.list_node_data().next.set(next)
+        self.list_node_data().next.store(next, Ordering::Release)
     }
 
     fn addr(&self) -> usize {
