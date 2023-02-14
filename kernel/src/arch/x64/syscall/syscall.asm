@@ -9,18 +9,21 @@ bits 64
 syscall_entry:
 	; kernel stack pointer should be 16 byte aligned
 	; iretq clears gs_base msr, so we have to keep it in gs_base_k, and use swapgs to access it
+
+	mov r10, rsp							; save caller rsp in register
+
 	swapgs
-	mov [gs:gs_data.call_save_rsp], rsp		; save caller rsp
 	mov rsp, [gs:gs_data.call_rsp]			; load kernel rsp
+	swapgs
+	sti
 
 	; all values on stack will be part of the rust SyscallVals struct
 
-	push rcx								; save return rip
-	push r11								; save old flags
-	push qword [gs:gs_data.call_save_rsp]	; put caller rsp on stack
+	push rcx		; save return rip
+	push r11		; save old flags
+	push r10		; save caller rsp
+	push rbp		; save rbp
 
-	swapgs
-	sti
 
 	push r15		; push args on stack
 	push r14
@@ -62,16 +65,11 @@ syscall_entry:
 	pop r14
 	pop r15
 
-	cli
-	swapgs
+	pop rbp			; retrieve old rbp
+	pop r10			; retrieve old rsp
+	pop r11			; retrieve old flags
+	pop rcx			; retrieve old rcx
 
-	; TODO: maybe remove, there aren't any syscalls that change rsp, so this might not be necessary
-	pop qword [gs:gs_data.call_save_rsp]	; restore return rsp
+	mov rsp, r10	; restore old rsp
 
-	pop r11			; restore flags
-	pop rcx			; restore return rip
-
-	mov rsp, [gs:gs_data.call_save_rsp]
-
-	swapgs
 	o64 sysret

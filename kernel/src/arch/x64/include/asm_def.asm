@@ -89,7 +89,6 @@ struc registers
 	.rbp resq 1
 	.rsp resq 1
 	.kernel_rsp resq 1
-	.call_save_rsp resq 1
 	.rdi resq 1
 	.rsi resq 1
 	.r8 resq 1
@@ -118,7 +117,6 @@ endstruc
 struc gs_data
 	.self_addr resq 1
 	.call_rsp resq 1
-	.call_save_rsp resq 1
 	; nothing else matters for assembly
 endstruc
 

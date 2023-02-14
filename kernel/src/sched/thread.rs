@@ -15,8 +15,6 @@ pub struct Registers {
     /// FIXME: these don't belong here
     /// This is the start fo the kernel stack, used by syscalls to load kernel stack
     pub kernel_rsp: usize,
-    /// This is the saved rsp of a userspace thread when it makes a syscall
-    pub call_save_rsp: usize,
     pub rdi: usize,
     pub rsi: usize,
     pub r8: usize,

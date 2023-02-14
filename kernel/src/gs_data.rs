@@ -26,8 +26,6 @@ pub struct GsData {
     /// 
     /// This is switched when switching to a different thread
     pub call_rsp: AtomicUsize,
-    /// This is the old userspace rsp to return to from a syscall handler
-    pub call_save_rsp: AtomicUsize,
     /// Id of the current processor
     pub prid: Prid,
     /// Interrupt descriptor table for current cpu
@@ -59,7 +57,6 @@ pub fn init(prid: Prid) {
     let gs_data = GsData {
         self_addr: AtomicUsize::new(0),
         call_rsp: AtomicUsize::new(0),
-        call_save_rsp: AtomicUsize::new(0),
         prid,
         idt: Idt::new(),
         gdt: IMutex::new(Gdt::new()),

@@ -66,11 +66,12 @@ int_handler_ %+ %1 %+ :
 
 	save_int_data_regs r15
 
-	; call c function
+	; call rust function
 	mov rdi, %1
 	mov rsi, rsp
 	mov rdx, 0
 	mov rax, rust_int_handler
+	; FIXME: stack might not be aligned
 	call rax
 	
 	load_old_regs
@@ -94,10 +95,11 @@ int_handler_ %+ %1 %+ :
 
 	save_int_data_regs r15
 
-	; call c function
+	; call rust function
 	mov rdi, %1
 	mov rsi, rsp
 	mov rax, rust_int_handler
+	; FIXME: stack might not be aligned
 	call rax
 	
 	load_old_regs
@@ -118,11 +120,12 @@ int_handler_ %+ %1 %+ :
 
 	save_int_data_regs r15
 
-	; call c function
+	; call rust function
 	mov rdi, %1
 	mov rsi, rsp
 	mov rdx, 0
 	mov rax, rust_int_handler
+	; FIXME: stack might not be aligned
 	call rax
 
 	; send eoi
