@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::{sched::{self, Registers}, prelude::cpu_local_data};
+use crate::{sched, prelude::cpu_local_data};
 use crate::arch::x64::{cli, hlt, get_cr2};
 
 pub mod apic;
@@ -80,6 +80,31 @@ pub const IPI_PANIC: u8 = 130;
 // so we should always choose a spurious vector number with bits 0-3 zeroed
 pub const SPURIOUS: u8 = 0xf0;
 
+
+#[derive(Debug, Clone, Copy)]
+#[repr(C)]
+pub struct Registers {
+    pub rax: usize,
+    pub rbx: usize,
+    pub rcx: usize,
+    pub rdx: usize,
+    pub rbp: usize,
+    pub rsp: usize,
+    pub rdi: usize,
+    pub rsi: usize,
+    pub r8: usize,
+    pub r9: usize,
+    pub r10: usize,
+    pub r11: usize,
+    pub r12: usize,
+    pub r13: usize,
+    pub r14: usize,
+    pub r15: usize,
+    pub rflags: usize,
+    pub rip: usize,
+    pub cs: usize,
+    pub ss: usize,
+}
 
 fn double_fault(registers: &Registers) {
     panic!("double fault\nregisters:\n{:x?}", registers);

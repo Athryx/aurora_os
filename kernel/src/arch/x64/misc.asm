@@ -1,7 +1,6 @@
 %include "asm_def.asm"
 
 global asm_gs_addr
-global asm_prid
 
 asm_gs_addr:
 	swapgs

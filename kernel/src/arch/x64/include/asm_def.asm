@@ -88,7 +88,6 @@ struc registers
 	.rdx resq 1
 	.rbp resq 1
 	.rsp resq 1
-	.kernel_rsp resq 1
 	.rdi resq 1
 	.rsi resq 1
 	.r8 resq 1

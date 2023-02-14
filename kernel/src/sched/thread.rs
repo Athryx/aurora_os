@@ -3,34 +3,6 @@ use super::kernel_stack::KernelStack;
 use crate::container::{ListNode, ListNodeData, Weak};
 use crate::process::Process;
 
-#[derive(Debug, Clone, Copy)]
-#[repr(C)]
-pub struct Registers {
-    pub rax: usize,
-    pub rbx: usize,
-    pub rcx: usize,
-    pub rdx: usize,
-    pub rbp: usize,
-    pub rsp: usize,
-    /// FIXME: these don't belong here
-    /// This is the start fo the kernel stack, used by syscalls to load kernel stack
-    pub kernel_rsp: usize,
-    pub rdi: usize,
-    pub rsi: usize,
-    pub r8: usize,
-    pub r9: usize,
-    pub r10: usize,
-    pub r11: usize,
-    pub r12: usize,
-    pub r13: usize,
-    pub r14: usize,
-    pub r15: usize,
-    pub rflags: usize,
-    pub rip: usize,
-    pub cs: usize,
-    pub ss: usize,
-}
-
 crate::make_id_type!(Tid);
 
 #[derive(Debug, Clone, Copy)]
@@ -54,7 +26,7 @@ pub struct Thread {
     tid: Tid,
     handle: *const ThreadHandle,
     pub process: Weak<Process>,
-    regs: Registers,
+    rsp: usize,
     kernel_stack: KernelStack,
 }
 

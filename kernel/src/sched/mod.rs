@@ -3,7 +3,6 @@ mod thread;
 mod thread_map;
 
 use spin::Once;
-pub use thread::Registers;
 pub use thread::Thread;
 use thread_map::ThreadMap;
 

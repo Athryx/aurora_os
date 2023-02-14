@@ -304,7 +304,7 @@ pub fn invlpg(addr: usize) {
 
 extern "C" {
     fn asm_gs_addr() -> usize;
-    fn asm_prid() -> usize;
+    fn asm_switch_thread(old_rsp: &mut usize, new_rsp: usize);
 }
 
 pub fn gs_addr() -> usize {
