@@ -4,7 +4,11 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 pub const MAX_CPUS: usize = 16;
 
-pub const TIMER_PERIOD: Duration = Duration::from_millis(40);
+/// How long between interrupts on local apic timer
+pub const TIMER_PERIOD: Duration = Duration::from_millis(2);
+
+/// How long the scheduler will wait before switching threads
+pub const SCHED_TIME: Duration = Duration::from_millis(10);
 
 static CPU_COUNT: AtomicUsize = AtomicUsize::new(0);
 

@@ -166,6 +166,7 @@ extern "C" fn rust_int_handler(int_num: u8, registers: &Registers, error_code: u
             cpu_local_data().local_apic().tick();
             sched::timer_handler();
         },
+        IPI_PROCESS_EXIT => sched::exit_handler(),
         IPI_PANIC => ipi_panic(),
         _ => (),
     }

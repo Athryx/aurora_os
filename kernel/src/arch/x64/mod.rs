@@ -2,6 +2,7 @@ use core::arch::asm;
 use core::time::Duration;
 
 use crate::prelude::*;
+use crate::sched::PostSwitchHook;
 
 pub mod cpuid;
 
@@ -304,7 +305,7 @@ pub fn invlpg(addr: usize) {
 
 extern "C" {
     fn asm_gs_addr() -> usize;
-    fn asm_switch_thread(old_rsp: &mut usize, new_rsp: usize);
+    fn asm_switch_thread(old_rsp: &mut usize, old_int_status: bool, new_rsp: usize);
 }
 
 pub fn gs_addr() -> usize {

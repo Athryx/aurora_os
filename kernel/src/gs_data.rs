@@ -1,4 +1,4 @@
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering, AtomicU64};
 
 use spin::Once;
 
@@ -25,7 +25,7 @@ pub struct GsData {
     /// This is the kernel rsp that will be loaded whenever a syscall is made
     /// 
     /// This is switched when switching to a different thread
-    pub call_rsp: AtomicUsize,
+    pub syscall_rsp: AtomicUsize,
     /// Id of the current processor
     pub prid: Prid,
     /// Interrupt descriptor table for current cpu
@@ -36,6 +36,8 @@ pub struct GsData {
     pub tss: IMutex<Tss>,
     /// Local apic for current cpu
     pub local_apic: Once<IMutex<LocalApic>>,
+    /// The last time a thread switch occured
+    pub last_thread_switch_nsec: AtomicU64,
 }
 
 impl GsData {
@@ -56,12 +58,13 @@ impl GsData {
 pub fn init(prid: Prid) {
     let gs_data = GsData {
         self_addr: AtomicUsize::new(0),
-        call_rsp: AtomicUsize::new(0),
+        syscall_rsp: AtomicUsize::new(0),
         prid,
         idt: Idt::new(),
         gdt: IMutex::new(Gdt::new()),
         tss: IMutex::new(Tss::new()),
         local_apic: Once::new(),
+        last_thread_switch_nsec: AtomicU64::new(0),
     };
 
     let gs_data = Box::new(gs_data, root_alloc_ref()).expect("Failed to allocate gs data struct");
