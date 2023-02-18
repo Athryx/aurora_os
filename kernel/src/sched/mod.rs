@@ -4,22 +4,16 @@ mod thread_map;
 
 use core::sync::atomic::Ordering;
 
-use spin::Once;
-
-pub use thread::Thread;
+pub use thread::{ThreadState, ThreadHandle, Thread};
 use thread_map::ThreadMap;
 use crate::arch::x64::IntDisable;
 use crate::config::SCHED_TIME;
 use crate::prelude::*;
 use crate::sync::{IMutex, IMutexGuard};
+use crate::container::Arc;
+use crate::process::Process;
 
-use self::thread::{ThreadState, ThreadHandle};
-
-static THREAD_MAP: Once<IMutex<ThreadMap>> = Once::new();
-
-pub fn thread_map() -> IMutexGuard<'static, ThreadMap> {
-    THREAD_MAP.get().expect("thread map not initilized").lock()
-}
+static THREAD_MAP: ThreadMap = ThreadMap::new();
 
 /// Called every time the local apic timer ticks
 pub fn timer_handler() {
@@ -31,7 +25,7 @@ pub fn timer_handler() {
         switch_current_thread_to(
             ThreadState::Ready,
             IntDisable::new(),
-            PostSwitchHook::None
+            PostSwitchAction::None
         );
     }
 }
@@ -42,7 +36,7 @@ pub fn exit_handler() {
     switch_current_thread_to(
         ThreadState::Dead { try_destroy_process: true },
         IntDisable::new(),
-        PostSwitchHook::None
+        PostSwitchAction::None
     );
 }
 
@@ -52,7 +46,8 @@ pub fn exit_handler() {
 /// but before reverting rflags and loading saved registers
 /// 
 /// This means interrupts are still disabled at this point and it is ok to hold resources
-pub enum PostSwitchHook {
+#[derive(Debug)]
+pub enum PostSwitchAction {
     DestroyThread(*const ThreadHandle),
     None,
 }
@@ -60,14 +55,14 @@ pub enum PostSwitchHook {
 /// This is the function that runs post thread switch
 #[no_mangle]
 extern "C" fn post_switch_handler() {
-
+    unimplemented!()
 }
 
 /// Switches the current thread to the given state
 /// 
 /// Takes an int_disable to ensure interrupts are disabled,
 /// and reverts interrupts to the prevoius mode just before switching threads
-pub fn switch_current_thread_to(state: ThreadState, int_disable: IntDisable, post_switch_hook: PostSwitchHook) {
+pub fn switch_current_thread_to(state: ThreadState, int_disable: IntDisable, post_switch_hook: PostSwitchAction) {
     unimplemented!()
 }
 
@@ -86,16 +81,9 @@ pub fn switch_other_thread_to(thread_handle: *const ThreadHandle, state: ThreadS
 }
 
 pub fn init() -> KResult<()> {
-    let mut thread_map = ThreadMap::new();
-    thread_map.ensure_cpu()?;
-
-    THREAD_MAP.call_once(|| IMutex::new(thread_map));
-
     Ok(())
 }
 
 pub fn ap_init(stack_addr: usize) -> KResult<()> {
-    thread_map().ensure_cpu()?;
-    
     Ok(())
 }

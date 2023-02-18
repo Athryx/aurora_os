@@ -2,6 +2,8 @@
 
 global asm_switch_thread
 
+extern post_switch_handler
+
 asm_switch_thread:
     ; args:
     ; rdi: old_rsp: &mut usize
@@ -39,6 +41,10 @@ asm_switch_thread:
     ret
 
 .return:
+    ; call post_switch_handler
+    mov rax, post_switch_handler
+    call rax
+
     popfq       ; restore flags
 
     ; restore all registers sysv abi says are saved

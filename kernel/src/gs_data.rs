@@ -1,16 +1,29 @@
-use core::sync::atomic::{AtomicUsize, Ordering, AtomicU64};
+use core::ptr::null_mut;
+use core::sync::atomic::{AtomicUsize, Ordering, AtomicU64, AtomicPtr};
 
 use spin::Once;
 
 use crate::alloc::root_alloc_ref;
 use crate::arch::x64::{gs_addr, wrmsr, GSBASEK_MSR, GSBASE_MSR};
-use crate::container::Box;
+use crate::container::{Box, Arc};
 use crate::gdt::{Gdt, Tss};
 use crate::int::apic::LocalApic;
 use crate::int::idt::Idt;
 use crate::sync::{IMutex, IMutexGuard};
+use crate::sched::{ThreadHandle, Thread, PostSwitchAction};
+use crate::process::Process;
 
 crate::make_id_type!(Prid);
+
+
+/// This stores a reference to the current thread and process for easy retrieval
+/// 
+/// It is stored in the cpu local global variables
+#[derive(Debug)]
+pub struct SchedState {
+    current_thread: Arc<Thread>,
+    current_process: Arc<Process>,
+}
 
 /// This is cpu local data stored pointed to by the GS_BASE msr
 /// Used for things like finding the kernel stack from a syscall and cpu local scheduler data
@@ -36,8 +49,16 @@ pub struct GsData {
     pub tss: IMutex<Tss>,
     /// Local apic for current cpu
     pub local_apic: Once<IMutex<LocalApic>>,
+
+    /* Scheduler related variables */
+
     /// The last time a thread switch occured
     pub last_thread_switch_nsec: AtomicU64,
+    pub current_thread_handle: AtomicPtr<ThreadHandle>,
+    /// Stores the current process and thread
+    pub current_state: Once<IMutex<SchedState>>,
+    /// Stores the post switch action to be completed after switching threads
+    pub post_switch_action: IMutex<PostSwitchAction>,
 }
 
 impl GsData {
@@ -65,6 +86,9 @@ pub fn init(prid: Prid) {
         tss: IMutex::new(Tss::new()),
         local_apic: Once::new(),
         last_thread_switch_nsec: AtomicU64::new(0),
+        current_thread_handle: AtomicPtr::new(null_mut()),
+        current_state: Once::new(),
+        post_switch_action: IMutex::new(PostSwitchAction::None),
     };
 
     let gs_data = Box::new(gs_data, root_alloc_ref()).expect("Failed to allocate gs data struct");
