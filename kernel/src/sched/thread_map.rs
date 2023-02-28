@@ -4,6 +4,7 @@ use super::thread::ThreadHandle;
 use crate::alloc::root_alloc_ref;
 use crate::container::{LinkedList, Vec};
 use crate::gs_data::prid;
+use crate::mem::MemOwner;
 use crate::sync::IMutex;
 use crate::prelude::*;
 
@@ -22,6 +23,10 @@ impl ThreadMap {
             suspended_threads: IMutex::new(LinkedList::new()),
             suspended_timeout_threads: IMutex::new(LinkedList::new()),
         }
+    }
+
+    pub fn get_ready_thread(&self) -> MemOwner<ThreadHandle> {
+        unimplemented!()
     }
 }
 

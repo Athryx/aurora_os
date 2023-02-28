@@ -50,6 +50,14 @@ impl<T> MemOwner<T> {
         unsafe { unbound_mut(&mut *self) }
     }
 
+    // safety: no other mem owner must point to this memory
+    pub unsafe fn drop_in_place(self, allocator: &dyn OrigAllocator) {
+        unsafe {
+            ptr::drop_in_place(self.0);
+            self.dealloc(allocator);
+        }
+    }
+
     pub unsafe fn dealloc(self, allocator: &dyn OrigAllocator) {
         unsafe {
             allocator.dealloc_orig(HeapAllocation::from_ptr(self.0));

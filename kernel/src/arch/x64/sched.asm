@@ -6,9 +6,9 @@ extern post_switch_handler
 
 asm_switch_thread:
     ; args:
-    ; rdi: old_rsp: &mut usize
-    ; rsi: old_int_status: usize
-    ; rdx: new_rsp: usize
+    ; rdi: old_int_status: usize
+    ; rsi: new_rsp: usize
+    ; rdx: new_addr_space: usize
     ; save all registers that need to be saved by sysv abi into the old registers argument
 
     ; save all registers that need to be saved by sysv abi onto the stack
@@ -22,7 +22,7 @@ asm_switch_thread:
     ; save rflags, but set interrupt enable bit according to old_int_status
     pushfq
     pop rax
-    cmp rsi, 0
+    cmp rdi, 0
     je .keep_int_disabled
 
     ; mark interrupts as enabled when we return
@@ -31,17 +31,20 @@ asm_switch_thread:
 .keep_int_disabled
     push rax      ; save rflags
 
-    ; push rip we will return to next time this thread runs
-    mov rax, asm_switch_thread.return
-    push rax
+
+    ; save old rsp in rdi to pass to post switch handler
+    mov rdi, rsp
+
+    ; load new address space
+    mov cr3, rdx
 
     ; load rsp of new thread
-    mov rsp, rdx
+    mov rsp, rsi
 
-    ret
+    ; at this point, we have switched to the new thread
 
-.return:
     ; call post_switch_handler
+    ; arg1 rdi is the old rsp, which was saved from before
     mov rax, post_switch_handler
     call rax
 

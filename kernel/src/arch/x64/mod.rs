@@ -1,8 +1,8 @@
 use core::arch::asm;
 use core::time::Duration;
+use core::sync::atomic::AtomicUsize;
 
 use crate::prelude::*;
-use crate::sched::PostSwitchHook;
 
 pub mod cpuid;
 
@@ -159,6 +159,10 @@ impl IntDisable {
             old_status,
         }
     }
+
+    pub fn old_is_enabled(&self) -> bool {
+        self.old_status
+    }
 }
 
 impl Drop for IntDisable {
@@ -305,7 +309,7 @@ pub fn invlpg(addr: usize) {
 
 extern "C" {
     fn asm_gs_addr() -> usize;
-    fn asm_switch_thread(old_rsp: &mut usize, old_int_status: bool, new_rsp: usize);
+    pub fn asm_switch_thread(old_int_status: bool, new_rsp: usize, new_addr_space: usize);
 }
 
 pub fn gs_addr() -> usize {

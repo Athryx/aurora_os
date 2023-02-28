@@ -11,8 +11,8 @@ pub use vmem_manager::{VirtAddrSpace, PageMappingFlags};
 
 #[derive(Debug)]
 pub struct Process {
-    is_alive: AtomicBool,
-    num_threads_running: AtomicUsize,
+    pub is_alive: AtomicBool,
+    pub num_threads_running: AtomicUsize,
     threads: Vec<Arc<Thread>>,
 }
 
@@ -27,6 +27,13 @@ impl Process {
             CapFlags::READ | CapFlags::PROD | CapFlags::WRITE,
             allocer,
         )
+    }
+
+    /// Returns the value that should be loaded in the cr3 register
+    /// 
+    /// This is the pointer to the top lavel paging table for the process
+    pub fn get_cr3(&self) -> usize {
+        todo!();
     }
 }
 
