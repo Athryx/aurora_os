@@ -1,6 +1,5 @@
 use core::sync::atomic::{AtomicUsize, AtomicBool};
 
-use crate::alloc::OrigAllocator;
 use crate::container::Arc;
 use crate::mem::MemOwner;
 use super::kernel_stack::KernelStack;
@@ -35,13 +34,14 @@ pub enum ThreadState {
 #[derive(Debug)]
 pub struct Thread {
     tid: Tid,
+    // FIXME: maybe handle setting this to null when thread handle dropped (see if it is an issue)
     handle: *const ThreadHandle,
     pub process: Weak<Process>,
     // this has to be atomic usize because it is written to in assembly
     pub rsp: AtomicUsize,
-    // if this is true, the scheduler will exchange this field with false when switching away from a suspend state,
-    // if waiting_on_capid is already false, the scheduler knows some other code is already switching the task to ready
-    pub waiting_on_capid: AtomicBool,
+    // if this is non zero, the scheduler will exchange this field with 0 when switching away from a suspend state,
+    // if waiting_capid is already 0, the scheduler knows some other code is already switching the task to ready
+    pub waiting_capid: AtomicUsize,
     kernel_stack: KernelStack,
 }
 
@@ -54,15 +54,33 @@ pub struct ThreadHandle {
 }
 
 impl ThreadHandle {
-    pub fn new(thread: Arc<Thread>, allocator: &dyn OrigAllocator) -> KResult<MemOwner<ThreadHandle>> {
+    /// Creates a new thread handle
+    /// 
+    /// Uses the allocator from `Arc<Thread>`
+    pub fn new(thread: Arc<Thread>) -> KResult<MemOwner<ThreadHandle>> {
+        let mut allocator = Arc::alloc_ref(&thread);
+
         MemOwner::new(
             ThreadHandle {
                 state: ThreadState::Ready,
                 thread,
                 list_node_data: ListNodeData::default(),
             },
-            allocator,
+            allocator.allocator(),
         )
+    }
+
+    /// Deallocates the thread handle
+    /// 
+    /// # Safety
+    /// 
+    /// No other references to the thread handle can exist
+    pub unsafe fn dealloc(thread_handle: MemOwner<ThreadHandle>) {
+        let mut allocator = Arc::alloc_ref(&thread_handle.thread);
+
+        unsafe {
+            thread_handle.drop_in_place(allocator.allocator());
+        }
     }
 }
 

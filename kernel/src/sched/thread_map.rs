@@ -25,8 +25,26 @@ impl ThreadMap {
         }
     }
 
-    pub fn get_ready_thread(&self) -> MemOwner<ThreadHandle> {
-        unimplemented!()
+    /// Gets the next thread to run
+    /// 
+    /// Returns `None` if there are no available threads to run
+    pub fn get_ready_thread(&self) -> Option<MemOwner<ThreadHandle>> {
+        self.ready_threads.lock().pop_front()
+    }
+
+    /// Adds `thread_handle` to the list of ready threads
+    pub fn insert_ready_thread(&self, thread_handle: MemOwner<ThreadHandle>) {
+        self.ready_threads.lock().push(thread_handle);
+    }
+
+    /// Adds `thread_handle` to the list of suspended threads
+    pub fn insert_suspended_thread(&self, thread_handle: MemOwner<ThreadHandle>) {
+        self.suspended_threads.lock().push(thread_handle);
+    }
+
+    /// Adds `thread_handle` to the list of suspended timeout threads
+    pub fn insert_suspended_timeout_thread(&self, thread_handle: MemOwner<ThreadHandle>) {
+        self.suspended_timeout_threads.lock().push(thread_handle);
     }
 }
 

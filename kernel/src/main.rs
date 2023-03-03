@@ -87,8 +87,7 @@ fn init(boot_info_addr: usize) -> KResult<()> {
 	// make the virt mapper here, so that zm will choose the earliest physical memory zone to allocate the pml4 from
 	// this is necessary because we have to use a pml4 below 4 gib because aps can only load a 32 bit address at first
 	let ap_addr_space =
-        VirtAddrSpace::new(root_alloc_page_ref(), root_alloc_ref().downgrade())
-        .ok_or(SysErr::OutOfMem)?;
+        VirtAddrSpace::new(root_alloc_page_ref(), root_alloc_ref().downgrade())?;
 
     // initialize the cpu local data
     gs_data::init(Prid::from(0));

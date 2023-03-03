@@ -66,6 +66,7 @@ impl PageMappingTaker {
 }
 
 /// Fields in virt addr space that need ot be mutated so they will all be behind a lock
+#[derive(Debug)]
 struct VirtAddrSpaceInner {
     /// All virtual memory which is currently in use
     // TODO: write btreemap for this, it will be faster with many zones
@@ -245,6 +246,7 @@ impl VirtAddrSpaceInner {
 }
 
 /// This represents a virtual address space that can have memory mapped into it
+#[derive(Debug)]
 pub struct VirtAddrSpace {
     /// Fields which need to be mutated
     inner: IMutex<VirtAddrSpaceInner>,
@@ -253,8 +255,9 @@ pub struct VirtAddrSpace {
 }
 
 impl VirtAddrSpace {
-    pub fn new(mut page_allocator: PaRef, alloc_ref: AllocRef) -> Option<Self> {
-        let mut pml4_table = PageTable::new(page_allocator.allocator(), PageTableFlags::NONE)?;
+    pub fn new(mut page_allocator: PaRef, alloc_ref: AllocRef) -> KResult<Self> {
+        let mut pml4_table = PageTable::new(page_allocator.allocator(), PageTableFlags::NONE)
+            .ok_or(SysErr::OutOfMem)?;
 
         unsafe {
             pml4_table.as_mut_ptr()
@@ -263,7 +266,7 @@ impl VirtAddrSpace {
                 .add_entry(511, *HIGHER_HALF_PAGE_POINTER);
         }
 
-        Some(VirtAddrSpace {
+        Ok(VirtAddrSpace {
             inner: IMutex::new(VirtAddrSpaceInner {
                 mem_zones: Vec::new(alloc_ref),
                 cr3: pml4_table,

@@ -6,9 +6,8 @@ extern post_switch_handler
 
 asm_switch_thread:
     ; args:
-    ; rdi: old_int_status: usize
-    ; rsi: new_rsp: usize
-    ; rdx: new_addr_space: usize
+    ; rdi: new_rsp: usize
+    ; rsi: new_addr_space: usize
     ; save all registers that need to be saved by sysv abi into the old registers argument
 
     ; save all registers that need to be saved by sysv abi onto the stack
@@ -19,27 +18,17 @@ asm_switch_thread:
     push r14
     push r15
 
-    ; save rflags, but set interrupt enable bit according to old_int_status
+    ; save rflags
     pushfq
-    pop rax
-    cmp rdi, 0
-    je .keep_int_disabled
-
-    ; mark interrupts as enabled when we return
-    or rax, 1 << 9
-
-.keep_int_disabled
-    push rax      ; save rflags
-
 
     ; save old rsp in rdi to pass to post switch handler
     mov rdi, rsp
 
     ; load new address space
-    mov cr3, rdx
+    mov cr3, rsi
 
     ; load rsp of new thread
-    mov rsp, rsi
+    mov rsp, rdi
 
     ; at this point, we have switched to the new thread
 
@@ -48,7 +37,8 @@ asm_switch_thread:
     mov rax, post_switch_handler
     call rax
 
-    popfq       ; restore flags
+    ; restore flags
+    popfq
 
     ; restore all registers sysv abi says are saved
     pop r15

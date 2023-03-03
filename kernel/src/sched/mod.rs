@@ -11,7 +11,6 @@ use crate::config::SCHED_TIME;
 use crate::mem::MemOwner;
 use crate::prelude::*;
 use crate::arch::x64::asm_switch_thread;
-use crate::sync::{IMutex, IMutexGuard};
 use crate::container::Arc;
 use crate::process::Process;
 
@@ -32,23 +31,21 @@ pub fn timer_handler() {
     let last_switch_nsec = cpu_local_data().last_thread_switch_nsec.load(Ordering::Acquire);
 
     if current_nsec - last_switch_nsec > SCHED_TIME.as_nanos() as u64 {
-        // FIXME: send eoi
         switch_current_thread_to(
             ThreadState::Ready,
             IntDisable::new(),
-            PostSwitchAction::None
-        );
+            PostSwitchAction::SendEoi,
+        ).unwrap();
     }
 }
 
 /// Called when an ipi_exit ipi occurs, and potentialy exits the current thread
 pub fn exit_handler() {
-    // FIXME: send eoi
     switch_current_thread_to(
         ThreadState::Dead { try_destroy_process: true },
         IntDisable::new(),
-        PostSwitchAction::None
-    );
+        PostSwitchAction::SendEoi,
+    ).unwrap();
 }
 
 /// All data used by the post switch handler
@@ -67,39 +64,74 @@ pub struct PostSwitchData {
 /// This means interrupts are still disabled at this point and it is ok to hold resources
 #[derive(Debug)]
 pub enum PostSwitchAction {
+    /// Does nothing special after switching threads
     None,
+    /// Sends an eoi after switching threads
+    SendEoi,
 }
 
 /// This is the function that runs after thread switch
 #[no_mangle]
 extern "C" fn post_switch_handler(old_rsp: usize) {
     let mut post_switch_data = cpu_local_data().post_switch_data.lock();
+    let PostSwitchData {
+        old_thread_handle,
+        old_process,
+        post_switch_action,
+    } = core::mem::replace(&mut *post_switch_data, None)
+        .expect("post switch data was none after switching threads");
 
-    if let Some(post_switch_data) = post_switch_data.as_mut() {
-        post_switch_data.old_process.num_threads_running.fetch_sub(1, Ordering::AcqRel);
-        post_switch_data.old_thread_handle.thread.rsp.store(old_rsp, Ordering::Release);
+    let num_threads_running = old_process.num_threads_running.fetch_sub(1, Ordering::AcqRel) - 1;
+    old_thread_handle.thread.rsp.store(old_rsp, Ordering::Release);
 
-        match post_switch_data.old_thread_handle.state {
-            _ => (),
-        }
-
-        match post_switch_data.post_switch_action {
-            PostSwitchAction::None => (),
-        }
-    } else {
-        panic!("post switch data was none after switching threads")
+    match old_thread_handle.state {
+        ThreadState::Running => unreachable!(),
+        ThreadState::Ready => THREAD_MAP.insert_ready_thread(old_thread_handle),
+        ThreadState::Dead { try_destroy_process } => {
+            if try_destroy_process && num_threads_running == 0 {
+                // Safety: at this point no more threads are running on the process
+                // and no more will try in the future
+                unsafe {
+                    old_process.release_strong_capability();
+                }
+            }
+            unsafe {
+                ThreadHandle::dealloc(old_thread_handle);
+            }
+        },
+        ThreadState::Suspend { .. } => THREAD_MAP.insert_suspended_thread(old_thread_handle),
+        ThreadState::SuspendTimeout { .. } => THREAD_MAP.insert_suspended_timeout_thread(old_thread_handle),
     }
 
-    *post_switch_data = None;
+    match post_switch_action {
+        PostSwitchAction::None => (),
+        PostSwitchAction::SendEoi => cpu_local_data().local_apic().eoi(),
+    }
+}
+
+/// Represents an error that occurs when calling [`switch_current_thread_to`]
+#[derive(Debug)]
+pub enum ThreadSwitchToError {
+    /// There are no availabel threads to switch to
+    NoAvailableThreads,
+    /// An invalid state to switch to was passed in (ThreadState::Running)
+    InvalidState,
 }
 
 /// Switches the current thread to the given state
 /// 
 /// Takes an int_disable to ensure interrupts are disabled,
 /// and reverts interrupts to the prevoius mode just before switching threads
-pub fn switch_current_thread_to(state: ThreadState, int_disable: IntDisable, post_switch_hook: PostSwitchAction) {
+/// 
+/// Returns None if there were no available threads to switch to
+pub fn switch_current_thread_to(state: ThreadState, _int_disable: IntDisable, post_switch_hook: PostSwitchAction) -> Result<(), ThreadSwitchToError> {
+    if matches!(state, ThreadState::Running) {
+        return Err(ThreadSwitchToError::InvalidState);
+    }
+
     let (mut new_thread_handle, new_thread, new_process) = loop {
-        let next_thread_handle = THREAD_MAP.get_ready_thread();
+        let next_thread_handle = THREAD_MAP.get_ready_thread()
+            .ok_or(ThreadSwitchToError::NoAvailableThreads)?;
     
         let next_thread = unsafe {
             next_thread_handle
@@ -113,8 +145,11 @@ pub fn switch_current_thread_to(state: ThreadState, int_disable: IntDisable, pos
         let next_process = match next_thread.process.upgrade() {
             Some(process) => process,
             None => {
-                // FIXME: figure out which allocator to use to drop thread handle
-                todo!();
+                // Safety: we removed the thread handle from the thread map so this is the only reference
+                unsafe {
+                    ThreadHandle::dealloc(next_thread_handle);
+                }
+
                 continue;
             },
         };
@@ -127,8 +162,12 @@ pub fn switch_current_thread_to(state: ThreadState, int_disable: IntDisable, pos
         next_process.num_threads_running.fetch_add(1, Ordering::AcqRel);
         if !next_process.is_alive.load(Ordering::Acquire) {
             next_process.num_threads_running.fetch_sub(1, Ordering::AcqRel);
-            // FIXME: figure out which allocator to use to drop thread handle
-            todo!();
+            
+            // Safety: we removed the thread handle from the thread map so this is the only reference
+            unsafe {
+                ThreadHandle::dealloc(next_thread_handle);
+            }
+
             continue;
         }
 
@@ -149,9 +188,13 @@ pub fn switch_current_thread_to(state: ThreadState, int_disable: IntDisable, pos
     // save old process to decrament running thread count in post switch handler
     let old_process = global_sched_state.current_process.clone();
 
+    // get the new rsp and address space we have to switch to
+    let new_rsp = new_thread.rsp.load(Ordering::Acquire);
+    let new_addr_space = new_process.get_cr3();
+
     // change current thread and process
-    global_sched_state.current_thread = new_thread.clone();
-    global_sched_state.current_process = new_process.clone();
+    global_sched_state.current_thread = new_thread;
+    global_sched_state.current_process = new_process;
 
     drop(global_sched_state);
 
@@ -164,11 +207,12 @@ pub fn switch_current_thread_to(state: ThreadState, int_disable: IntDisable, pos
 
     cpu_local_data().last_thread_switch_nsec.store(cpu_local_data().local_apic().nsec(), Ordering::Release);
 
-    let new_rsp = new_thread.rsp.load(Ordering::Acquire);
-    let new_addr_space = new_process.get_cr3();
+    // at this point we are holding no resources that need to be dropped except for the int_disable, os it is good to switch
     unsafe {
-        asm_switch_thread(int_disable.old_is_enabled(), new_rsp, new_addr_space);
+        asm_switch_thread(new_rsp, new_addr_space);
     }
+
+    Ok(())
 }
 
 /// Represents an error that prevented another thread from being switcued

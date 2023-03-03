@@ -3,7 +3,7 @@ use core::ops::Deref;
 use core::ptr::NonNull;
 use core::sync::atomic::{fence, AtomicUsize, Ordering};
 
-use crate::alloc::OrigRef;
+use crate::alloc::{OrigRef, OrigAllocator};
 use crate::mem::HeapAllocation;
 use crate::prelude::*;
 
@@ -42,6 +42,11 @@ impl<T: ?Sized> Arc<T> {
 
     fn inner(&self) -> &ArcInner<T> {
         unsafe { self.ptr.as_ref() }
+    }
+
+    /// Returns the allocator this arc is using
+    pub fn alloc_ref(this: &Self) -> OrigRef {
+        this.inner().allocer.clone()
     }
 
     pub fn as_ptr(this: &Self) -> *const T {

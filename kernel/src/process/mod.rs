@@ -1,8 +1,8 @@
-use core::sync::atomic::{AtomicUsize, Ordering, AtomicBool};
+use core::sync::atomic::{AtomicUsize, AtomicBool};
 
 use crate::container::Arc;
 use crate::sched::Thread;
-use crate::alloc::{OrigRef, root_alloc_page_ref};
+use crate::alloc::{PaRef, OrigRef};
 use crate::cap::{CapFlags, CapObject, StrongCapability};
 use crate::prelude::*;
 
@@ -14,15 +14,17 @@ pub struct Process {
     pub is_alive: AtomicBool,
     pub num_threads_running: AtomicUsize,
     threads: Vec<Arc<Thread>>,
+    addr_space: VirtAddrSpace,
 }
 
 impl Process {
-    pub fn new(allocer: OrigRef) -> KResult<StrongCapability<Self>> {
+    pub fn new(page_allocator: PaRef, allocer: OrigRef) -> KResult<StrongCapability<Self>> {
         StrongCapability::new(
             Process {
                 is_alive: AtomicBool::new(true),
                 num_threads_running: AtomicUsize::new(0),
                 threads: Vec::new(allocer.clone().downgrade()),
+                addr_space: VirtAddrSpace::new(page_allocator, allocer.downgrade())?,
             },
             CapFlags::READ | CapFlags::PROD | CapFlags::WRITE,
             allocer,
@@ -33,7 +35,16 @@ impl Process {
     /// 
     /// This is the pointer to the top lavel paging table for the process
     pub fn get_cr3(&self) -> usize {
-        todo!();
+        self.addr_space.get_cr3_addr().as_usize()
+    }
+
+    /// Releases the strong capbility for the process, which will lead to the process being destroyed
+    /// 
+    /// # Safety
+    /// 
+    /// Don't do this with any of the process' threads running
+    pub unsafe fn release_strong_capability(&self) {
+        todo!()
     }
 }
 
