@@ -153,6 +153,11 @@ impl<T: ?Sized> Weak<T> {
         unsafe { self.ptr.as_ref() }
     }
 
+    /// Returns the allocator this weak is using
+    pub fn alloc_ref(&self) -> OrigRef {
+        self.inner().allocer.clone()
+    }
+
     pub fn as_ptr(&self) -> *const T {
         &self.inner().data as *const T
     }

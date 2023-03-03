@@ -1,0 +1,4 @@
+Clean up the kernel allocator api,
+it is unnecassarily generic even though there will only be 1 allocator
+
+Also improve the kernel heap allocator, it is very bad

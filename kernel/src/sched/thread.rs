@@ -1,4 +1,4 @@
-use core::sync::atomic::{AtomicUsize, AtomicBool};
+use core::sync::atomic::{AtomicUsize, AtomicPtr, Ordering};
 
 use crate::container::Arc;
 use crate::mem::MemOwner;
@@ -8,6 +8,60 @@ use crate::process::Process;
 use crate::prelude::*;
 
 crate::make_id_type!(Tid);
+
+#[derive(Debug)]
+pub struct Thread {
+    pub tid: Tid,
+    name: String,
+    // FIXME: maybe handle setting this to null when thread handle dropped (see if it is an issue)
+    handle: AtomicPtr<ThreadHandle>,
+    pub process: Weak<Process>,
+    // this has to be atomic usize because it is written to in assembly
+    pub rsp: AtomicUsize,
+    // if this is non zero, the scheduler will exchange this field with 0 when switching away from a suspend state,
+    // if waiting_capid is already 0, the scheduler knows some other code is already switching the task to ready
+    pub waiting_capid: AtomicUsize,
+    kernel_stack: KernelStack,
+}
+
+impl Thread {
+    /// Creates a new thread, and returns the thread and its thread handle
+    /// 
+    /// If `kernel_stack` is owned, it must use the same allocator as the process (the drop implementation assumes this to be true)
+    pub fn new(
+        tid: Tid,
+        name: String,
+        process: Weak<Process>,
+        kernel_stack: KernelStack,
+        rsp: usize
+    ) -> KResult<(Arc<Thread>, MemOwner<ThreadHandle>)> {
+        let allocer = process.alloc_ref();
+
+        let thread = Arc::new(Thread {
+            tid,
+            name,
+            handle: AtomicPtr::new(null_mut()),
+            process,
+            rsp: AtomicUsize::new(rsp),
+            waiting_capid: AtomicUsize::new(0),
+            kernel_stack,
+        }, allocer)?;
+
+        let thread_handle = ThreadHandle::new(thread.clone())?;
+
+        thread.handle.store(thread_handle.ptr_mut(), Ordering::Release);
+
+        Ok((thread, thread_handle))
+    }
+
+    /// This is the rsp value loaded when a syscall occurs for this thread
+    pub fn syscall_rsp(&self) -> usize {
+        self.kernel_stack.stack_top().as_usize()
+    }
+}
+
+unsafe impl Send for Thread {}
+unsafe impl Sync for Thread {}
 
 #[derive(Debug, Clone, Copy)]
 pub enum ThreadState {
@@ -31,24 +85,7 @@ pub enum ThreadState {
     },
 }
 
-#[derive(Debug)]
-pub struct Thread {
-    tid: Tid,
-    // FIXME: maybe handle setting this to null when thread handle dropped (see if it is an issue)
-    handle: *const ThreadHandle,
-    pub process: Weak<Process>,
-    name: String,
-    // this has to be atomic usize because it is written to in assembly
-    pub rsp: AtomicUsize,
-    // if this is non zero, the scheduler will exchange this field with 0 when switching away from a suspend state,
-    // if waiting_capid is already 0, the scheduler knows some other code is already switching the task to ready
-    pub waiting_capid: AtomicUsize,
-    kernel_stack: KernelStack,
-}
-
-unsafe impl Send for Thread {}
-unsafe impl Sync for Thread {}
-
+/// The `ThreadHandle` references a [`Thread`] and is used in the scheduler to schedule threads
 #[derive(Debug)]
 pub struct ThreadHandle {
     pub state: ThreadState,

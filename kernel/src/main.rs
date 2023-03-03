@@ -54,11 +54,13 @@ use core::panic::PanicInfo;
 use acpi::SdtType;
 use alloc::{root_alloc_page_ref, root_alloc_ref};
 use arch::x64::*;
+use consts::INIT_STACK;
 use int::apic;
 use mb2::BootInfo;
 use process::VirtAddrSpace;
 use gs_data::Prid;
 use prelude::*;
+use sched::kernel_stack::KernelStack;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -103,7 +105,7 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     process::init_kernel_process();
 
     // initislise the scheduler
-    sched::init()?;
+    sched::init(*INIT_STACK)?;
 
     let acpi_madt = unsafe { boot_info.rsdt.get_table(SdtType::Madt).unwrap() };
     let madt = acpi_madt.assume_madt().unwrap();
@@ -152,7 +154,11 @@ fn ap_init(id: usize, stack_addr: usize) -> KResult<()> {
 
     syscall::init();
 
-    sched::ap_init(stack_addr)?;
+    let stack_range = AVirtRange::new(
+        VirtAddr::new(stack_addr + 8 - KernelStack::DEFAULT_SIZE),
+        KernelStack::DEFAULT_SIZE,
+    );
+    sched::init(stack_range)?;
 
     unsafe {
         apic::init_local_apic();

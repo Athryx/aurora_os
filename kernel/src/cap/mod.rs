@@ -1,5 +1,3 @@
-use core::sync::atomic::{fence, AtomicUsize, Ordering};
-
 use bitflags::bitflags;
 
 use crate::alloc::OrigRef;
@@ -92,58 +90,24 @@ impl Default for CapId {
     }
 }
 
-pub trait CapObject {
-    // called when the reference count on the CapObjectWrapper reaches 0
-    fn cap_drop(&self);
-}
-
-// a wrapper around a cap object
-// keeps track of the number of Capabilities referencing the cap object, and calls cap_drop when the refcount reaches 0
-// this doesn't actually manage the objects memory, and it won't drop the underlying object when the refcount reaches 0, that is the job of the unerlying Arc
-// it only keeps track of the refcount from the point of view of userspace
-#[derive(Debug)]
-struct CapObjectWrapper<T> {
-    // we only need to keep track of strong count, since this doesn't manage the objects memory
-    count: AtomicUsize,
-    object: T,
-}
-
-impl<T: CapObject> CapObjectWrapper<T> {
-    fn new(object: T) -> Self {
-        CapObjectWrapper {
-            count: AtomicUsize::new(1),
-            object,
-        }
-    }
-}
+pub trait CapObject {}
 
 #[derive(Debug)]
 pub struct StrongCapability<T: CapObject> {
-    object: Arc<CapObjectWrapper<T>>,
+    object: Arc<T>,
     flags: CapFlags,
-    // if this is false, no refcounting will take place on the Capability object referenced by this Capability
-    // refcounting for the memory will take place, but cap_drop will never be called
-    // this will improve performance if refcounting is not needed
-    do_refcount: bool,
 }
 
 impl<T: CapObject> StrongCapability<T> {
     pub fn new(object: T, flags: CapFlags, allocer: OrigRef) -> KResult<Self> {
-        let inner = Arc::new(CapObjectWrapper::new(object), allocer)?;
         Ok(StrongCapability {
-            object: inner,
+            object: Arc::new(object, allocer)?,
             flags,
-            do_refcount: true,
         })
     }
 
-    pub fn new_no_refcount(object: T, flags: CapFlags, allocer: OrigRef) -> KResult<Self> {
-        let inner = Arc::new(CapObjectWrapper::new(object), allocer)?;
-        Ok(StrongCapability {
-            object: inner,
-            flags,
-            do_refcount: false,
-        })
+    pub fn inner(&self) -> &Arc<T> {
+        &self.object
     }
 
     pub fn and_from_flags(cap: &Self, flags: CapFlags) -> Self {
@@ -156,87 +120,46 @@ impl<T: CapObject> StrongCapability<T> {
         WeakCapability {
             object: Arc::downgrade(&self.object),
             flags: self.flags,
-            do_refcount: self.do_refcount,
         }
     }
 
     pub fn object(&self) -> &T {
-        &self.object.object
+        &self.object
     }
 
     pub fn flags(&self) -> CapFlags {
         self.flags
     }
-
-    pub fn is_refcounted(&self) -> bool {
-        self.do_refcount
-    }
 }
 
+// need explicit clone impl because derive only impls if T is clone
 impl<T: CapObject> Clone for StrongCapability<T> {
     fn clone(&self) -> Self {
-        if self.do_refcount {
-            self.object.count.fetch_add(1, Ordering::Relaxed);
-        }
         StrongCapability {
             object: self.object.clone(),
             flags: self.flags,
-            do_refcount: self.do_refcount,
         }
     }
 }
 
-impl<T: CapObject> Drop for StrongCapability<T> {
-    fn drop(&mut self) {
-        if self.do_refcount && self.object.count.fetch_sub(1, Ordering::Release) == 1 {
-            fence(Ordering::Acquire);
-            self.object.object.cap_drop();
-        }
-    }
-}
-
-// default implementations of clone and drop are fine for this
 #[derive(Debug)]
 pub struct WeakCapability<T: CapObject> {
-    object: Weak<CapObjectWrapper<T>>,
+    object: Weak<T>,
     flags: CapFlags,
-    do_refcount: bool,
 }
 
 impl<T: CapObject> WeakCapability<T> {
     // fails if memory has been dropped or cap refcount is 0
     // NOTE: if do_refcount is false, this will succeeed if there is any arc pointing to the CapObject, even if there are no string capabilities
     pub fn upgrade(&self) -> Option<StrongCapability<T>> {
-        let arc = self.object.upgrade()?;
-        if self.do_refcount {
-            let mut count = arc.count.load(Ordering::Relaxed);
+        Some(StrongCapability {
+            object: self.object.upgrade()?,
+            flags: self.flags,
+        })
+    }
 
-            loop {
-                if count == 0 {
-                    return None;
-                }
-
-                match arc
-                    .count
-                    .compare_exchange_weak(count, count + 1, Ordering::Relaxed, Ordering::Relaxed)
-                {
-                    Ok(_) => {
-                        return Some(StrongCapability {
-                            object: arc,
-                            flags: self.flags,
-                            do_refcount: self.do_refcount,
-                        })
-                    },
-                    Err(num) => count = num,
-                }
-            }
-        } else {
-            Some(StrongCapability {
-                object: arc,
-                flags: self.flags,
-                do_refcount: self.do_refcount,
-            })
-        }
+    pub fn inner(&self) -> &Weak<T> {
+        &self.object
     }
 
     pub fn and_from_flags(cap: &Self, flags: CapFlags) -> Self {
@@ -248,18 +171,14 @@ impl<T: CapObject> WeakCapability<T> {
     pub fn flags(&self) -> CapFlags {
         self.flags
     }
-
-    pub fn is_refcounted(&self) -> bool {
-        self.do_refcount
-    }
 }
 
+// default implementations of clone and drop are fine for this
 impl<T: CapObject> Clone for WeakCapability<T> {
     fn clone(&self) -> Self {
         WeakCapability {
             object: self.object.clone(),
             flags: self.flags,
-            do_refcount: self.do_refcount,
         }
     }
 }

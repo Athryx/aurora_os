@@ -4,17 +4,18 @@ mod thread_map;
 
 use core::sync::atomic::Ordering;
 
-pub use thread::{ThreadState, ThreadHandle, Thread};
+pub use thread::{ThreadState, ThreadHandle, Thread, Tid};
 use thread_map::ThreadMap;
+use crate::alloc::root_alloc_ref;
 use crate::arch::x64::IntDisable;
 use crate::config::SCHED_TIME;
 use crate::mem::MemOwner;
 use crate::prelude::*;
 use crate::arch::x64::asm_switch_thread;
 use crate::container::Arc;
-use crate::process::Process;
+use crate::process::{Process, get_kernel_process};
 
-static THREAD_MAP: ThreadMap = ThreadMap::new();
+pub static THREAD_MAP: ThreadMap = ThreadMap::new();
 
 /// This stores a reference to the current thread and process for easy retrieval
 /// 
@@ -192,6 +193,9 @@ pub fn switch_current_thread_to(state: ThreadState, _int_disable: IntDisable, po
     let new_rsp = new_thread.rsp.load(Ordering::Acquire);
     let new_addr_space = new_process.get_cr3();
 
+    // set syscall rsp
+    cpu_local_data().syscall_rsp.store(new_thread.syscall_rsp(), Ordering::Release);
+
     // change current thread and process
     global_sched_state.current_thread = new_thread;
     global_sched_state.current_process = new_process;
@@ -229,10 +233,23 @@ pub fn switch_other_thread_to(thread_handle: *const ThreadHandle, state: ThreadS
     todo!()
 }
 
-pub fn init() -> KResult<()> {
-    Ok(())
-}
+/// Creates an idle thread and sets up scheduler from the currently executing thread and its stack
+pub fn init(stack: AVirtRange) -> KResult<()> {
+    let kernel_process = get_kernel_process();
 
-pub fn ap_init(stack_addr: usize) -> KResult<()> {
+    let (thread, thread_handle) = kernel_process.create_idle_thread(
+        String::from_str(root_alloc_ref().downgrade(), "idle_thread")?,
+        stack,
+    )?;
+
+    cpu_local_data().set_sched_state(SchedState {
+        current_thread: thread,
+        current_process: kernel_process,
+    });
+
+    // TODO: maybe put idle thread in cpu local global variable so idle thread is per cpu
+    // reducing lock pressure on thread list
+    cpu_local_data().current_thread_handle.store(thread_handle.ptr_mut(), Ordering::Release);
+
     Ok(())
 }

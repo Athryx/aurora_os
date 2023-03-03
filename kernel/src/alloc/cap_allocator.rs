@@ -134,14 +134,16 @@ impl Arc<CapAllocator> {
     }
 }
 
-impl CapObject for CapAllocator {
-    fn cap_drop(&self) {
-        // TODO: move heap zones to parent when dying
+impl Drop for CapAllocator {
+    fn drop(&mut self) {
+        // FIXME: move heap zones to parent when dying
         let mut page_data = self.page_data.lock();
         page_data.prealloc_size = 0;
         self.is_alive.store(false, Ordering::Release);
     }
 }
+
+impl CapObject for CapAllocator {}
 
 // NOTE: all of these allocator methods will fail if called on a dead CapAllocator,
 // because prealloc_size wil be 0, and all zones from heap will be moved to parent

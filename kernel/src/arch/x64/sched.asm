@@ -1,6 +1,7 @@
 %include "asm_def.asm"
 
 global asm_switch_thread
+global asm_thread_init
 
 extern post_switch_handler
 
@@ -49,3 +50,22 @@ asm_switch_thread:
     pop rbx
 
     ret
+
+asm_thread_init:
+    ; load registers specified on stack
+    pop rbx
+    pop rdx
+    pop rsi
+    pop rdi
+
+    ; load instruction pointer into rcx
+    pop rcx
+
+    ; load default rflags (only bit set is interrupt enable + reserved bit that is always 1)
+    mov r11, 0x202
+
+    ; load userspace stack
+    pop rax
+    mov rsp, rax
+
+    o64 sysret
