@@ -100,6 +100,8 @@ fn init(boot_info_addr: usize) -> KResult<()> {
 
     syscall::init();
 
+    process::init_kernel_process();
+
     // initislise the scheduler
     sched::init()?;
 

@@ -46,6 +46,9 @@ pub struct Thread {
     kernel_stack: KernelStack,
 }
 
+unsafe impl Send for Thread {}
+unsafe impl Sync for Thread {}
+
 #[derive(Debug)]
 pub struct ThreadHandle {
     pub state: ThreadState,

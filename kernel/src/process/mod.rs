@@ -1,8 +1,10 @@
 use core::sync::atomic::{AtomicUsize, AtomicBool};
 
+use spin::Once;
+
 use crate::container::Arc;
 use crate::sched::Thread;
-use crate::alloc::{PaRef, OrigRef};
+use crate::alloc::{PaRef, OrigRef, root_alloc_page_ref, root_alloc_ref};
 use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability};
 use crate::prelude::*;
 use crate::sync::IMutex;
@@ -59,4 +61,25 @@ impl Process {
 
 impl CapObject for Process {
     fn cap_drop(&self) {}
+}
+
+static KERNEL_PROCESS: Once<WeakCapability<Process>> = Once::new();
+
+/// Initializes the kernel process
+pub fn init_kernel_process() {
+    const FAIL_MESSAGE: &'static str = "could not initialize kernel process";
+
+    KERNEL_PROCESS.call_once(|| {
+        Process::new(
+            root_alloc_page_ref(),
+            root_alloc_ref(),
+            String::from_str(root_alloc_ref().downgrade(), "kernel")
+                .expect(FAIL_MESSAGE)
+        ).expect(FAIL_MESSAGE)
+    });
+}
+
+/// Gets the kernel process, and panics if it has not yet been initialized
+pub fn get_kernel_process() -> WeakCapability<Process> {
+    KERNEL_PROCESS.get().unwrap().clone()
 }

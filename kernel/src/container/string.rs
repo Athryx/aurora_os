@@ -10,19 +10,19 @@ pub struct String {
 }
 
 impl String {
-    fn new(allocer: AllocRef) -> String {
+    pub fn new(allocer: AllocRef) -> String {
         String {
             data: Vec::new(allocer),
         }
     }
 
-    unsafe fn from_utf8_unchecked(data: Vec<u8>) -> String {
+    pub unsafe fn from_utf8_unchecked(data: Vec<u8>) -> String {
         String {
             data,
         }
     }
 
-    fn from_str(allocer: AllocRef, str: &str) -> KResult<String> {
+    pub fn from_str(allocer: AllocRef, str: &str) -> KResult<String> {
         Ok(String {
             data: Vec::from_slice(allocer, str.as_bytes())?,
         })
