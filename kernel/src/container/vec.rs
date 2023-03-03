@@ -289,6 +289,18 @@ impl<T> Vec<T> {
     }
 }
 
+impl<T: Clone> Vec<T> {
+    pub fn from_slice(allocer: AllocRef, slice: &[T]) -> KResult<Self> {
+        let mut out = Self::try_with_capacity(allocer, slice.len())?;
+
+        for item in slice {
+            out.push(item.clone())?;
+        }
+
+        Ok(out)
+    }
+}
+
 impl<T> Deref for Vec<T> {
     type Target = [T];
 
