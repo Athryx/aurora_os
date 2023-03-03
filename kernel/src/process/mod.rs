@@ -15,17 +15,19 @@ pub struct Process {
     pub is_alive: AtomicBool,
     pub num_threads_running: AtomicUsize,
     strong_capability: IMutex<Option<StrongCapability<Self>>>,
+    name: String,
     threads: Vec<Arc<Thread>>,
     addr_space: VirtAddrSpace,
 }
 
 impl Process {
-    pub fn new(page_allocator: PaRef, allocer: OrigRef) -> KResult<WeakCapability<Self>> {
+    pub fn new(page_allocator: PaRef, allocer: OrigRef, name: String) -> KResult<WeakCapability<Self>> {
         let strong_cap = StrongCapability::new(
             Process {
                 is_alive: AtomicBool::new(true),
                 num_threads_running: AtomicUsize::new(0),
                 strong_capability: IMutex::new(None),
+                name,
                 threads: Vec::new(allocer.clone().downgrade()),
                 addr_space: VirtAddrSpace::new(page_allocator, allocer.downgrade())?,
             },

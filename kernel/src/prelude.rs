@@ -9,7 +9,7 @@ pub use sys::SysErr;
 
 pub use crate::arch::x64::bochs_break;
 pub use crate::consts::PAGE_SIZE;
-pub use crate::container::{Box, Vec};
+pub use crate::container::{Box, Vec, String};
 pub use crate::gs_data::{cpu_local_data, prid};
 pub use crate::mem::{
     phys_to_virt, virt_to_phys, APhysRange, AVirtRange, PhysAddr, PhysRange, PhysRangeInner, UPhysRange,

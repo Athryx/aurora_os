@@ -37,6 +37,7 @@ pub struct Thread {
     // FIXME: maybe handle setting this to null when thread handle dropped (see if it is an issue)
     handle: *const ThreadHandle,
     pub process: Weak<Process>,
+    name: String,
     // this has to be atomic usize because it is written to in assembly
     pub rsp: AtomicUsize,
     // if this is non zero, the scheduler will exchange this field with 0 when switching away from a suspend state,
