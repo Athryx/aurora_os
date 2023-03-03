@@ -14,12 +14,8 @@
 #![feature(ptr_metadata)]
 #![feature(let_chains)]
 #![feature(try_blocks)]
+// FIXME: get rid of this incomplete feature
 #![feature(return_position_impl_trait_in_trait)]
-/*#![feature(arc_new_cyclic)]
-#![feature(const_btree_new)]
-#![feature(alloc_prelude)]
-#![feature(map_try_insert)]
-#![feature(map_first_last)]*/
 #![allow(dead_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![feature(custom_test_frameworks)]
@@ -36,8 +32,6 @@ mod mem;
 mod sched;
 mod sync;
 mod util;
-//mod vmem;
-//mod time;
 
 mod consts;
 mod config;
