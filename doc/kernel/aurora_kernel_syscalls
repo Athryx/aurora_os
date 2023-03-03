@@ -179,8 +179,8 @@ bits 0-7 (debug_print_num):
 specifies the number of characters to print (max 80 on x86_64)
 
 
-1: fn process_new(allocator: Cap<Allocator>, spawner: Cap<Spawner>) -> (err: SysErr, process: Cap<Process>)
-creates a new process
+1: fn process_new(allocator: Cap<Allocator>, spawner: Cap<Spawner>, name: UserString) -> (err: SysErr, process: Cap<Process>)
+creates a new process with name {name}
 in order to avoid memory leaks due to reference cycles, process_new always returns an unupgradable weak capability
 the kernel keeps 1 internal strong refernce to each process when it is created
 in order to destroy the process, call process_exit to destroy the strong refernce to the process, which will dealloc the process

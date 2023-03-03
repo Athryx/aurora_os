@@ -31,11 +31,11 @@ pub fn timer_handler() {
     let last_switch_nsec = cpu_local_data().last_thread_switch_nsec.load(Ordering::Acquire);
 
     if current_nsec - last_switch_nsec > SCHED_TIME.as_nanos() as u64 {
-        switch_current_thread_to(
+        let _ = switch_current_thread_to(
             ThreadState::Ready,
             IntDisable::new(),
             PostSwitchAction::SendEoi,
-        ).unwrap();
+        );
     }
 }
 
@@ -45,7 +45,7 @@ pub fn exit_handler() {
         ThreadState::Dead { try_destroy_process: true },
         IntDisable::new(),
         PostSwitchAction::SendEoi,
-    ).unwrap();
+    ).expect("thread terminated and there were no more threads to run");
 }
 
 /// All data used by the post switch handler
@@ -226,7 +226,7 @@ pub enum ThreadSwitchError {
 }
 
 pub fn switch_other_thread_to(thread_handle: *const ThreadHandle, state: ThreadState) -> Result<(), ThreadSwitchError> {
-    unimplemented!()
+    todo!()
 }
 
 pub fn init() -> KResult<()> {
