@@ -5,6 +5,8 @@ use crate::arch::x64::{
 
 mod debug;
 use debug::*;
+mod process;
+use process::*;
 
 extern "C" {
     fn syscall_entry();

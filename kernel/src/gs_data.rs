@@ -48,6 +48,9 @@ pub struct GsData {
     pub sched_state: Once<IMutex<SchedState>>,
     /// Stores the post switch action to be completed after switching threads
     pub post_switch_data: IMutex<Option<PostSwitchData>>,
+    /// Used to determine if a process is the current proces without locking sched state
+    /// FIXME: this is an ugly hack
+    pub current_process_addr: AtomicUsize,
 }
 
 impl GsData {
@@ -86,6 +89,7 @@ pub fn init(prid: Prid) {
         current_thread_handle: AtomicPtr::new(null_mut()),
         sched_state: Once::new(),
         post_switch_data: IMutex::new(None),
+        current_process_addr: AtomicUsize::new(0),
     };
 
     let gs_data = Box::new(gs_data, root_alloc_ref()).expect("Failed to allocate gs data struct");

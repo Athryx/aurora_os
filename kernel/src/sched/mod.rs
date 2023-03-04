@@ -43,7 +43,7 @@ pub fn timer_handler() {
 /// Called when an ipi_exit ipi occurs, and potentialy exits the current thread
 pub fn exit_handler() {
     switch_current_thread_to(
-        ThreadState::Dead { try_destroy_process: true },
+        ThreadState::Dead { try_destroy_process: false },
         IntDisable::new(),
         PostSwitchAction::SendEoi,
     ).expect("thread terminated and there were no more threads to run");
@@ -197,6 +197,7 @@ pub fn switch_current_thread_to(state: ThreadState, _int_disable: IntDisable, po
     cpu_local_data().syscall_rsp.store(new_thread.syscall_rsp(), Ordering::Release);
 
     // change current thread and process
+    cpu_local_data().current_process_addr.store(Arc::as_ptr(&new_process) as usize, Ordering::Release);
     global_sched_state.current_thread = new_thread;
     global_sched_state.current_process = new_process;
 
@@ -241,6 +242,9 @@ pub fn init(stack: AVirtRange) -> KResult<()> {
         String::from_str(root_alloc_ref().downgrade(), "idle_thread")?,
         stack,
     )?;
+
+    cpu_local_data().syscall_rsp.store(thread.syscall_rsp(), Ordering::Release);
+    cpu_local_data().current_process_addr.store(Arc::as_ptr(&kernel_process) as usize, Ordering::Release);
 
     cpu_local_data().set_sched_state(SchedState {
         current_thread: thread,

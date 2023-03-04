@@ -1,6 +1,7 @@
 use core::hash::{Hash, Hasher};
 use core::iter::FusedIterator;
 use core::ops::{Index, IndexMut};
+use core::fmt;
 
 use siphasher::sip::SipHasher;
 
@@ -150,6 +151,12 @@ impl<K: Hash + Eq, V> HashMap<K, V> {
         } else {
             unreachable!();
         }
+    }
+}
+
+impl<K: Eq + Hash + fmt::Debug, V: fmt::Debug> fmt::Debug for HashMap<K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map().entries(self.iter()).finish()
     }
 }
 

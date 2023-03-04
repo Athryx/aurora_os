@@ -3,12 +3,14 @@ use core::slice;
 
 use spin::Once;
 
-use crate::arch::x64::asm_thread_init;
+use crate::arch::x64::{asm_thread_init, IntDisable};
 use crate::container::{Arc, Weak};
+use crate::int::IPI_PROCESS_EXIT;
+use crate::int::apic::{Ipi, IpiDest};
 use crate::mem::MemOwner;
-use crate::sched::{Tid, Thread, ThreadHandle, THREAD_MAP};
+use crate::sched::{Tid, Thread, ThreadHandle, ThreadState, PostSwitchAction, THREAD_MAP, switch_current_thread_to};
 use crate::alloc::{PaRef, OrigRef, root_alloc_page_ref, root_alloc_ref};
-use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability};
+use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability, CapabilityMap};
 use crate::prelude::*;
 use crate::sched::kernel_stack::KernelStack;
 use crate::sync::IMutex;
@@ -41,6 +43,7 @@ pub struct Process {
     threads: IMutex<Vec<Arc<Thread>>>,
 
     addr_space: VirtAddrSpace,
+    cap_map: CapabilityMap,
 }
 
 impl Process {
@@ -56,7 +59,8 @@ impl Process {
                 self_weak: Once::new(),
                 next_tid: AtomicUsize::new(0),
                 threads: IMutex::new(Vec::new(allocer.clone().downgrade())),
-                addr_space: VirtAddrSpace::new(page_allocator, allocer.downgrade())?,
+                addr_space: VirtAddrSpace::new(page_allocator, allocer.clone().downgrade())?,
+                cap_map: CapabilityMap::new(allocer.downgrade()),
             },
             CapFlags::READ | CapFlags::PROD | CapFlags::WRITE,
             allocer,
@@ -197,6 +201,51 @@ impl Process {
         }
 
         Ok(tid)
+    }
+
+    pub fn is_current_process(&self) -> bool {
+        let current_addr = cpu_local_data().current_process_addr.load(Ordering::Acquire);
+        current_addr == self as *const _ as usize
+    }
+
+    /// Trigger the process to exit
+    /// 
+    /// This will stop all running threads from this process, and drop the process eventually
+    /// 
+    /// This may trigger the current thread to die if it is exiting its own process,
+    /// so no locks or refcounted objects hould be held when calling this,
+    /// unless it has already been checked that `this` is not the current process
+    /// 
+    /// # Locking
+    /// 
+    /// acquires local_apic lock
+    pub fn exit(this: Arc<Process>) {
+        if !this.is_alive.swap(false, Ordering::AcqRel) {
+            // another thread is already terminating this process
+            return
+        }
+
+        cpu_local_data().local_apic().send_ipi(Ipi::To(IpiDest::AllExcludeThis, IPI_PROCESS_EXIT));
+
+        if this.is_current_process() {
+            // wait for all other threads except this one to exit
+            while this.num_threads_running.load(Ordering::Acquire) != 1 {}
+
+            switch_current_thread_to(
+                ThreadState::Dead { try_destroy_process: true },
+                // creating a new int disable is fine, we don't care to restore interrupts because this thread will die
+                IntDisable::new(),
+                PostSwitchAction::None
+            ).unwrap();
+        } else {
+            // wait for all other threads to exit
+            while this.num_threads_running.load(Ordering::Acquire) != 0 {}
+
+            // safety: no other threads from this process are running
+            unsafe {
+                this.release_strong_capability();
+            }
+        }
     }
 }
 

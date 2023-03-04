@@ -5,6 +5,9 @@ use crate::container::{Arc, Weak};
 use crate::make_id_type_no_from;
 use crate::prelude::*;
 
+mod capability_map;
+pub use capability_map::*;
+
 bitflags! {
     pub struct CapFlags: usize {
         const READ = 1;
@@ -17,37 +20,39 @@ bitflags! {
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CapType {
-    Process,
-    Memory,
-    Event,
-    Channel,
-    Key,
-    Interrupt,
-    Port,
-    Spawner,
-    Allocator,
-    RootOom,
-    MmioAllocator,
-    IntAllocator,
-    PortAllocator,
+    Process = 1,
+    Memory = 2,
+    Lock = 3,
+    EventPool = 4,
+    Channel = 5,
+    Key = 6,
+    Interrupt = 7,
+    Port = 8,
+    Spawner = 9,
+    Allocator = 10,
+    RootOom = 11,
+    MmioAllocator = 12,
+    IntAllocator = 13,
+    PortAllocator = 14,
 }
 
 impl CapType {
     pub fn from(n: usize) -> Option<Self> {
         Some(match n {
-            0 => Self::Process,
-            1 => Self::Memory,
-            2 => Self::Event,
-            3 => Self::Channel,
-            4 => Self::Key,
-            5 => Self::Interrupt,
-            6 => Self::Port,
-            7 => Self::Spawner,
-            8 => Self::Allocator,
-            9 => Self::RootOom,
-            10 => Self::MmioAllocator,
-            11 => Self::IntAllocator,
-            12 => Self::PortAllocator,
+            1 => Self::Process,
+            2 => Self::Memory,
+            3 => Self::Lock,
+            4 => Self::EventPool,
+            5 => Self::Channel,
+            6 => Self::Key,
+            7 => Self::Interrupt,
+            8 => Self::Port,
+            9 => Self::Spawner,
+            10 => Self::Allocator,
+            11 => Self::RootOom,
+            12 => Self::MmioAllocator,
+            13 => Self::IntAllocator,
+            14 => Self::PortAllocator,
             _ => return None,
         })
     }
@@ -62,11 +67,19 @@ make_id_type_no_from!(CapId);
 impl CapId {
     pub fn try_from(n: usize) -> Option<Self> {
         // fail if invalid type of cap object
-        if get_bits(n, 5..9) > 12 {
+        let bits = get_bits(n, 5..9);
+        if bits == 0 || bits > 14 {
             None
         } else {
             Some(CapId(n))
         }
+    }
+
+    /// Creates a valid CapId from the given `cap_type`, `flags`, `is_weak`, and `base_id`
+    /// 
+    /// `base_id` should be a unique integer in order for this id to be unique
+    pub fn new(cap_type: CapType, flags: CapFlags, is_weak: bool, base_id: usize) -> Self {
+        CapId(flags.bits | ((is_weak as usize) << 4) | (cap_type.as_usize() << 5) | (base_id << 9))
     }
 
     pub fn flags(&self) -> CapFlags {
@@ -181,6 +194,13 @@ impl<T: CapObject> Clone for WeakCapability<T> {
             flags: self.flags,
         }
     }
+}
+
+/// A capability that is either strong or weak
+#[derive(Debug)]
+pub enum Capability<T: CapObject> {
+    Strong(StrongCapability<T>),
+    Weak(WeakCapability<T>),
 }
 
 /// A capability that points to certain objects that are static and always exist in the kernel
