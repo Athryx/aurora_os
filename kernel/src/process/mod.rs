@@ -231,6 +231,8 @@ impl Process {
             // wait for all other threads except this one to exit
             while this.num_threads_running.load(Ordering::Acquire) != 1 {}
 
+            drop(this);
+
             switch_current_thread_to(
                 ThreadState::Dead { try_destroy_process: true },
                 // creating a new int disable is fine, we don't care to restore interrupts because this thread will die
