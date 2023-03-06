@@ -7,6 +7,7 @@ use crate::prelude::*;
 
 mod capability_map;
 pub use capability_map::*;
+pub mod key;
 
 bitflags! {
     pub struct CapFlags: usize {

@@ -5,6 +5,8 @@ use crate::arch::x64::{
 
 mod debug;
 use debug::*;
+mod key;
+use key::*;
 mod process;
 use process::*;
 
@@ -209,6 +211,9 @@ pub const THREAD_NEW: u32 = 3;
 pub const THREAD_YIELD: u32 = 4;
 pub const THREAD_SUSPEND: u32 = 6;
 
+pub const KEY_NEW: u32 = 38;
+pub const KEY_ID: u32 = 39;
+
 /// This function is called by the assembly syscall entry point
 #[no_mangle]
 extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
@@ -231,6 +236,8 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		THREAD_NEW => sysret_1!(syscall_7!(thread_new, vals), vals),
 		THREAD_YIELD => sysret_0!(thread_yield(), vals),
 		THREAD_SUSPEND => sysret_0!(syscall_1!(thread_suspend, vals), vals),
+		KEY_NEW => sysret_1!(syscall_1!(key_new, vals), vals),
+		KEY_ID => sysret_1!(syscall_1!(key_id, vals), vals),
         _ => vals.a1 = SysErr::InvlSyscall.num(),
     }
 }

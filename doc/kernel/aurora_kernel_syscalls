@@ -733,12 +733,14 @@ ceates a new key object
 keys are used by userpace servers to identify sessions, and manage permissions
 each key is a globally unique integer, and this integer can be obtained with the key_id syscall
 
+options:
+bits 0-3 (key_cap_flags): specifies the permissions of the returned key capability
+
 required capability permissions:
 {allocator}: cap_prod
 
 return value:
 key: key capability id
-key capability returned has cap_read permissions
 
 
 39: fn key_id(key: Cap<Key>) -> (err: SysErr, id: usize)
