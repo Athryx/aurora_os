@@ -7,7 +7,7 @@ use crate::arch::x64::{asm_thread_init, IntDisable};
 use crate::container::{Arc, Weak};
 use crate::int::IPI_PROCESS_EXIT;
 use crate::int::apic::{Ipi, IpiDest};
-use crate::mem::MemOwner;
+use crate::mem::{MemOwner, addr};
 use crate::sched::{Tid, Thread, ThreadHandle, ThreadState, PostSwitchAction, THREAD_MAP, switch_current_thread_to};
 use crate::alloc::{PaRef, OrigRef, root_alloc_page_ref, root_alloc_ref};
 use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability, CapabilityMap, CapType};
@@ -27,6 +27,7 @@ pub enum ThreadStartMode {
     Suspended,
 }
 
+/// A capability that represents a protection context, has a set of capabilities and a virtual address space
 #[derive(Debug)]
 pub struct Process {
     name: String,
@@ -45,15 +46,18 @@ pub struct Process {
     threads: IMutex<Vec<Arc<Thread>>>,
 
     addr_space: VirtAddrSpace,
+    cr3_addr: PhysAddr,
     cap_map: CapabilityMap,
 }
 
 impl Process {
     pub fn new(page_allocator: PaRef, allocer: OrigRef, name: String) -> KResult<WeakCapability<Self>> {
+        let addr_space = VirtAddrSpace::new(page_allocator.clone(), allocer.downgrade())?;
+
         let strong_cap = StrongCapability::new(
             Process {
                 name,
-                page_allocator: page_allocator.clone(),
+                page_allocator: page_allocator,
                 heap_allocator: allocer.clone(),
                 is_alive: AtomicBool::new(true),
                 num_threads_running: AtomicUsize::new(0),
@@ -61,7 +65,8 @@ impl Process {
                 self_weak: Once::new(),
                 next_tid: AtomicUsize::new(0),
                 threads: IMutex::new(Vec::new(allocer.clone().downgrade())),
-                addr_space: VirtAddrSpace::new(page_allocator, allocer.clone().downgrade())?,
+                cr3_addr: addr_space.cr3_addr(),
+                addr_space,
                 cap_map: CapabilityMap::new(allocer.downgrade()),
             },
             CapFlags::READ | CapFlags::PROD | CapFlags::WRITE,
@@ -90,7 +95,7 @@ impl Process {
     /// 
     /// This is the pointer to the top lavel paging table for the process
     pub fn get_cr3(&self) -> usize {
-        self.addr_space.get_cr3_addr().as_usize()
+        self.cr3_addr.as_usize()
     }
 
     /// Returns a reference to the capability map of this process

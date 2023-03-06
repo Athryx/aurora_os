@@ -145,7 +145,7 @@ struct ApData {
 }
 
 /// Initializes all other cpu cores
-pub fn smp_init(ap_apic_ids: &[u8], ap_init_addr_space: VirtAddrSpace) -> KResult<()> {
+pub fn smp_init(ap_apic_ids: &[u8], mut ap_init_addr_space: VirtAddrSpace) -> KResult<()> {
     let num_aps = ap_apic_ids.len();
     eprintln!("booting {} ap cores...", num_aps);
 
@@ -181,7 +181,7 @@ pub fn smp_init(ap_apic_ids: &[u8], ap_init_addr_space: VirtAddrSpace) -> KResul
 	let ap_data = (ap_code_dest_virt_range.as_usize() + ap_data_offset) as *mut ApData;
 	let ap_data = unsafe { ap_data.as_mut().unwrap() };
 	// this lossy as cast is ok because ap addr space cr3 is guarenteed to be bellow 4 GiB
-	ap_data.cr3 = ap_init_addr_space.get_cr3_addr().as_usize() as u32;
+	ap_data.cr3 = ap_init_addr_space.cr3_addr().as_usize() as u32;
 	ap_data.id_counter.store(1, Ordering::Release);
 
     let mut stacks = Vec::try_with_capacity(root_alloc_ref().downgrade(), num_aps)?;

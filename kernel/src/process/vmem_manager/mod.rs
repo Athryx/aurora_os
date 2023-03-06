@@ -65,9 +65,9 @@ impl PageMappingTaker {
     }
 }
 
-/// Fields in virt addr space that need ot be mutated so they will all be behind a lock
+/// This represents a virtual address space that can have memory mapped into it
 #[derive(Debug)]
-struct VirtAddrSpaceInner {
+pub struct VirtAddrSpace {
     /// All virtual memory which is currently in use
     // TODO: write btreemap for this, it will be faster with many zones
     mem_zones: Vec<AVirtRange>,
@@ -77,7 +77,89 @@ struct VirtAddrSpaceInner {
     page_allocator: PaRef,
 }
 
-impl VirtAddrSpaceInner {
+impl VirtAddrSpace {
+    pub fn new(mut page_allocator: PaRef, alloc_ref: AllocRef) -> KResult<Self> {
+        let mut pml4_table = PageTable::new(page_allocator.allocator(), PageTableFlags::NONE)
+            .ok_or(SysErr::OutOfMem)?;
+
+        unsafe {
+            pml4_table.as_mut_ptr()
+                .as_mut()
+                .unwrap()
+                .add_entry(511, *HIGHER_HALF_PAGE_POINTER);
+        }
+
+        Ok(VirtAddrSpace {
+            mem_zones: Vec::new(alloc_ref),
+            cr3: pml4_table,
+            page_allocator,
+        })
+    }
+
+    pub fn cr3_addr(&self) -> PhysAddr {
+        self.cr3.address()
+    }
+
+    /// Deallocates all the page tables in this address space
+    /// 
+    /// Call this before dropping the address space otherwise there will be a memory leak
+    /// 
+    /// # Safety
+    /// 
+    /// This address space must not be loaded when this is called
+    pub unsafe fn dealloc_addr_space(&mut self) {
+        unsafe {
+            self.cr3.as_mut_ptr().as_mut().unwrap()
+                .dealloc_all(self.page_allocator.allocator())
+        }
+    }
+
+    /// Maps all the virtual memory ranges in the slice to point to the corresponding physical address
+    /// 
+    /// If any one of the memeory regions fails, none will be mapped
+    pub fn map_memory(&mut self, memory: &[(AVirtRange, PhysAddr)], flags: PageMappingFlags) -> KResult<()> {
+        self.add_virt_addr_entries(memory)?;
+
+        for (virt_range, phys_addr) in memory {
+            let phys_range = APhysRange::new(*phys_addr, virt_range.size());
+
+            let mut frame_taker = PageMappingTaker {
+                virt_range: *virt_range,
+                phys_range,
+            };
+
+            while let Some((phys_frame, virt_frame)) = frame_taker.take() {
+                // TODO: handle out of memory condition more elegantly
+                if let Err(error) = self.map_frame(virt_frame, phys_frame, flags) {
+                    self.remove_virt_addr_entries(memory).unwrap();
+
+                    self.unmap_internal(memory);
+
+                    return Err(error);
+                }
+
+                // TODO: check if address space is loaded
+                invlpg(virt_frame.start_addr().as_usize());
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Unmaps all the virtual memory ranges in the slice
+    /// 
+    /// Phys addr must be the same memory it was mapped with
+    /// 
+    /// If any one of the memeory regions fails, none will be unmapped
+    // FIXME: don't require phys addr to be passed in
+    pub fn unmap_memory(&mut self, memory: &[(AVirtRange, PhysAddr)]) -> KResult<()> {
+        self.remove_virt_addr_entries(memory)?;
+
+        self.unmap_internal(memory);
+
+        Ok(())
+    }
+
     /// Returns Some(index) if the given virt range in the virtual address space is not occupied
     /// 
     /// The index is the place where the virt_range can be inserted to maintain ordering in the list
@@ -243,118 +325,8 @@ impl VirtAddrSpaceInner {
             }
         }
     }
-}
 
-/// This represents a virtual address space that can have memory mapped into it
-#[derive(Debug)]
-pub struct VirtAddrSpace {
-    /// Fields which need to be mutated
-    inner: IMutex<VirtAddrSpaceInner>,
-    /// Addres of the top level page table pointer, so we can load out without locking
-    cr3_addr: PhysAddr,
-}
-
-impl VirtAddrSpace {
-    pub fn new(mut page_allocator: PaRef, alloc_ref: AllocRef) -> KResult<Self> {
-        let mut pml4_table = PageTable::new(page_allocator.allocator(), PageTableFlags::NONE)
-            .ok_or(SysErr::OutOfMem)?;
-
-        unsafe {
-            pml4_table.as_mut_ptr()
-                .as_mut()
-                .unwrap()
-                .add_entry(511, *HIGHER_HALF_PAGE_POINTER);
-        }
-
-        Ok(VirtAddrSpace {
-            inner: IMutex::new(VirtAddrSpaceInner {
-                mem_zones: Vec::new(alloc_ref),
-                cr3: pml4_table,
-                page_allocator,
-            }),
-            cr3_addr: pml4_table.address(),
-        })
-    }
-
-    /// Loads this virtual address space
-    pub unsafe fn load(&self) {
-        set_cr3(self.cr3_addr.as_usize());
-    }
-
-    pub fn is_loaded(&self) -> bool {
-        get_cr3() == self.cr3_addr.as_usize()
-    }
-
-    pub fn get_cr3_addr(&self) -> PhysAddr {
-        self.cr3_addr
-    }
-
-    /// Deallocates all the page tables in this address space
-    /// 
-    /// Call this before dropping the address space otherwise there will be a memory leak
-    /// 
-    /// # Safety
-    /// 
-    /// This address space must not be loaded when this is called
-    pub unsafe fn dealloc_addr_space(&self) {
-        let mut inner = self.inner.lock();
-        unsafe {
-            inner.cr3.as_mut_ptr().as_mut().unwrap()
-                .dealloc_all(inner.page_allocator.allocator())
-        }
-    }
-
-    /// Maps all the virtual memory ranges in the slice to point to the corresponding physical address
-    /// 
-    /// If any one of the memeory regions fails, none will be mapped
-    pub fn map_memory(&self, memory: &[(AVirtRange, PhysAddr)], flags: PageMappingFlags) -> KResult<()> {
-        let mut inner = self.inner.lock();
-
-        inner.add_virt_addr_entries(memory)?;
-
-        for (virt_range, phys_addr) in memory {
-            let phys_range = APhysRange::new(*phys_addr, virt_range.size());
-
-            let mut frame_taker = PageMappingTaker {
-                virt_range: *virt_range,
-                phys_range,
-            };
-
-            while let Some((phys_frame, virt_frame)) = frame_taker.take() {
-                // TODO: handle out of memory condition more elegantly
-                if let Err(error) = inner.map_frame(virt_frame, phys_frame, flags) {
-                    inner.remove_virt_addr_entries(memory).unwrap();
-
-                    Self::unmap_internal(inner, memory);
-
-                    return Err(error);
-                }
-
-                // TODO: check if address space is loaded
-                invlpg(virt_frame.start_addr().as_usize());
-            }
-        }
-
-        Ok(())
-    }
-
-    /// Unmaps all the virtual memory ranges in the slice
-    /// 
-    /// Phys addr must be the same memory it was mapped with
-    /// 
-    /// If any one of the memeory regions fails, none will be unmapped
-    // FIXME: don't require phys addr to be passed in
-    pub fn unmap_memory(&self, memory: &[(AVirtRange, PhysAddr)]) -> KResult<()> {
-        let mut inner = self.inner.lock();
-
-        inner.remove_virt_addr_entries(memory)?;
-
-        Self::unmap_internal(inner, memory);
-
-        Ok(())
-    }
-
-    fn unmap_internal(mut inner: IMutexGuard<VirtAddrSpaceInner>, memory: &[(AVirtRange, PhysAddr)]) {
+    fn unmap_internal(&mut self, memory: &[(AVirtRange, PhysAddr)]) {
         for (virt_range, phys_addr) in memory {
             let phys_range = APhysRange::new(*phys_addr, virt_range.size());
 
@@ -364,7 +336,7 @@ impl VirtAddrSpace {
             };
 
             while let Some((_, virt_frame)) = frame_taker.take() {
-                inner.unmap_frame(virt_frame);
+                self.unmap_frame(virt_frame);
 
                 // TODO: check if address space is loaded
                 invlpg(virt_frame.start_addr().as_usize());
