@@ -114,6 +114,10 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     Ok(())
 }
 
+fn start_early_init_process() -> KResult<()> {
+    Ok(())
+}
+
 /// Rust entry point of the kernel on the startup core
 ///
 /// Called by boot.asm
@@ -124,6 +128,8 @@ pub extern "C" fn _start(boot_info_addr: usize) -> ! {
     init(boot_info_addr).expect("kernel init failed");
 
     println!("aurora v0.0.1");
+
+    start_early_init_process().expect("failed to start early init process");
 
     sti();
 

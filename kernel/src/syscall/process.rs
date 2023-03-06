@@ -27,6 +27,7 @@ use super::options_weak_autodestroy;
 // TODO: process name
 pub fn process_new(options: u32, allocator_id: usize, spawner_id: usize) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
+    let process_cap_flags = CapFlags::from_bits_truncate(get_bits(options as usize, 0..4));
 
     let _int_disable = IntDisable::new();
 
@@ -49,7 +50,7 @@ pub fn process_new(options: u32, allocator_id: usize, spawner_id: usize) -> KRes
         name,
     )?;
 
-    new_process.flags = CapFlags::from_bits_truncate(get_bits(options as usize, 0..4));
+    new_process.flags = process_cap_flags;
 
     spawner.add_process(new_process.inner().clone())?;
 

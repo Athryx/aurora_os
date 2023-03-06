@@ -856,6 +856,9 @@ required capability permissions:
 {allocator}: cap_prod
 {spawn_key}: cap_read
 
+syserr code:
+InvlArgs: {spawn_key} is not the correct spawn key
+
 return value:
 spawner: capability to a new spawner object
 

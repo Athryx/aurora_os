@@ -1,9 +1,15 @@
+use core::sync::atomic::{AtomicU64, Ordering};
+
 use crate::alloc::AllocRef;
+use crate::cap::key::Key;
 use crate::cap::{CapObject, CapType};
 use crate::prelude::*;
 use crate::container::{Arc, Weak};
 use crate::sync::IMutex;
 use super::Process;
+
+/// Specifies the key id needed to create spawners
+static SPAWNER_KEY_ID: AtomicU64 = AtomicU64::new(0);
 
 /// Capability that allows spawning processess, and manages destroying process groups
 #[derive(Debug)]
@@ -48,6 +54,16 @@ impl Spawner {
         }
 
         current_process
+    }
+
+    /// Gets the id of the key needed to create spawners
+    pub fn key_id() -> u64 {
+        SPAWNER_KEY_ID.load(Ordering::Acquire)
+    }
+
+    /// Sets the id of the key needed to create spawners
+    pub fn set_key_id(key: Key) {
+        SPAWNER_KEY_ID.store(key.id(), Ordering::Release)
     }
 }
 

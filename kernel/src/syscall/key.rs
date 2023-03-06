@@ -19,6 +19,7 @@ use super::options_weak_autodestroy;
 /// key: key capability id
 pub fn key_new(options: u32, allocator_id: usize) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
+    let key_cap_flags = CapFlags::from_bits_truncate(get_bits(options as usize, 0..4));
 
     let _int_disable = IntDisable::new();
 
@@ -28,13 +29,11 @@ pub fn key_new(options: u32, allocator_id: usize) -> KResult<usize> {
         .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?;
     let alloc_ref = OrigRef::from_arc(allocator);
 
-    let key_perms = CapFlags::from_bits_truncate(get_bits(options as usize, 0..4));
-    let mut key = StrongCapability::new(
+    let key = StrongCapability::new(
         Key::new(),
-        key_perms,
+        key_cap_flags,
         alloc_ref,
     )?;
-    key.flags = key_perms;
 
     Ok(current_process.cap_map().insert_key(Capability::Strong(key))?.into())
 }
