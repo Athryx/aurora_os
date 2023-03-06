@@ -33,7 +33,7 @@ asm_switch_thread:
     ; load new address space if it was different
     mov cr3, rsi
 
-.skip_addr_space_load
+.skip_addr_space_load:
 
     ; load rsp of new thread
     mov rsp, rdi
