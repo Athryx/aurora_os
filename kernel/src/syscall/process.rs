@@ -24,12 +24,12 @@ pub fn process_new(options: u32, allocator_id: usize, spawner_id: usize) -> KRes
 
     let _int_disable = IntDisable::new();
 
-    let process = cpu_local_data().current_process();
+    let current_process = cpu_local_data().current_process();
 
-    let allocator = process.cap_map()
+    let allocator = current_process.cap_map()
         .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?;
 
-    let spawner = process.cap_map()
+    let spawner = current_process.cap_map()
         .get_spawner_with_perms(spawner_id, CapFlags::PROD, weak_auto_destroy)?;
 
     let page_allocator = PaRef::from_arc(allocator.clone());
@@ -45,5 +45,25 @@ pub fn process_new(options: u32, allocator_id: usize, spawner_id: usize) -> KRes
 
     spawner.add_process(new_process.inner().clone())?;
 
-    Ok(process.cap_map().insert_process(Capability::Weak(new_process))?.into())
+    Ok(current_process.cap_map().insert_process(Capability::Weak(new_process))?.into())
+}
+
+/// destroys the kernel's strong refernce to the process, which will cause the process to exit
+///
+/// # Required Capability Permissions
+/// `process`: cap_write
+pub fn process_exit(options: u32, process_id: usize) -> KResult<()> {
+    let weak_auto_destroy = options_weak_autodestroy(options);
+
+    let _int_disable = IntDisable::new();
+
+    let process = cpu_local_data()
+        .current_process()
+        .cap_map()
+        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?;
+
+    // no other object references are held, safe to call
+    Process::exit(process);
+
+    Ok(())
 }
