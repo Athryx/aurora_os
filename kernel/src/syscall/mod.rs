@@ -32,9 +32,98 @@ pub struct SyscallVals {
     pub rip: usize,
 }
 
-#[macro_export]
-macro_rules! sysret0 {
-	($vals:expr, $ret:expr) => {
+macro_rules! syscall_0 {
+	($func:expr, $vals:expr) => {
+		$func($vals.options)
+	};
+}
+
+macro_rules! syscall_1 {
+	($func:expr, $vals:expr) => {
+		$func(
+			$vals.options,
+			$vals.a1,
+		)
+	};
+}
+
+macro_rules! syscall_2 {
+	($func:expr, $vals:expr) => {
+		$func(
+			$vals.options,
+			$vals.a1,
+			$vals.a2,
+		)
+	};
+}
+
+macro_rules! syscall_3 {
+	($func:expr, $vals:expr) => {
+		$func(
+			$vals.options,
+			$vals.a1,
+			$vals.a2,
+			$vals.a3,
+		)
+	};
+}
+
+macro_rules! syscall_4 {
+	($func:expr, $vals:expr) => {
+		$func(
+			$vals.options,
+			$vals.a1,
+			$vals.a2,
+			$vals.a3,
+			$vals.a4,
+		)
+	};
+}
+
+macro_rules! syscall_5 {
+	($func:expr, $vals:expr) => {
+		$func(
+			$vals.options,
+			$vals.a1,
+			$vals.a2,
+			$vals.a3,
+			$vals.a4,
+			$vals.a5,
+		)
+	};
+}
+
+macro_rules! syscall_6 {
+	($func:expr, $vals:expr) => {
+		$func(
+			$vals.options,
+			$vals.a1,
+			$vals.a2,
+			$vals.a3,
+			$vals.a4,
+			$vals.a5,
+			$vals.a6,
+		)
+	};
+}
+
+macro_rules! syscall_7 {
+	($func:expr, $vals:expr) => {
+		$func(
+			$vals.options,
+			$vals.a1,
+			$vals.a2,
+			$vals.a3,
+			$vals.a4,
+			$vals.a5,
+			$vals.a6,
+			$vals.a7,
+		)
+	};
+}
+
+macro_rules! sysret_0 {
+	($ret:expr, $vals:expr) => {
 		match $ret {
 			Ok(()) => $vals.a1 = sys::SysErr::Ok.num(),
 			Err(err) => $vals.a1 = err.num(),
@@ -42,9 +131,8 @@ macro_rules! sysret0 {
 	};
 }
 
-#[macro_export]
-macro_rules! sysret1 {
-	($vals:expr, $ret:expr) => {
+macro_rules! sysret_1 {
+	($ret:expr, $vals:expr) => {
 		match $ret {
 			Ok(n1) => {
 				$vals.a1 = sys::SysErr::Ok.num();
@@ -55,9 +143,8 @@ macro_rules! sysret1 {
 	};
 }
 
-#[macro_export]
-macro_rules! sysret2 {
-	($vals:expr, $ret:expr) => {
+macro_rules! sysret_2 {
+	($ret:expr, $vals:expr) => {
 		match $ret {
 			Ok((n1, n2)) => {
 				$vals.a1 = sys::SysErr::Ok.num();
@@ -69,9 +156,8 @@ macro_rules! sysret2 {
 	};
 }
 
-#[macro_export]
-macro_rules! sysret3 {
-	($vals:expr, $ret:expr) => {
+macro_rules! sysret_3 {
+	($ret:expr, $vals:expr) => {
 		match $ret {
 			Ok((n1, n2, n3)) => {
 				$vals.a1 = sys::SysErr::Ok.num();
@@ -84,9 +170,8 @@ macro_rules! sysret3 {
 	};
 }
 
-#[macro_export]
-macro_rules! sysret4 {
-	($vals:expr, $ret:expr) => {
+macro_rules! sysret_4 {
+	($ret:expr, $vals:expr) => {
 		match $ret {
 			Ok((n1, n2, n3, n4)) => {
 				$vals.a1 = sys::SysErr::Ok.num();
@@ -100,9 +185,8 @@ macro_rules! sysret4 {
 	};
 }
 
-#[macro_export]
-macro_rules! sysret5 {
-	($vals:expr, $ret:expr) => {
+macro_rules! sysret_5 {
+	($ret:expr, $vals:expr) => {
 		match $ret {
 			Ok((n1, n2, n3, n4, n5)) => {
 				$vals.a1 = sys::SysErr::Ok.num();
@@ -120,12 +204,15 @@ macro_rules! sysret5 {
 pub const PRINT_DEBUG: u32 = 0;
 
 pub const PROCESS_NEW: u32 = 1;
+pub const PROCESS_EXIT: u32 = 2;
+pub const THREAD_NEW: u32 = 3;
+pub const THREAD_YIELD: u32 = 4;
 
 /// This function is called by the assembly syscall entry point
 #[no_mangle]
 extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
     match syscall_num {
-		PRINT_DEBUG => sysret0!(vals, print_debug(
+		PRINT_DEBUG => sysret_0!(print_debug(
 			vals.options,
 			vals.a1,
 			vals.a2,
@@ -137,12 +224,11 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 			vals.a8,
 			vals.a9,
 			vals.a10,
-		)),
-		PROCESS_NEW => sysret1!(vals, process_new(
-			vals.options,
-			vals.a1,
-			vals.a2,
-		)),
+		), vals),
+		PROCESS_NEW => sysret_1!(syscall_2!(process_new, vals), vals),
+		PROCESS_EXIT => sysret_0!(syscall_1!(process_exit, vals), vals),
+		THREAD_NEW => sysret_1!(syscall_7!(thread_new, vals), vals),
+		THREAD_YIELD => sysret_0!(thread_yield(), vals),
         _ => vals.a1 = SysErr::InvlSyscall.num(),
     }
 }

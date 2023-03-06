@@ -207,7 +207,7 @@ required capability permissions:
 3: fn thread_new(process: Cap<Process>, name: UserString, rip: usize, rsp: usize, r1: usize, r2: usize, r3: usize, r4: usize) -> (err: SysErr, tid: tid)
 creates a new thread with name {name} in {process} and returns its id
 the new thread will have its rip and rsp registers set according to the values passed in
-7 additional registers can be passed in, and they correspond to certain registers that will be set in the new thread
+4 additional registers can be passed in, and they correspond to certain registers that will be set in the new thread
 on x86_64, the registers correspond as follows:
 {r1}: rbx
 {r2}: rdx
