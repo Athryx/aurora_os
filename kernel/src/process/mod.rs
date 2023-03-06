@@ -10,11 +10,13 @@ use crate::int::apic::{Ipi, IpiDest};
 use crate::mem::MemOwner;
 use crate::sched::{Tid, Thread, ThreadHandle, ThreadState, PostSwitchAction, THREAD_MAP, switch_current_thread_to};
 use crate::alloc::{PaRef, OrigRef, root_alloc_page_ref, root_alloc_ref};
-use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability, CapabilityMap};
+use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability, CapabilityMap, CapType};
 use crate::prelude::*;
 use crate::sched::kernel_stack::KernelStack;
 use crate::sync::IMutex;
 
+mod spawner;
+pub use spawner::Spawner;
 mod vmem_manager;
 pub use vmem_manager::{VirtAddrSpace, PageMappingFlags};
 
@@ -251,7 +253,9 @@ impl Process {
     }
 }
 
-impl CapObject for Process {}
+impl CapObject for Process {
+    const TYPE: CapType = CapType::Process;
+}
 
 static KERNEL_PROCESS: Once<Arc<Process>> = Once::new();
 

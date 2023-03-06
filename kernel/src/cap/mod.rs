@@ -103,7 +103,9 @@ impl Default for CapId {
     }
 }
 
-pub trait CapObject {}
+pub trait CapObject {
+    const TYPE: CapType;
+}
 
 #[derive(Debug)]
 pub struct StrongCapability<T: CapObject> {
@@ -201,6 +203,19 @@ impl<T: CapObject> Clone for WeakCapability<T> {
 pub enum Capability<T: CapObject> {
     Strong(StrongCapability<T>),
     Weak(WeakCapability<T>),
+}
+
+impl<T: CapObject> Capability<T> {
+    pub fn flags(&self) -> CapFlags {
+        match self {
+            Self::Strong(cap) => cap.flags,
+            Self::Weak(cap) => cap.flags,
+        }
+    }
+
+    pub fn is_weak(&self) -> bool {
+        matches!(self, Self::Weak(_))
+    }
 }
 
 /// A capability that points to certain objects that are static and always exist in the kernel

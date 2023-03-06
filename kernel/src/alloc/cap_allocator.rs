@@ -3,12 +3,13 @@ use core::sync::atomic::{AtomicBool, Ordering};
 
 use super::linked_list_allocator::LinkedListAllocatorInner;
 use super::{heap, zm, HeapAllocator, OrigAllocator, PageAllocator};
-use crate::cap::CapObject;
+use crate::cap::{CapObject, CapType};
 use crate::container::Arc;
 use crate::mem::{Allocation, HeapAllocation, PageLayout};
 use crate::prelude::*;
 use crate::sync::{IMutex, IMutexGuard};
 
+#[derive(Debug)]
 struct CapAllocatorPageData {
     max_capacity: usize,
     prealloc_size: usize,
@@ -16,6 +17,7 @@ struct CapAllocatorPageData {
 }
 
 /// an allocator that makes up the allocator tree that the kernel presents in its api to the userspace
+#[derive(Debug)]
 pub struct CapAllocator {
     is_alive: AtomicBool,
     parent: Option<IMutex<Arc<CapAllocator>>>,
@@ -143,7 +145,9 @@ impl Drop for CapAllocator {
     }
 }
 
-impl CapObject for CapAllocator {}
+impl CapObject for CapAllocator {
+    const TYPE: CapType = CapType::Allocator;
+}
 
 // NOTE: all of these allocator methods will fail if called on a dead CapAllocator,
 // because prealloc_size wil be 0, and all zones from heap will be moved to parent

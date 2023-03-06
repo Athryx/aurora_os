@@ -10,7 +10,7 @@ mod linked_list_allocator;
 mod page_allocator;
 mod pmem_manager;
 
-use cap_allocator::CapAllocator;
+pub use cap_allocator::CapAllocator;
 pub use heap_allocator::{AllocRef, HeapAllocator, OrigAllocator, OrigRef};
 use linked_list_allocator::LinkedListAllocator;
 pub use page_allocator::{PaRef, PageAllocator};
