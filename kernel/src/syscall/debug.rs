@@ -10,7 +10,7 @@ use crate::io::R_WRITER;
 /// least significant bytes in each argument are printed first (a1 bits 0-7, a1 bits 8-15, a1 bits 16-23, etc)
 ///
 /// # Options
-/// - bits 0-7 (debug_print_num): specifies the number of characters to print (max 80 on x86_64)
+/// bits 0-7 (debug_print_num): specifies the number of characters to print (max 80 on x86_64)
 pub fn print_debug(
     options: u32,
     a1: usize,

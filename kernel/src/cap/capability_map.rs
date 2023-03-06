@@ -53,12 +53,13 @@ macro_rules! generate_cap_methods {
             concat_idents::concat_idents!(get_with_perms = get_, $cap_name, _with_perms {
                 pub fn get_with_perms(
                     &self,
-                    cap_id: CapId,
+                    cap_id: usize,
                     required_perms: CapFlags,
                     weak_auto_destroy: bool
                 ) -> KResult<Arc<$cap_type>> {
                     let mut map = self.$cap_map.lock();
 
+                    let cap_id = CapId::try_from(cap_id).ok_or(SysErr::InvlId)?;
                     let cap = map.get(&cap_id).ok_or(SysErr::InvlId)?;
 
                     if !cap.flags().contains(required_perms) {

@@ -18,6 +18,11 @@ impl Spawner {
         }
     }
 
+    /// Adds the process to this spawner
+    pub fn add_process(&self, process: Weak<Process>) -> KResult<()> {
+        self.process_list.lock().push(process)
+    }
+
     /// Kills all processess that the spawner currently has that are not the currently running process
     /// 
     /// Returns the currently running process if this spawner has it, or None if it doesn't

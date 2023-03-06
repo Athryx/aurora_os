@@ -37,7 +37,7 @@ pub struct Process {
     pub is_alive: AtomicBool,
     pub num_threads_running: AtomicUsize,
 
-    strong_capability: IMutex<Option<StrongCapability<Self>>>,
+    strong_reference: IMutex<Option<Arc<Self>>>,
     self_weak: Once<Weak<Self>>,
 
     /// Counter used to assign thread ids
@@ -57,7 +57,7 @@ impl Process {
                 heap_allocator: allocer.clone(),
                 is_alive: AtomicBool::new(true),
                 num_threads_running: AtomicUsize::new(0),
-                strong_capability: IMutex::new(None),
+                strong_reference: IMutex::new(None),
                 self_weak: Once::new(),
                 next_tid: AtomicUsize::new(0),
                 threads: IMutex::new(Vec::new(allocer.clone().downgrade())),
@@ -68,7 +68,7 @@ impl Process {
             allocer,
         )?;
 
-        *strong_cap.object().strong_capability.lock() = Some(strong_cap.clone());
+        *strong_cap.object().strong_reference.lock() = Some(strong_cap.inner().clone());
         strong_cap.object().self_weak.call_once(|| Arc::downgrade(strong_cap.inner()));
 
         Ok(strong_cap.downgrade())
@@ -93,13 +93,18 @@ impl Process {
         self.addr_space.get_cr3_addr().as_usize()
     }
 
+    /// Returns a reference to the capability map of this process
+    pub fn cap_map(&self) -> &CapabilityMap {
+        &self.cap_map
+    }
+
     /// Releases the strong capbility for the process, which will lead to the process being destroyed
     /// 
     /// # Safety
     /// 
     /// Don't do this with any of the process' threads running
     pub unsafe fn release_strong_capability(&self) {
-        *self.strong_capability.lock() = None;
+        *self.strong_reference.lock() = None;
     }
 
     /// Gets a unique valid Tid
@@ -220,7 +225,7 @@ impl Process {
     /// 
     /// # Locking
     /// 
-    /// acquires local_apic lock
+    /// acquires `local_apic` lock
     pub fn exit(this: Arc<Process>) {
         if !this.is_alive.swap(false, Ordering::AcqRel) {
             // another thread is already terminating this process

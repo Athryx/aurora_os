@@ -36,7 +36,7 @@ pub struct SyscallVals {
 macro_rules! sysret0 {
 	($vals:expr, $ret:expr) => {
 		match $ret {
-			Ok(_) => $vals.a1 = sys::SysErr::Ok.num(),
+			Ok(()) => $vals.a1 = sys::SysErr::Ok.num(),
 			Err(err) => $vals.a1 = err.num(),
 		}
 	};
@@ -50,7 +50,7 @@ macro_rules! sysret1 {
 				$vals.a1 = sys::SysErr::Ok.num();
 				$vals.a2 = n1;
 			},
-			Err(err) => v$als.a1 = err.num(),
+			Err(err) => $vals.a1 = err.num(),
 		}
 	};
 }
@@ -119,6 +119,8 @@ macro_rules! sysret5 {
 
 pub const PRINT_DEBUG: u32 = 0;
 
+pub const PROCESS_NEW: u32 = 1;
+
 /// This function is called by the assembly syscall entry point
 #[no_mangle]
 extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
@@ -136,8 +138,18 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 			vals.a9,
 			vals.a10,
 		)),
+		PROCESS_NEW => sysret1!(vals, process_new(
+			vals.options,
+			vals.a1,
+			vals.a2,
+		)),
         _ => vals.a1 = SysErr::InvlSyscall.num(),
     }
+}
+
+/// Checks if the weak autodestroy bit is set in the options
+fn options_weak_autodestroy(options: u32) -> bool {
+	options & (1 << 31) != 0
 }
 
 /// Initializes the syscall entry point and enables the syscall instruction

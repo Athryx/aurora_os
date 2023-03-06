@@ -5,12 +5,13 @@ use spin::Once;
 
 use crate::alloc::root_alloc_ref;
 use crate::arch::x64::{gs_addr, wrmsr, GSBASEK_MSR, GSBASE_MSR};
-use crate::container::Box;
+use crate::container::{Arc, Box};
 use crate::gdt::{Gdt, Tss};
 use crate::int::apic::LocalApic;
 use crate::int::idt::Idt;
 use crate::sync::{IMutex, IMutexGuard};
 use crate::sched::{ThreadHandle, SchedState, PostSwitchData};
+use crate::process::Process;
 
 crate::make_id_type!(Prid);
 
@@ -72,6 +73,15 @@ impl GsData {
 
     pub fn sched_state(&self) -> IMutexGuard<SchedState> {
         self.sched_state.get().expect("sched state not initialized").lock()
+    }
+
+    /// Returns the current process
+    /// 
+    /// # Locking
+    /// 
+    /// acquires `sched_state` lock
+    pub fn current_process(&self) -> Arc<Process> {
+        self.sched_state().current_process.clone()
     }
 }
 

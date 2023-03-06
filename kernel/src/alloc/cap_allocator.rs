@@ -2,7 +2,7 @@ use core::alloc::Layout;
 use core::sync::atomic::{AtomicBool, Ordering};
 
 use super::linked_list_allocator::LinkedListAllocatorInner;
-use super::{heap, zm, HeapAllocator, OrigAllocator, PageAllocator};
+use super::{heap, zm, HeapAllocator, OrigAllocator, PageAllocator, OrigRef};
 use crate::cap::{CapObject, CapType};
 use crate::container::Arc;
 use crate::mem::{Allocation, HeapAllocation, PageLayout};
