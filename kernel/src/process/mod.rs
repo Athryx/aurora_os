@@ -258,6 +258,14 @@ impl Process {
     }
 }
 
+impl Drop for Process {
+    fn drop(&mut self) {
+        unsafe {
+            self.addr_space.dealloc_addr_space();
+        }
+    }
+}
+
 impl CapObject for Process {
     const TYPE: CapType = CapType::Process;
 }

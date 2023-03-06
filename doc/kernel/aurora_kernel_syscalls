@@ -323,7 +323,7 @@ InvlArgs: {weak} was not a weak capability
 
 
 
-11: fn mem_map(process: Cap<Process>, mem: Cap<Mem>, addr: usize) -> SysErr
+11: fn memory_map(process: Cap<Process>, mem: Cap<Memory>, addr: usize) -> SysErr
 maps a capability {mem} that can be mapped into memory into the memory of process {process} starting at address {addr}
 the mapped memory read, write, and execute permissions depend on cap_read, cap_write, and cap_prod permissions respectively
 will fail if {mem} overlaps with any other mapped memory
@@ -333,12 +333,13 @@ required capability permissions:
 
 syserr code:
 InvlOp: {mem} is already mapped into this process' address space
-InvlVirtAddr: {at_addr} is non canonical
-InvlAlign: {at_addr} is not page aligned
-InvlMemZone: the value passed in for {at_addr} causes the mapped memory to overlap with other virtual memory or reserved memory
+InvlVirtAddr: {addr} is non canonical
+InvlAlign: {addr} is not page aligned
+InvlMemZone: the value passed in for {addr} causes the mapped memory to overlap with other virtual memory
+InvlWeak: {mem} is a weak capability, mapping a weak capability is not allowed
 
 
-12: fn mem_unmap(process: Cap<Process>, mem: Cap<Mem>) -> SysErr
+12: fn memory_unmap(process: Cap<Process>, mem: Cap<Memory>) -> SysErr
 unmaps memory mapped by mem_map
 
 required capability permissions:
@@ -348,7 +349,7 @@ syserr code:
 InvlOp: {mem} is not mapped into {process} address space
 
 
-14: fn mem_new(allocator: Cap<Allocator>, pages: usize) -> (err: SysErr, mem: Cap<Mem>)
+14: fn memory_new(allocator: Cap<Allocator>, pages: usize) -> (err: SysErr, mem: Cap<Mem>)
 allocate memory at least {pages} big
 returns the capability referencing the memory
 

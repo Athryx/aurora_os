@@ -25,8 +25,15 @@ asm_switch_thread:
     ; save old rsp in rdi to pass to post switch handler
     mov rdi, rsp
 
-    ; load new address space
+    ; check if new address space is different than the currently loaded address space
+    mov rax, cr3
+    cmp rax, rsi
+    je .skip_addr_space_load
+
+    ; load new address space if it was different
     mov cr3, rsi
+
+.skip_addr_space_load
 
     ; load rsp of new thread
     mov rsp, rdi
