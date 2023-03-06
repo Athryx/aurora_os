@@ -4,13 +4,13 @@ use core::slice;
 use spin::Once;
 
 use crate::arch::x64::{asm_thread_init, IntDisable};
-use crate::container::{Arc, Weak};
+use crate::container::{Arc, Weak, HashMap};
 use crate::int::IPI_PROCESS_EXIT;
 use crate::int::apic::{Ipi, IpiDest};
 use crate::mem::{MemOwner, addr};
 use crate::sched::{Tid, Thread, ThreadHandle, ThreadState, PostSwitchAction, THREAD_MAP, switch_current_thread_to};
 use crate::alloc::{PaRef, OrigRef, root_alloc_page_ref, root_alloc_ref};
-use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability, CapabilityMap, CapType};
+use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability, CapabilityMap, CapType, CapId};
 use crate::prelude::*;
 use crate::sched::kernel_stack::KernelStack;
 use crate::sync::IMutex;
@@ -25,6 +25,22 @@ pub use vmem_manager::{VirtAddrSpace, PageMappingFlags};
 pub enum ThreadStartMode {
     Ready,
     Suspended,
+}
+
+/// Stores data related to the virtual address space of the process
+#[derive(Debug)]
+struct AddrSpaceData {
+    addr_space: VirtAddrSpace,
+    /// A map between Memory CapIds to the address at which they are mapped
+    mapped_memory_capabilities: HashMap<CapId, VirtAddr>,
+}
+
+impl Drop for AddrSpaceData {
+    fn drop(&mut self) {
+        unsafe {
+            self.addr_space.dealloc_addr_space();
+        }
+    }
 }
 
 /// A capability that represents a protection context, has a set of capabilities and a virtual address space
@@ -45,7 +61,7 @@ pub struct Process {
     next_tid: AtomicUsize,
     threads: IMutex<Vec<Arc<Thread>>>,
 
-    addr_space: VirtAddrSpace,
+    addr_space_data: IMutex<AddrSpaceData>,
     cr3_addr: PhysAddr,
     cap_map: CapabilityMap,
 }
@@ -66,7 +82,10 @@ impl Process {
                 next_tid: AtomicUsize::new(0),
                 threads: IMutex::new(Vec::new(allocer.clone().downgrade())),
                 cr3_addr: addr_space.cr3_addr(),
-                addr_space,
+                addr_space_data: IMutex::new(AddrSpaceData {
+                    addr_space,
+                    mapped_memory_capabilities: HashMap::new(allocer.downgrade()),
+                }),
                 cap_map: CapabilityMap::new(allocer.downgrade()),
             },
             CapFlags::READ | CapFlags::PROD | CapFlags::WRITE,
@@ -259,14 +278,6 @@ impl Process {
             unsafe {
                 this.release_strong_capability();
             }
-        }
-    }
-}
-
-impl Drop for Process {
-    fn drop(&mut self) {
-        unsafe {
-            self.addr_space.dealloc_addr_space();
         }
     }
 }

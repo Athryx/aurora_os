@@ -350,7 +350,7 @@ InvlOp: {mem} is not mapped into {process} address space
 
 
 14: fn memory_new(allocator: Cap<Allocator>, pages: usize) -> (err: SysErr, mem: Cap<Mem>)
-allocate memory at least {pages} big
+allocate a memory capability at least {pages} big
 returns the capability referencing the memory
 
 options:
