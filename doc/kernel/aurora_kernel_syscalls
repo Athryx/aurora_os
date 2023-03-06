@@ -187,7 +187,7 @@ in order to destroy the process, call process_exit to destroy the strong refernc
 the process is not freed when all weak references are destroyed
 
 options:
-bits 0-2 (process_cap_flags): CapPriv representing read, prod, and write privalidges of new capability
+bits 0-3 (process_cap_flags): CapPriv representing read, prod, and write privalidges of new capability
 
 required capability permissions:
 {allocator}: cap_prod

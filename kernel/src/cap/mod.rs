@@ -110,7 +110,7 @@ pub trait CapObject {
 #[derive(Debug)]
 pub struct StrongCapability<T: CapObject> {
     object: Arc<T>,
-    flags: CapFlags,
+    pub flags: CapFlags,
 }
 
 impl<T: CapObject> StrongCapability<T> {
@@ -141,10 +141,6 @@ impl<T: CapObject> StrongCapability<T> {
     pub fn object(&self) -> &T {
         &self.object
     }
-
-    pub fn flags(&self) -> CapFlags {
-        self.flags
-    }
 }
 
 // need explicit clone impl because derive only impls if T is clone
@@ -160,7 +156,7 @@ impl<T: CapObject> Clone for StrongCapability<T> {
 #[derive(Debug)]
 pub struct WeakCapability<T: CapObject> {
     object: Weak<T>,
-    flags: CapFlags,
+    pub flags: CapFlags,
 }
 
 impl<T: CapObject> WeakCapability<T> {
@@ -181,10 +177,6 @@ impl<T: CapObject> WeakCapability<T> {
         let mut out: WeakCapability<T> = cap.clone();
         out.flags &= flags;
         out
-    }
-
-    pub fn flags(&self) -> CapFlags {
-        self.flags
     }
 }
 
@@ -222,7 +214,7 @@ impl<T: CapObject> Capability<T> {
 /// From the userspace perspective, these capabilites act like normal capabilties, except the object is not dropped ever
 pub struct StaticCapability<T: CapObject + 'static> {
     object: &'static T,
-    flags: CapFlags,
+    pub flags: CapFlags,
 }
 
 impl<T: CapObject + 'static> StaticCapability<T> {
@@ -237,10 +229,6 @@ impl<T: CapObject + 'static> StaticCapability<T> {
         let mut out = *cap;
         out.flags &= flags;
         out
-    }
-
-    pub fn flags(&self) -> CapFlags {
-        self.flags
     }
 
     pub fn object(&self) -> &'static T {

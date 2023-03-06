@@ -16,7 +16,7 @@ use super::options_weak_autodestroy;
 /// the process is not freed when all weak references are destroyed
 ///
 /// # Options
-/// bits 0-2 (process_cap_flags): CapPriv representing read, prod, and write privalidges of new capability
+/// bits 0-3 (process_cap_flags): CapPriv representing read, prod, and write privalidges of new capability
 ///
 /// # Required Capability Permissions:
 /// `allocator`: cap_prod
@@ -43,11 +43,13 @@ pub fn process_new(options: u32, allocator_id: usize, spawner_id: usize) -> KRes
 
     // TODO: process name
     let name = String::new(heap_allocator.downgrade());
-    let new_process = Process::new(
+    let mut new_process = Process::new(
         page_allocator,
         heap_allocator,
         name,
     )?;
+
+    new_process.flags = CapFlags::from_bits_truncate(get_bits(options as usize, 0..4));
 
     spawner.add_process(new_process.inner().clone())?;
 
