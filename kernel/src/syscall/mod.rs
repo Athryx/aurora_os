@@ -207,6 +207,7 @@ pub const PROCESS_NEW: u32 = 1;
 pub const PROCESS_EXIT: u32 = 2;
 pub const THREAD_NEW: u32 = 3;
 pub const THREAD_YIELD: u32 = 4;
+pub const THREAD_SUSPEND: u32 = 6;
 
 /// This function is called by the assembly syscall entry point
 #[no_mangle]
@@ -229,6 +230,7 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		PROCESS_EXIT => sysret_0!(syscall_1!(process_exit, vals), vals),
 		THREAD_NEW => sysret_1!(syscall_7!(thread_new, vals), vals),
 		THREAD_YIELD => sysret_0!(thread_yield(), vals),
+		THREAD_SUSPEND => sysret_0!(syscall_1!(thread_suspend, vals), vals),
         _ => vals.a1 = SysErr::InvlSyscall.num(),
     }
 }
