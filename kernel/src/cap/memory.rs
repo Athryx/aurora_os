@@ -24,6 +24,15 @@ impl Memory {
     pub fn allocation(&self) -> Allocation {
         self.allocation
     }
+
+    pub fn phys_addr(&self) -> PhysAddr {
+        self.allocation.addr().to_phys()
+    }
+
+    /// Returns the size in bytes of this memory
+    pub fn size(&self) -> usize {
+        self.allocation.size()
+    }
 }
 
 impl CapObject for Memory {

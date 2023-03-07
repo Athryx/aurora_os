@@ -1,6 +1,6 @@
 use crate::alloc::{PaRef, OrigRef};
 use crate::cap::{StrongCapability, Capability};
-use crate::cap::{CapFlags, memory::Memory};
+use crate::cap::{CapFlags, CapId, memory::Memory};
 use crate::prelude::*;
 use crate::arch::x64::IntDisable;
 use super::options_weak_autodestroy;
@@ -37,4 +37,43 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<us
     )?;
 
     Ok(current_process.cap_map().insert_memory(Capability::Strong(memory))?.into())
+}
+
+/// maps a capability `mem` that can be mapped into memory into the memory of process `process` starting at address `addr`
+/// 
+/// the cap id of `mem` is looked up in the process that is having memory mapped into it
+/// 
+/// the mapped memory read, write, and execute permissions depend on cap_read, cap_write, and cap_prod permissions respectively
+/// will fail if `mem` overlaps with any other mapped memory
+/// 
+/// NOTE: weak_auto_destroy option does not currently apply to the memory capability
+///
+/// # Required Capability Permissions
+/// `process`: cap_write
+///
+/// # Syserr Code
+/// InvlOp: `mem` is already mapped into this process' address space
+/// InvlVirtAddr: `addr` is non canonical
+/// InvlAlign: `addr` is not page aligned
+/// InvlMemZone: the value passed in for `addr` causes the mapped memory to overlap with other virtual memory
+/// InvlWeak: `mem` is a weak capability, mapping a weak capability is not allowed
+pub fn memory_map(
+    options: u32,
+    process_id: usize,
+    memory_id: usize,
+    addr: usize,
+) -> KResult<()> {
+    let weak_auto_destroy = options_weak_autodestroy(options);
+    let addr = VirtAddr::try_new(addr).ok_or(SysErr::InvlVirtAddr)?;
+
+    let _int_disable = IntDisable::new();
+
+    let process = cpu_local_data()
+        .current_process()
+        .cap_map()
+        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?;
+
+    let memory_cap_id = CapId::try_from(memory_id).ok_or(SysErr::InvlId)?;
+
+    process.map_memory(memory_cap_id, addr)
 }

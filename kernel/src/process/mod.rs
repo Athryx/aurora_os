@@ -10,7 +10,7 @@ use crate::int::apic::{Ipi, IpiDest};
 use crate::mem::{MemOwner, addr};
 use crate::sched::{Tid, Thread, ThreadHandle, ThreadState, PostSwitchAction, THREAD_MAP, switch_current_thread_to};
 use crate::alloc::{PaRef, OrigRef, root_alloc_page_ref, root_alloc_ref};
-use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability, CapabilityMap, CapType, CapId};
+use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability, CapabilityMap, CapType, CapId, Capability};
 use crate::prelude::*;
 use crate::sched::kernel_stack::KernelStack;
 use crate::sync::IMutex;
@@ -278,6 +278,48 @@ impl Process {
             unsafe {
                 this.release_strong_capability();
             }
+        }
+    }
+
+    /// Maps the memory spacified by the given capid at the given virtual address
+    /// 
+    /// `memory_cap_id` must reference a capability already present in this process
+    /// 
+    /// # Locking
+    /// 
+    /// acquires `addr_space_data` lock
+    pub fn map_memory(&self, memory_cap_id: CapId, addr: VirtAddr) -> KResult<()> {
+        let memory = self.cap_map.get_memory(memory_cap_id)?;
+
+        let mut addr_space_data = self.addr_space_data.lock();
+
+        if let Capability::Strong(memory) = memory {
+            if addr_space_data.mapped_memory_capabilities.get(&memory_cap_id).is_some() {
+                // memory is already mapped
+                return Err(SysErr::InvlOp);
+            }
+
+            let mem_virt_range = AVirtRange::try_new_aligned(
+                addr, memory.object().size()
+            ).ok_or(SysErr::InvlAlign)?;
+
+            addr_space_data.mapped_memory_capabilities.insert(memory_cap_id, addr)?;
+
+            let map_result = addr_space_data.addr_space.map_memory(
+                &[(mem_virt_range, memory.object().phys_addr())],
+                memory.flags.into(),
+            );
+
+            if map_result.is_err() {
+                // if mapping failed, remove entry from mapped_memory_capabilities
+                addr_space_data.mapped_memory_capabilities.remove(&memory_cap_id);
+
+                map_result
+            } else {
+                Ok(())
+            }
+        } else {
+            Err(SysErr::InvlWeak)
         }
     }
 }

@@ -6,6 +6,7 @@ use lazy_static::lazy_static;
 use crate::arch::x64::get_cr3;
 use crate::arch::x64::invlpg;
 use crate::arch::x64::set_cr3;
+use crate::cap::CapFlags;
 use crate::mem::PhysFrame;
 use crate::mem::VirtFrame;
 use crate::prelude::*;
@@ -43,6 +44,26 @@ impl PageMappingFlags {
     fn exists(&self) -> bool {
 		self.intersects(PageMappingFlags::READ | PageMappingFlags::WRITE | PageMappingFlags::EXEC)
 	}
+}
+
+impl From<CapFlags> for PageMappingFlags {
+    fn from(flags: CapFlags) -> Self {
+        let mut out = PageMappingFlags::USER;
+
+        if flags.contains(CapFlags::READ) {
+            out |= PageMappingFlags::READ;
+        }
+
+        if flags.contains(CapFlags::WRITE) {
+            out |= PageMappingFlags::WRITE;
+        }
+
+        if flags.contains(CapFlags::PROD) {
+            out |= PageMappingFlags::EXEC;
+        }
+
+        out
+    }
 }
 
 /// Use to take a large as possible page size for use with huge pages

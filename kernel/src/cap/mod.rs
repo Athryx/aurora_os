@@ -212,6 +212,15 @@ impl<T: CapObject> Capability<T> {
     }
 }
 
+impl<T: CapObject> Clone for Capability<T> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Strong(cap) => Self::Strong(cap.clone()),
+            Self::Weak(cap) => Self::Weak(cap.clone()),
+        }
+    }
+}
+
 /// A capability that points to certain objects that are static and always exist in the kernel
 /// From the userspace perspective, these capabilites act like normal capabilties, except the object is not dropped ever
 pub struct StaticCapability<T: CapObject + 'static> {

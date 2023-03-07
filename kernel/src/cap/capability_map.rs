@@ -1,5 +1,7 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use concat_idents::concat_idents;
+
 use crate::{prelude::*, alloc::AllocRef};
 use crate::container::HashMap;
 use crate::process::{Process, Spawner};
@@ -38,7 +40,7 @@ impl CapabilityMap {
 macro_rules! generate_cap_methods {
     ($map:ty, $cap_type:ty, $cap_map:ident, $cap_name:ident) => {
         impl $map {
-            concat_idents::concat_idents!(insert_cap = insert_, $cap_name {
+            concat_idents!(insert_cap = insert_, $cap_name {
                 pub fn insert_cap(&self, capability: Capability<$cap_type>) -> KResult<CapId> {
                     let next_id = self.next_id.fetch_add(1, Ordering::Relaxed);
                     
@@ -54,12 +56,12 @@ macro_rules! generate_cap_methods {
                 }
             });
 
-            concat_idents::concat_idents!(get_with_perms = get_, $cap_name, _with_perms {
+            concat_idents!(get_with_perms = get_, $cap_name, _with_perms {
                 pub fn get_with_perms(
                     &self,
                     cap_id: usize,
                     required_perms: CapFlags,
-                    weak_auto_destroy: bool
+                    weak_auto_destroy: bool,
                 ) -> KResult<Arc<$cap_type>> {
                     let mut map = self.$cap_map.lock();
 
@@ -87,6 +89,45 @@ macro_rules! generate_cap_methods {
                             }
                         },
                     })
+                }
+            });
+
+            concat_idents!(get_cap_and_perms = get_, $cap_name, _and_perms {
+                pub fn get_cap_and_perms(
+                    &self,
+                    cap_id: usize,
+                    weak_auto_destroy: bool,
+                ) -> KResult<(Arc<$cap_type>, CapFlags)> {
+                    let mut map = self.$cap_map.lock();
+
+                    let cap_id = CapId::try_from(cap_id).ok_or(SysErr::InvlId)?;
+                    let cap = map.get(&cap_id).ok_or(SysErr::InvlId)?;
+
+                    Ok(match cap {
+                        Capability::Strong(cap) => (cap.inner().clone(), cap.flags),
+                        Capability::Weak(cap) => {
+                            let strong = cap.inner().upgrade();
+
+                            match strong {
+                                Some(cap_strong) => (cap_strong, cap.flags),
+                                None => {
+                                    if weak_auto_destroy {
+                                        map.remove(&cap_id);
+                                    }
+
+                                    return Err(SysErr::InvlWeak);
+                                }
+                            }
+                        },
+                    })
+                }
+            });
+
+            concat_idents!(get_cap = get_, $cap_name {
+                pub fn get_cap(&self, cap_id: CapId) -> KResult<Capability<$cap_type>> {
+                    let map = self.$cap_map.lock();
+
+                    Ok(map.get(&cap_id).ok_or(SysErr::InvlId)?.clone())
                 }
             });
         }
