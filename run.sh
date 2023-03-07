@@ -3,7 +3,7 @@
 IMG="disk.img"
 SUBDIRS="userland kernel"
 KERNEL="kernel/kernel.bin"
-INITRD="userland/init/initrd"
+INITRD="userland/initrd"
 
 cd $(dirname $0)
 
@@ -18,7 +18,10 @@ done
 
 if [[ $1 != sysroot ]] && [[ $1 != clean ]] && [[ $1 != fmt ]]
 then
-	./gen-img.sh $KERNEL $INITRD $IMG
+	if [[ $KERNEL -nt $IMG ]] || [[ $INITRD -nt $IMG ]]
+	then
+		./gen-img.sh $KERNEL $INITRD $IMG
+	fi
 fi
 
 if [[ $1 = debug ]]

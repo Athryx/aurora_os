@@ -1,12 +1,13 @@
 #!/bin/sh
 
-SUBDIRS="init"
+SUBDIRS=""
 
 cd $(dirname $0)
 
 # used by subdir build scripts
 export TARGET=$(realpath x86_64-os-userland.json)
 export SYSROOT=$(realpath sysroot)
+export GEN_SYSROOT=$(realpath gen-sysroot.sh)
 
 for SUBDIR in $SUBDIRS
 do

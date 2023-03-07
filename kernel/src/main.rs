@@ -114,6 +114,7 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     Ok(())
 }
 
+/// Parses the initrd and creates the early init process, which is the first userspace process
 fn start_early_init_process() -> KResult<()> {
     Ok(())
 }
