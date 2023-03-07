@@ -340,7 +340,7 @@ InvlWeak: {mem} is a weak capability, mapping a weak capability is not allowed
 
 
 12: fn memory_unmap(process: Cap<Process>, mem: Cap<Memory>) -> SysErr
-unmaps memory mapped by mem_map
+unmaps memory mapped by memory_map
 
 required capability permissions:
 {process}: cap_write

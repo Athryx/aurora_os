@@ -216,6 +216,7 @@ pub const THREAD_YIELD: u32 = 4;
 pub const THREAD_SUSPEND: u32 = 6;
 
 pub const MEMORY_MAP: u32 = 11;
+pub const MEMORY_UNMAP: u32 = 12;
 pub const MEMORY_NEW: u32 = 14;
 
 pub const KEY_NEW: u32 = 38;
@@ -247,6 +248,7 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		THREAD_YIELD => sysret_0!(thread_yield(), vals),
 		THREAD_SUSPEND => sysret_0!(syscall_1!(thread_suspend, vals), vals),
 		MEMORY_MAP => sysret_0!(syscall_3!(memory_map, vals), vals),
+		MEMORY_UNMAP => sysret_0!(syscall_2!(memory_unmap, vals), vals),
 		MEMORY_NEW => sysret_1!(syscall_2!(memory_new, vals), vals),
 		KEY_NEW => sysret_1!(syscall_1!(key_new, vals), vals),
 		KEY_ID => sysret_1!(syscall_1!(key_id, vals), vals),

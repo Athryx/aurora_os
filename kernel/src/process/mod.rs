@@ -281,7 +281,7 @@ impl Process {
         }
     }
 
-    /// Maps the memory spacified by the given capid at the given virtual address
+    /// Maps the memory specified by the given capid at the given virtual address
     /// 
     /// `memory_cap_id` must reference a capability already present in this process
     /// 
@@ -300,7 +300,8 @@ impl Process {
             }
 
             let mem_virt_range = AVirtRange::try_new_aligned(
-                addr, memory.object().size()
+                addr,
+                memory.object().size(),
             ).ok_or(SysErr::InvlAlign)?;
 
             addr_space_data.mapped_memory_capabilities.insert(memory_cap_id, addr)?;
@@ -317,6 +318,41 @@ impl Process {
                 map_result
             } else {
                 Ok(())
+            }
+        } else {
+            Err(SysErr::InvlWeak)
+        }
+    }
+
+    /// Unmaps the memory specified by the given capid if it was already mapped with [`map_memory`]
+    /// 
+    /// `memory_cap_id` must reference a capability already present in this process
+    /// 
+    /// # Locking
+    /// 
+    /// acquires `addr_space_data` lock
+    pub fn unmap_memory(&self, memory_cap_id: CapId) -> KResult<()> {
+        let memory = self.cap_map.get_memory(memory_cap_id)?;
+
+        let mut addr_space_data = self.addr_space_data.lock();
+
+        if let Capability::Strong(memory) = memory {
+            if let Some(map_addr) = addr_space_data.mapped_memory_capabilities.get(&memory_cap_id) {
+                let mem_virt_range = AVirtRange::try_new_aligned(
+                    *map_addr,
+                    memory.object().size(),
+                ).ok_or(SysErr::InvlAlign)?;
+
+                // this should not fail because we ensore that memory was already mapped
+                addr_space_data.addr_space.unmap_memory(&[(mem_virt_range, memory.object().phys_addr())])
+                    .expect("failed to unmap memory that should have been mapped");
+
+                addr_space_data.mapped_memory_capabilities.remove(&memory_cap_id);
+
+                Ok(())
+            } else {
+                // memory was not yet mapped
+                Err(SysErr::InvlOp)
             }
         } else {
             Err(SysErr::InvlWeak)

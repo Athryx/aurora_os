@@ -1,7 +1,7 @@
 use crate::alloc::{PaRef, OrigRef};
 use crate::cap::{StrongCapability, Capability};
 use crate::cap::{CapFlags, CapId, memory::Memory};
-use crate::prelude::*;
+use crate::{prelude::*, process};
 use crate::arch::x64::IntDisable;
 use super::options_weak_autodestroy;
 
@@ -65,6 +65,7 @@ pub fn memory_map(
 ) -> KResult<()> {
     let weak_auto_destroy = options_weak_autodestroy(options);
     let addr = VirtAddr::try_new(addr).ok_or(SysErr::InvlVirtAddr)?;
+    let memory_cap_id = CapId::try_from(memory_id).ok_or(SysErr::InvlId)?;
 
     let _int_disable = IntDisable::new();
 
@@ -73,7 +74,35 @@ pub fn memory_map(
         .cap_map()
         .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?;
 
+    process.map_memory(memory_cap_id, addr)
+}
+
+/// Unmaps memory mapped by [`memory_map`]
+/// 
+/// the cap id for `memory` is looked ip in the `process` argument, not the current process
+/// 
+/// NOTE: weak_auto_destroy option does not currently apply to the memory capability
+///
+/// # Required Capability Permissions
+/// `process`: cap_write
+///
+/// # Syserr Code
+/// InvlOp: `mem` is not mapped into `process` address space
+/// InvlWeak: `mem` is a weak capability
+pub fn memory_unmap(
+    options: u32,
+    process_id: usize,
+    memory_id: usize,
+) -> KResult<()> {
+    let weak_auto_destroy = options_weak_autodestroy(options);
     let memory_cap_id = CapId::try_from(memory_id).ok_or(SysErr::InvlId)?;
 
-    process.map_memory(memory_cap_id, addr)
+    let _int_disable = IntDisable::new();
+
+    let process = cpu_local_data()
+        .current_process()
+        .cap_map()
+        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?;
+
+    process.unmap_memory(memory_cap_id)
 }
