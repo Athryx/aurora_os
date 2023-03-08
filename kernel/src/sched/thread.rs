@@ -7,7 +7,7 @@ use crate::container::{ListNode, ListNodeData, Weak};
 use crate::process::Process;
 use crate::prelude::*;
 
-crate::make_id_type!(Tid);
+pub use sys::Tid;
 
 #[derive(Debug)]
 pub struct Thread {

@@ -1,3 +1,6 @@
+/// Result type returned by syscalls
+pub type KResult<T> = Result<T, SysErr>;
+
 /// Error codes returned by syscalls
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(usize)]

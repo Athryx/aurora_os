@@ -5,7 +5,7 @@ pub use core::ptr::{self, null, null_mut};
 
 pub use lazy_static::lazy_static;
 pub use modular_bitfield::prelude::*;
-pub use sys::SysErr;
+pub use sys::{SysErr, KResult};
 
 pub use crate::arch::x64::bochs_break;
 pub use crate::consts::PAGE_SIZE;
@@ -17,5 +17,3 @@ pub use crate::mem::{
 };
 pub use crate::util::*;
 pub use crate::{eprint, eprintln, print, println, rprint, rprintln};
-
-pub type KResult<T> = Result<T, SysErr>;
