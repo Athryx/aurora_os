@@ -268,21 +268,6 @@ macro_rules! impl_addr_range {
                 }
             }
 
-            // returns error if invalid virt addr or unaligned addr and size
-            /*pub fn try_new_aligned_usize(addr: usize, size: usize) -> Result<Self, SysErr>
-            {
-                let vaddr = $addr::try_new(addr).ok_or(SysErr::InvlVirtAddr)?;
-                if align_of(addr) < PAGE_SIZE || align_of(size) < PAGE_SIZE {
-                    // TODO: figure out what error to return
-                    Err(SysErr::InvlPtr)
-                } else {
-                    Ok(Self {
-                        addr: vaddr,
-                        size,
-                    })
-                }
-            }*/
-
             pub fn null() -> Self {
                 Self {
                     addr: $addr::new(0),
@@ -448,21 +433,6 @@ macro_rules! impl_addr_range {
             pub fn page_size(&self) -> usize {
                 self.size / PAGE_SIZE
             }
-
-            // returns error if invalid virt addr or unaligned addr and size
-            /*pub fn try_new_aligned_usize(addr: usize, size: usize) -> Result<Self, SysErr>
-            {
-                let vaddr = $addr::try_new(addr).ok_or(SysErr::InvlVirtAddr)?;
-                if align_of(addr) < PAGE_SIZE || align_of(size) < PAGE_SIZE {
-                    // TODO: figure out what error to return
-                    Err(SysErr::InvlPtr)
-                } else {
-                    Ok(Self {
-                        addr: vaddr,
-                        size,
-                    })
-                }
-            }*/
 
             pub fn null() -> Self {
                 Self {

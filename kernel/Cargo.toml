@@ -18,6 +18,7 @@ lazy_static = { version = "1.0", features = ["spin_no_std"] }
 siphasher = "0.3.10"
 arrayvec = { version = "0.7.2", default-features = false }
 sys = { path = "../lib/sys/" }
+bit_utils = { path = "../lib/bit_utils" }
 
 [profile.dev]
 panic = "abort"

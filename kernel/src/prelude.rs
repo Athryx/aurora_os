@@ -16,6 +16,6 @@ pub use crate::mem::{
     UVirtRange, VirtAddr, VirtRange, VirtRangeInner,
 };
 pub use crate::util::*;
-pub use crate::{eprint, eprintln, init_array, print, println, rprint, rprintln};
+pub use crate::{eprint, eprintln, print, println, rprint, rprintln};
 
 pub type KResult<T> = Result<T, SysErr>;

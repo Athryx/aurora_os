@@ -2,7 +2,7 @@
 
 use crate::prelude::*;
 
-pub const PAGE_SIZE: usize = 4096;
+pub use bit_utils::PAGE_SIZE;
 
 extern "C" {
     // virtual address that physical memory is offset by (includes 1 extra megabyte) (does include lower half of kernel)
