@@ -15,6 +15,7 @@ macro_rules! syscall
 
 	($num:expr, $opt:expr, $a1:expr) => {{
 		let o1: usize;
+        let o2: usize;
         unsafe {
             asm!("push rbx",
                 "mov rbx, rcx",
@@ -23,9 +24,10 @@ macro_rules! syscall
                 "pop rbx",
                 inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
                 inout("rcx") $a1 => o1,
+                out("rdx") o2,
                 );
         }
-		o1
+		(o1, o2)
 	}};
 
 	($num:expr, $opt:expr, $a1:expr, $a2:expr) => {{
@@ -261,7 +263,7 @@ macro_rules! sysret_0 {
     ($data:expr) => {
         {
             let result = $data;
-            let syserr = SysErr::new(result)
+            let syserr = SysErr::new(result.0)
                 .expect(INVALID_SYSERR_MESSAGE);
 
             if syserr == SysErr::Ok {
@@ -377,6 +379,28 @@ pub fn print_debug(data: &[u8]) {
     );
 }
 
+pub fn thread_yield() {
+    syscall!(
+        THREAD_YIELD,
+        0
+    );
+}
+
+pub fn suspend() {
+    syscall!(
+        THREAD_SUSPEND,
+        0
+    );
+}
+
+pub fn suspend_until(nsec: u64) {
+    syscall!(
+        THREAD_SUSPEND,
+        1,
+        nsec
+    );
+}
+
 make_cap_struct!(Process, CapType::Process);
 
 impl Process {
@@ -410,12 +434,79 @@ impl Process {
             regs.3
         )).map(Tid::from)
     }
+
+    pub fn map_memory(&self, memory: Memory, address: usize) -> KResult<()> {
+        sysret_0!(syscall!(
+            MEMORY_MAP,
+            WEAK_AUTO_DESTROY,
+            self.as_usize(),
+            memory.as_usize(),
+            address
+        ))
+    }
+
+    pub fn unmap_memory(&self, memory: Memory) -> KResult<()> {
+        sysret_0!(syscall!(
+            MEMORY_UNMAP,
+            WEAK_AUTO_DESTROY,
+            self.as_usize(),
+            memory.as_usize()
+        ))
+    }
 }
 
 make_cap_struct!(Memory, CapType::Memory);
 
+impl Memory {
+    pub fn new(flags: CapFlags, allocator: Allocator, pages: usize) -> KResult<Self> {
+        sysret_1!(syscall!(
+            MEMORY_NEW,
+            flags.bits() | WEAK_AUTO_DESTROY,
+            allocator.as_usize(),
+            pages
+        )).map(|num| Memory(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
+    }
+}
+
 make_cap_struct!(Key, CapType::Key);
 
+impl Key {
+    pub fn new(flags: CapFlags, allocator: Allocator) -> KResult<Self> {
+        sysret_1!(syscall!(
+            KEY_NEW,
+            flags.bits() | WEAK_AUTO_DESTROY,
+            allocator.as_usize()
+        )).map(|num| Key(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
+    }
+
+    pub fn key_id(&self) -> KResult<usize> {
+        sysret_1!(syscall!(
+            KEY_ID,
+            WEAK_AUTO_DESTROY,
+            self.as_usize()
+        ))
+    }
+}
+
 make_cap_struct!(Spawner, CapType::Spawner);
+
+impl Spawner {
+    pub fn new(flags: CapFlags, allocator: Allocator, spawn_key: Key) -> KResult<Self> {
+        sysret_1!(syscall!(
+            SPAWNER_NEW,
+            flags.bits() | WEAK_AUTO_DESTROY,
+            allocator.as_usize(),
+            spawn_key.as_usize()
+        )).map(|num| Spawner(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
+    }
+
+    pub fn kill_all(&self) -> KResult<()> {
+        sysret_0!(syscall!(
+            SPAWNER_KILL_ALL,
+            WEAK_AUTO_DESTROY,
+            self.as_usize()
+        ))
+    }
+}
 
 make_cap_struct!(Allocator, CapType::Allocator);
