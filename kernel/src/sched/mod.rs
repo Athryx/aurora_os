@@ -195,6 +195,8 @@ pub fn switch_current_thread_to(state: ThreadState, _int_disable: IntDisable, po
 
     // set syscall rsp
     cpu_local_data().syscall_rsp.store(new_thread.syscall_rsp(), Ordering::Release);
+    // set interrupt rsp (rsp0 in tss is used when cpl of interrupts changes)
+    cpu_local_data().tss.lock().rsp0 = new_thread.syscall_rsp() as u64;
 
     // change current thread and process
     cpu_local_data().current_process_addr.store(Arc::as_ptr(&new_process) as usize, Ordering::Release);
