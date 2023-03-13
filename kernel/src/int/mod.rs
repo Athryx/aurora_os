@@ -1,6 +1,7 @@
 use core::sync::atomic::{AtomicBool, Ordering};
 
-use crate::{sched, prelude::cpu_local_data};
+use crate::prelude::*;
+use crate::sched;
 use crate::arch::x64::{cli, hlt, get_cr2};
 
 pub mod apic;
@@ -102,8 +103,8 @@ pub struct Registers {
     pub r15: usize,
     pub rflags: usize,
     pub rip: usize,
-    pub cs: usize,
-    pub ss: usize,
+    pub cs: u16,
+    pub ss: u16,
 }
 
 fn double_fault(registers: &Registers) {
