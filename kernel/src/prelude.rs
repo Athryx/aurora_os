@@ -1,6 +1,6 @@
 pub use core::marker::PhantomData;
 pub use core::mem::size_of;
-use core::prelude::v1::*;
+pub use core::prelude::v1::*;
 pub use core::ptr::{self, null, null_mut};
 
 pub use lazy_static::lazy_static;

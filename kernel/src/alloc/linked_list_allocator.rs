@@ -1,6 +1,5 @@
 use core::cell::Cell;
 use core::cmp::max;
-use core::mem;
 
 use spin::Mutex;
 
@@ -11,9 +10,9 @@ use crate::prelude::*;
 use crate::sync::IMutex;
 
 const HEAP_ZONE_SIZE: usize = PAGE_SIZE * 8;
-const CHUNK_SIZE: usize = 1 << log2_up_const(mem::size_of::<Node>());
+const CHUNK_SIZE: usize = 1 << log2_up_const(size_of::<Node>());
 // TODO: make not use 1 extra space in some scenarios
-const INITIAL_CHUNK_SIZE: usize = align_up(mem::size_of::<HeapZone>(), CHUNK_SIZE);
+const INITIAL_CHUNK_SIZE: usize = align_up(size_of::<HeapZone>(), CHUNK_SIZE);
 
 #[derive(Debug, Clone, Copy)]
 enum ResizeResult {
@@ -189,7 +188,6 @@ impl HeapZone {
         let (pnode, nnode) = self.get_prev_next_node(addr);
 
         // TODO: make less ugly
-        // FIXME: remove map
         let pnode = pnode.map(|node| unsafe { unbound(node) });
         let nnode = nnode.map(|node| unsafe { unbound(node) });
 
@@ -214,7 +212,6 @@ impl HeapZone {
         self.free_space.set(self.free_space() + size);
     }
 
-    // TODO: make less dangerous
     fn get_prev_next_node(&self, addr: usize) -> (Option<&Node>, Option<&Node>) {
         let mut pnode = None;
         let mut nnode = None;

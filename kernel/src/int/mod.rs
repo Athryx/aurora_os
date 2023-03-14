@@ -177,6 +177,7 @@ extern "C" fn rust_int_handler(int_num: u8, registers: &Registers, error_code: u
 static EOI_ENABLED: AtomicBool = AtomicBool::new(true);
 
 /// Called by assembly code to indicate end of interrupt handler
+// FIXME: this is kind of wierd to call from assembly
 #[no_mangle]
 extern "C" fn eoi() {
     if EOI_ENABLED.load(Ordering::Acquire) {

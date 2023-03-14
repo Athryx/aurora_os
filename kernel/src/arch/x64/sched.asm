@@ -22,8 +22,8 @@ asm_switch_thread:
     ; save rflags
     pushfq
 
-    ; save old rsp in rdi to pass to post switch handler
-    mov rdi, rsp
+    ; save old rsp in r8 to pass to post switch handler
+    mov r8, rsp
 
     ; check if new address space is different than the currently loaded address space
     mov rax, cr3
@@ -41,6 +41,8 @@ asm_switch_thread:
     ; at this point, we have switched to the new thread
 
     ; call post_switch_handler
+    ; move first argument to rdi
+    mov rdi, r8
     ; arg1 rdi is the old rsp, which was saved from before
     mov rax, post_switch_handler
     call rax
