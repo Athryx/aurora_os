@@ -328,6 +328,9 @@ impl VirtAddrSpace {
             }
         }
 
+        // the index of the first entry in tables that needs to be deallocated
+        let mut dealloc_start_index = depth;
+
         for i in (0..depth).rev() {
             let current_table = unsafe {
                 if let Some(table) = tables[i].as_mut() {
@@ -340,8 +343,20 @@ impl VirtAddrSpace {
             current_table.remove(page_table_indicies[i]);
 
             if i != 0 && current_table.entry_count() == 0 {
-                unsafe {
-                    current_table.dealloc(self.page_allocator.allocator());
+                dealloc_start_index = depth;
+            } else {
+                // don't continue removing this page table unless we have deallocated this table 
+                break;
+            }
+        }
+
+        // dealloc these in a later pass after all indexes are removed
+        for i in dealloc_start_index..depth {
+            unsafe {
+                if let Some(table) = tables[i].as_mut() {
+                    table.dealloc(self.page_allocator.allocator())
+                } else {
+                    break;
                 }
             }
         }
