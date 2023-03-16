@@ -1,8 +1,6 @@
 use core::time::Duration;
 use core::convert::TryInto;
 
-use spin::Mutex;
-
 use crate::prelude::*;
 use crate::arch::x64::*;
 use crate::sync::IMutex;
@@ -28,14 +26,14 @@ pub static PIT: Pit = Pit::new();
 /// We only use this for calibrating the local apic timer, so it currently doesn't support regular timekeeping
 pub struct Pit {
 	// needed for certain operations
-	lock: Mutex<()>,
+	lock: IMutex<()>,
 	oneshot_callback: IMutex<fn() -> ()>
 }
 
 impl Pit {
 	const fn new() -> Self {
 		Pit {
-			lock: Mutex::new(()),
+			lock: IMutex::new(()),
 			oneshot_callback: IMutex::new(||{}),
 		}
 	}

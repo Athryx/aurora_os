@@ -2,4 +2,3 @@ kernel will sometimes deadlock on booting
 
 things to check:
 make a version of Once and Lazy that disables interrupts and only use that
-remove all uses of Mutex (spinlock with no interrupt disable) from kernel

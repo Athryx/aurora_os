@@ -3,7 +3,6 @@
 use core::fmt::{self, Write};
 
 use lazy_static::lazy_static;
-use spin::Mutex;
 use volatile::Volatile;
 
 use crate::arch::x64::*;
@@ -18,7 +17,7 @@ const DEBUGCON_PORT: u16 = 0xe9;
 
 lazy_static! {
     /// The writer for the vga text buffer, used by print!() and friends
-    pub static ref WRITER: Mutex<Writer> = Mutex::new(Writer {
+    pub static ref WRITER: IMutex<Writer> = IMutex::new(Writer {
         xpos: 0,
         ypos: 0,
         color: ColorCode::new(Color::Yellow, Color::Black),

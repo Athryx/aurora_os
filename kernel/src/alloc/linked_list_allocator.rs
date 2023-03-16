@@ -1,8 +1,6 @@
 use core::cell::Cell;
 use core::cmp::max;
 
-use spin::Mutex;
-
 use super::{HeapAllocator, OrigAllocator, PaRef, PageAllocator};
 use crate::container::{LinkedList, ListNode, ListNodeData};
 use crate::mem::{Allocation, HeapAllocation, Layout, MemOwner, PageLayout};
@@ -321,14 +319,14 @@ impl LinkedListAllocatorInner {
 // NOTE: can switch to schedular mutex once implemented
 pub struct LinkedListAllocator {
     inner: IMutex<LinkedListAllocatorInner>,
-    allocator: Mutex<PaRef>,
+    allocator: IMutex<PaRef>,
 }
 
 impl LinkedListAllocator {
     pub fn new(page_allocator: PaRef) -> Self {
         LinkedListAllocator {
             inner: IMutex::new(LinkedListAllocatorInner::new()),
-            allocator: Mutex::new(page_allocator),
+            allocator: IMutex::new(page_allocator),
         }
     }
 }
