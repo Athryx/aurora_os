@@ -45,7 +45,8 @@ impl<T> MemOwner<T> {
         self.0
     }
 
-    pub fn leak<'a>(mut self) -> &'a mut T {
+    pub fn leak<'a>(mut self) -> &'a mut T
+        where Self: 'a {
         // Safety: this should point to valid data, which we are not deallocating
         unsafe { unbound_mut(&mut *self) }
     }

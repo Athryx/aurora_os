@@ -2,3 +2,5 @@ Clean up the kernel allocator api,
 it is unnecassarily generic even though there will only be 1 allocator
 
 Also improve the kernel heap allocator, it is very bad
+
+remove all unbound and fix linked list, remove as much unsafe as possible
