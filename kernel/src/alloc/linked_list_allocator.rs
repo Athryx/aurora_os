@@ -2,7 +2,7 @@ use core::cell::Cell;
 use core::cmp::max;
 
 use super::{HeapAllocator, OrigAllocator, PaRef, PageAllocator};
-use crate::container::{LinkedList, ListNode, ListNodeData};
+use crate::container::{LinkedList, ListNode, ListNodeData, CursorMut};
 use crate::mem::{Allocation, HeapAllocation, Layout, MemOwner, PageLayout};
 use crate::prelude::*;
 use crate::sync::IMutex;
@@ -80,6 +80,10 @@ impl ListNode for Node {
     fn list_node_data(&self) -> &ListNodeData<Self> {
         &self.list_node_data
     }
+
+    fn list_node_data_mut(&mut self) -> &mut ListNodeData<Self> {
+        &mut self.list_node_data
+    }
 }
 
 struct HeapZone {
@@ -139,41 +143,32 @@ impl HeapZone {
             return None;
         }
 
-        let mut out = None;
-        // to get around borrow checker
-        // node that may need to be removed
-        let mut rnode = None;
+        let mut cursor = self.list.cursor_start_mut();
 
-        for free_zone in self.list.iter() {
-            let old_size = free_zone.size();
-            if old_size >= size {
+        while let Some(free_zone) = cursor.move_next() {
+            if free_zone.size() >= size {
+                let old_size = free_zone.size();
+
                 match unsafe { free_zone.resize(size, align) } {
                     ResizeResult::Shrink(addr) => {
                         let alloc_size = old_size - free_zone.size();
-                        let free_space = self.free_space();
-                        self.free_space.set(free_space - alloc_size);
-                        out = Some(HeapAllocation::new(addr, alloc_size, align));
-                        break;
+                        self.free_space.set(self.free_space() - alloc_size);
+
+                        return Some(HeapAllocation::new(addr, alloc_size, align));
                     },
                     ResizeResult::Remove(addr) => {
-                        rnode = Some(free_zone as *const Node);
+                        cursor.remove_prev();
+
                         self.free_space.set(self.free_space() - old_size);
-                        out = Some(HeapAllocation::new(addr, old_size, align));
-                        break;
+
+                        return Some(HeapAllocation::new(addr, old_size, align));
                     },
-                    ResizeResult::NoCapacity => continue,
+                    ResizeResult::NoCapacity => (),
                 }
             }
         }
 
-        if let Some(node) = rnode {
-            // FIXME: find a way to fix ownership issue without doing this
-            unsafe {
-                self.list.remove_node(node.as_ref().unwrap());
-            }
-        }
-
-        out
+        None
     }
 
     // does not chack if ptr is in this zone
@@ -182,46 +177,48 @@ impl HeapZone {
         let addr = allocation.addr();
         let size = allocation.size();
 
-        let cnode = unsafe { Node::new(addr, size) };
-        let (pnode, nnode) = self.get_prev_next_node(addr);
+        let new_node = unsafe { Node::new(addr, size) };
+        let mut cursor = self.get_prev_next_node(addr);
 
-        // TODO: make less ugly
-        let pnode = pnode.map(|node| unsafe { unbound(node) });
-        let nnode = nnode.map(|node| unsafe { unbound(node) });
-
-        let cnode = if let Some(pnode) = pnode {
-            if pnode.merge(&cnode) {
-                // cnode was never in list, no need to remove
-                // TODO: probably unbound
-                pnode
-            } else {
-                self.list.insert_after(cnode, pnode)
+        if let Some(prev_node) = cursor.prev() {
+            if !prev_node.merge(&new_node) {
+                // only insert if nodes could not merge,
+                // otherwise the new_node merged with prev_node and can now be ignored
+                cursor.insert_prev(new_node);
             }
         } else {
-            self.list.push_front(cnode)
-        };
+            cursor.insert_prev(new_node);
+        }
 
-        if let Some(nnode) = nnode {
-            if cnode.merge(nnode) {
-                self.list.remove_node(nnode);
+        if let Some(next_node) = cursor.next() {
+            // panic safety: prev node was guarenteed ot be inserted in above code
+            let prev_node = cursor.prev().unwrap();
+
+            if prev_node.merge(next_node) {
+                cursor.remove_next();
             }
         }
 
         self.free_space.set(self.free_space() + size);
     }
 
-    fn get_prev_next_node(&self, addr: usize) -> (Option<&Node>, Option<&Node>) {
-        let mut pnode = None;
-        let mut nnode = None;
-        for region in self.list.iter() {
-            if region.addr() > addr {
-                nnode = Some(region);
-                break;
-            }
-            pnode = Some(region);
-        }
+    /// Returns a cursor that points between the previous and next node for the given address
+    fn get_prev_next_node(&mut self, addr: usize) -> CursorMut<Node> {
+        let mut cursor = self.list.cursor_start_mut();
 
-        (pnode, nnode)
+        loop {
+            if let Some(next_node) = cursor.next() {
+                // this will be the first node that had an address greatur than the desired addr,
+                // so it should be the next node
+                if next_node.addr() > addr {
+                    return cursor;
+                }
+            } else {
+                return cursor;
+            }
+
+            cursor.move_next();
+        }
     }
 
     // TODO: add reporting of memory that is still allocated
@@ -237,6 +234,10 @@ impl HeapZone {
 impl ListNode for HeapZone {
     fn list_node_data(&self) -> &ListNodeData<Self> {
         &self.list_node_data
+    }
+
+    fn list_node_data_mut(&mut self) -> &mut ListNodeData<Self> {
+        &mut self.list_node_data
     }
 }
 

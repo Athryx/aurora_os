@@ -129,4 +129,8 @@ impl ListNode for ThreadHandle {
     fn list_node_data(&self) -> &ListNodeData<Self> {
         &self.list_node_data
     }
+
+    fn list_node_data_mut(&mut self) -> &mut ListNodeData<Self> {
+        &mut self.list_node_data
+    }
 }
