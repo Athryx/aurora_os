@@ -358,10 +358,14 @@ impl<'a, T: ListNode> CursorMut<'a, T> {
 
         if let Some(prev) = self.prev_mut() {
             *prev.next_mut() = ptr;
+        } else {
+            self.list.start = ptr;
         }
 
         if let Some(next) = self.prev_mut() {
             *next.prev_mut() = ptr;
+        } else {
+            self.list.end = ptr;
         }
 
         self.list.len += 1;
@@ -389,12 +393,16 @@ impl<'a, T: ListNode> CursorMut<'a, T> {
             unsafe {
                 *(prev.as_mut()).next_mut() = value.next();
             }
+        } else {
+            self.list.start = value.next();
         }
 
         if let Some(mut next) = value.next() {
             unsafe {
                 *(next.as_mut()).prev_mut() = value.prev();
             }
+        } else {
+            self.list.end = value.prev();
         }
 
         self.list.len -= 1;
