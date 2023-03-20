@@ -14,12 +14,19 @@ use super::options_weak_autodestroy;
 ///
 /// # Required Capability Permissions
 /// `allocator`: cap_prod
+/// 
+/// # Syserr code
+/// InvlArgs: value for `pages` was 0, 0 sized memory is not allowed
 ///
 /// # Returns
 /// mem: cid of memory
 pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
     let mem_cap_flags = CapFlags::from_bits_truncate(get_bits(options as usize, 0..4));
+
+    if pages == 0 {
+        return Err(SysErr::InvlArgs);
+    }
 
     let _int_disable = IntDisable::new();
 
