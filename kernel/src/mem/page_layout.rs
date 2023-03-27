@@ -14,7 +14,7 @@ impl PageLayout {
     /// Sets align to page size if it is less than page size
     /// Returns None if the rounded size overflows when aligning up
     pub fn new_rounded(size: usize, align: usize) -> Option<Self> {
-        let size = align_up(size, PAGE_SIZE);
+        let size = max(align_up(size, PAGE_SIZE), PAGE_SIZE);
         let align = max(align, PAGE_SIZE);
 
         if size > usize::MAX - (align - 1) {
@@ -26,11 +26,13 @@ impl PageLayout {
 
     /// Returns None if:
     /// size is not page aligned
+    /// size is 0
     /// align is not a power of 2 or alignmant specified is less than page alignmant
     /// rounding up align overflows
     pub fn from_size_align(size: usize, align: usize) -> Option<Self> {
         if !align.is_power_of_two()
             || size > usize::MAX - (align - 1)
+            || size == 0
             || align_of(size) < PAGE_SIZE
             || align_of(align) < PAGE_SIZE
         {

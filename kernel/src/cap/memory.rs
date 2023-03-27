@@ -10,7 +10,12 @@ pub struct Memory {
 }
 
 impl Memory {
+    /// Returns an error is pages is size 0
     pub fn new(mut page_allocator: PaRef, pages: usize) -> KResult<Self> {
+        if pages == 0 {
+            return Err(SysErr::InvlArgs);
+        }
+
         Ok(Memory {
             allocation: page_allocator
                 .allocator()

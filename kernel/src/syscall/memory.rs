@@ -24,10 +24,6 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<us
     let weak_auto_destroy = options_weak_autodestroy(options);
     let mem_cap_flags = CapFlags::from_bits_truncate(get_bits(options as usize, 0..4));
 
-    if pages == 0 {
-        return Err(SysErr::InvlArgs);
-    }
-
     let _int_disable = IntDisable::new();
 
     let current_process = cpu_local_data().current_process();
