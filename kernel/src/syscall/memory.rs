@@ -60,12 +60,15 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<us
 /// InvlAlign: `addr` is not page aligned
 /// InvlMemZone: the value passed in for `addr` causes the mapped memory to overlap with other virtual memory
 /// InvlWeak: `mem` is a weak capability, mapping a weak capability is not allowed
+/// 
+/// # Returns
+/// size: size of the memory that was mapped into address space (this will be the size of memory capability)
 pub fn memory_map(
     options: u32,
     process_id: usize,
     memory_id: usize,
     addr: usize,
-) -> KResult<()> {
+) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
     let addr = VirtAddr::try_new(addr).ok_or(SysErr::InvlVirtAddr)?;
     let memory_cap_id = CapId::try_from(memory_id).ok_or(SysErr::InvlId)?;

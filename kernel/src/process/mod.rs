@@ -284,11 +284,12 @@ impl Process {
     /// Maps the memory specified by the given capid at the given virtual address
     /// 
     /// `memory_cap_id` must reference a capability already present in this process
+    /// returns the size in pages of the memory that was mapped
     /// 
     /// # Locking
     /// 
     /// acquires `addr_space_data` lock
-    pub fn map_memory(&self, memory_cap_id: CapId, addr: VirtAddr) -> KResult<()> {
+    pub fn map_memory(&self, memory_cap_id: CapId, addr: VirtAddr) -> KResult<usize> {
         let memory = self.cap_map.get_memory(memory_cap_id)?;
 
         let mut addr_space_data = self.addr_space_data.lock();
@@ -299,25 +300,29 @@ impl Process {
                 return Err(SysErr::InvlOp);
             }
 
+            let mut memory_inner = memory.object().inner();
+
             let mem_virt_range = AVirtRange::try_new_aligned(
                 addr,
-                memory.object().size(),
+                memory_inner.size(),
             ).ok_or(SysErr::InvlAlign)?;
 
             addr_space_data.mapped_memory_capabilities.insert(memory_cap_id, addr)?;
 
             let map_result = addr_space_data.addr_space.map_memory(
-                &[(mem_virt_range, memory.object().phys_addr())],
+                &[(mem_virt_range, memory_inner.phys_addr())],
                 memory.flags.into(),
             );
 
-            if map_result.is_err() {
+            if let Err(error) = map_result {
                 // if mapping failed, remove entry from mapped_memory_capabilities
                 addr_space_data.mapped_memory_capabilities.remove(&memory_cap_id);
 
-                map_result
+                Err(error)
             } else {
-                Ok(())
+                memory_inner.map_ref_count += 1;
+
+                Ok(memory_inner.size_pages())
             }
         } else {
             Err(SysErr::InvlWeak)
@@ -338,16 +343,20 @@ impl Process {
 
         if let Capability::Strong(memory) = memory {
             if let Some(map_addr) = addr_space_data.mapped_memory_capabilities.get(&memory_cap_id) {
+                let mut memory_inner = memory.object().inner();
+
                 let mem_virt_range = AVirtRange::try_new_aligned(
                     *map_addr,
-                    memory.object().size(),
+                    memory_inner.size(),
                 ).ok_or(SysErr::InvlAlign)?;
 
                 // this should not fail because we ensore that memory was already mapped
-                addr_space_data.addr_space.unmap_memory(&[(mem_virt_range, memory.object().phys_addr())])
+                addr_space_data.addr_space.unmap_memory(&[(mem_virt_range, memory_inner.phys_addr())])
                     .expect("failed to unmap memory that should have been mapped");
 
                 addr_space_data.mapped_memory_capabilities.remove(&memory_cap_id);
+
+                memory_inner.map_ref_count -= 1;
 
                 Ok(())
             } else {
