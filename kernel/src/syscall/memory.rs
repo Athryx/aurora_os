@@ -112,3 +112,38 @@ pub fn memory_unmap(
 
     process.unmap_memory(memory_cap_id)
 }
+
+/// Resizes the memory capability referenced by `memory`
+/// 
+/// `memory` must not be mapped anywhere in memory
+/// 
+/// # Required Capability Permissions
+/// `memory`: cap_write
+/// 
+/// # Syserr Code
+/// InvlOp: `memory` is mapped into memory somewhere
+/// InvlArgs: `new_page_size` is 0
+pub fn memory_resize(
+    options: u32,
+    memory_id: usize,
+    new_page_size: usize,
+) -> KResult<()> {
+    let weak_auto_destroy = options_weak_autodestroy(options);
+
+    let _int_disable = IntDisable::new();
+
+    let memory = cpu_local_data()
+        .current_process()
+        .cap_map()
+        .get_memory_with_perms(memory_id, CapFlags::WRITE, weak_auto_destroy)?;
+
+    let mut memory_inner = memory.inner();
+
+    if memory_inner.map_ref_count == 0 {
+        unsafe {
+            memory_inner.resize(new_page_size)
+        }
+    } else {
+        Err(SysErr::InvlOp)
+    }
+}

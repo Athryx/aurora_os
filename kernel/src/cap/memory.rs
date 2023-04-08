@@ -9,6 +9,7 @@ use super::{CapObject, CapType};
 #[derive(Debug)]
 pub struct MemoryInner {
     allocation: Allocation,
+    page_allocator: PaRef,
     /// This is the number of locations the memory capability is currently mapped in
     pub map_ref_count: usize,
 }
@@ -29,6 +30,27 @@ impl MemoryInner {
 
     pub fn size_pages(&self) -> usize {
         self.allocation.size() / PAGE_SIZE
+    }
+
+    /// Resizes the allocation to be `new_page_size`
+    /// 
+    /// # Safety
+    /// 
+    /// Must check that memory is not mapped anywhere its not supposed to be
+    pub unsafe fn resize(&mut self, new_page_size: usize) -> KResult<()> {
+        if new_page_size == 0 {
+            return Err(SysErr::InvlArgs);
+        }
+
+        let layout = PageLayout::from_size_align(new_page_size * PAGE_SIZE, PAGE_SIZE)
+            .expect("failed to make page layout");
+        
+        self.allocation = unsafe {
+            self.page_allocator.allocator().realloc(self.allocation, layout)
+                .ok_or(SysErr::OutOfMem)?
+        };
+
+        Ok(())
     }
 }
 
@@ -52,6 +74,7 @@ impl Memory {
                     PageLayout::from_size_align(pages * PAGE_SIZE, PAGE_SIZE)
                         .expect("could not create page layout for Memory capability"),
                 ).ok_or(SysErr::OutOfMem)?,
+            page_allocator,
             map_ref_count: 0,
         };
 
