@@ -74,6 +74,8 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     // clear the vga text buffer
     io::WRITER.lock().clear();
 
+    config_cpu_settings();
+
     let boot_info = unsafe { BootInfo::new(boot_info_addr) };
 
     unsafe {
@@ -111,8 +113,6 @@ fn init(boot_info_addr: usize) -> KResult<()> {
 
     apic::smp_init(&ap_apic_ids, ap_addr_space)?;
 
-    config_cpu_settings();
-
     Ok(())
 }
 
@@ -146,6 +146,8 @@ pub extern "C" fn _start(boot_info_addr: usize) -> ! {
 
 /// Initializes ap cores
 fn ap_init(id: usize, stack_addr: usize) -> KResult<()> {
+    config_cpu_settings();
+
     // initialize the cpu local data
     gs_data::init(Prid::from(id));
 
@@ -168,8 +170,6 @@ fn ap_init(id: usize, stack_addr: usize) -> KResult<()> {
     }
 
     apic::ap_init_finished();
-
-    config_cpu_settings();
 
     Ok(())
 }

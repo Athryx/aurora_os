@@ -7,7 +7,7 @@ use core::sync::atomic::Ordering;
 pub use thread::{ThreadState, ThreadHandle, Thread, Tid};
 use thread_map::ThreadMap;
 use crate::alloc::root_alloc_ref;
-use crate::arch::x64::IntDisable;
+use crate::arch::x64::{IntDisable, set_cr3};
 use crate::config::SCHED_TIME;
 use crate::mem::MemOwner;
 use crate::prelude::*;
@@ -239,6 +239,9 @@ pub fn switch_other_thread_to(thread_handle: *const ThreadHandle, state: ThreadS
 /// Creates an idle thread and sets up scheduler from the currently executing thread and its stack
 pub fn init(stack: AVirtRange) -> KResult<()> {
     let kernel_process = get_kernel_process();
+
+    // load kernel process address space
+    set_cr3(kernel_process.get_cr3());
 
     let (thread, thread_handle) = kernel_process.create_idle_thread(
         String::from_str(root_alloc_ref().downgrade(), "idle_thread")?,

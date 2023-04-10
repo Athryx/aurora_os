@@ -275,6 +275,7 @@ pub fn set_cr3(n: usize) {
     }
 }
 
+pub const CR4_PGE: usize = 1 << 7;
 /// When set, disables certain privalidged instructions in usermode that
 /// are usually only needed in virtual 8086 mode
 pub const CR4_UMIP: usize = 1 << 11;
@@ -329,6 +330,10 @@ pub fn gs_addr() -> usize {
 pub fn config_cpu_settings() {
     // FIXME: set UMIP and SMEP
     // find out why setting these completely breaks things for some reason
-    let new_cr4 = get_cr4();
-    set_cr4(new_cr4);
+
+    // enable global bit in page tables
+    set_cr4(get_cr4() | CR4_PGE);
+
+    // allow no execute bit to be set on page tables
+    wrmsr(EFER_MSR, rdmsr(EFER_MSR) | EFER_EXEC_DISABLE);
 }
