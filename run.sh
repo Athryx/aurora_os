@@ -33,7 +33,7 @@ then
 	qemu-system-x86_64 -m 5120 -debugcon stdio -s -S -drive file=$IMG,format=raw & $TERM -e "$HOME/.cargo/bin/rust-gdb" "-x" "debug-release.gdb"
 elif [[ $1 = bochs ]]
 then
-	$TERM -e bochs -f bochsrc
+	konsole -e bochs -f bochsrc
 elif [[ -z $1 ]] || [[ $1 = release ]] || [[ $1 = test ]]
 then
 	qemu-system-x86_64 -m 5120 -smp cpus=4,cores=4 -debugcon stdio -drive file=$IMG,format=raw

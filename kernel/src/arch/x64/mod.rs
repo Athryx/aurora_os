@@ -275,6 +275,14 @@ pub fn set_cr3(n: usize) {
     }
 }
 
+/// When set, disables certain privalidged instructions in usermode that
+/// are usually only needed in virtual 8086 mode
+pub const CR4_UMIP: usize = 1 << 11;
+/// Disables kernel code from executing code in userspace pages
+pub const CR4_SMEP: usize = 1 << 20;
+/// Disables kernel code from reading or writing to userspace pages
+pub const CR4_SMAP: usize = 1 << 21;
+
 #[inline]
 pub fn get_cr4() -> usize {
     let out;
@@ -315,4 +323,12 @@ extern "C" {
 
 pub fn gs_addr() -> usize {
     unsafe { asm_gs_addr() }
+}
+
+/// Sets various miscalaneous cpu settings in control registers
+pub fn config_cpu_settings() {
+    // FIXME: set UMIP and SMEP
+    // find out why setting these completely breaks things for some reason
+    let new_cr4 = get_cr4();
+    set_cr4(new_cr4);
 }

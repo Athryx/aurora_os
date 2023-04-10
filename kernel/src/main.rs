@@ -111,6 +111,8 @@ fn init(boot_info_addr: usize) -> KResult<()> {
 
     apic::smp_init(&ap_apic_ids, ap_addr_space)?;
 
+    config_cpu_settings();
+
     Ok(())
 }
 
@@ -166,6 +168,8 @@ fn ap_init(id: usize, stack_addr: usize) -> KResult<()> {
     }
 
     apic::ap_init_finished();
+
+    config_cpu_settings();
 
     Ok(())
 }
