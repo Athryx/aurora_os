@@ -41,7 +41,7 @@ bitflags! {
 
 impl PageMappingFlags {
     /// Returns true if these page mapping flags specift memory that will actually exist in the address space
-    fn exists(&self) -> bool {
+    pub fn exists(&self) -> bool {
 		self.intersects(PageMappingFlags::READ | PageMappingFlags::WRITE | PageMappingFlags::EXEC)
 	}
 }
@@ -138,7 +138,13 @@ impl VirtAddrSpace {
     /// Maps all the virtual memory ranges in the slice to point to the corresponding physical address
     /// 
     /// If any one of the memeory regions fails, none will be mapped
+    /// 
+    /// Will return InvlArgs if `flags` does not specify either read, write, or execute
     pub fn map_memory(&mut self, memory: &[(AVirtRange, PhysAddr)], flags: PageMappingFlags) -> KResult<()> {
+        if !flags.exists() {
+            return Err(SysErr::InvlArgs);
+        }
+
         self.add_virt_addr_entries(memory)?;
 
         for (virt_range, phys_addr) in memory {

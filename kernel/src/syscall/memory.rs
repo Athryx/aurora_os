@@ -1,6 +1,7 @@
 use crate::alloc::{PaRef, OrigRef};
 use crate::cap::{StrongCapability, Capability};
 use crate::cap::{CapFlags, CapId, memory::Memory};
+use crate::process::PageMappingFlags;
 use crate::{prelude::*, process};
 use crate::arch::x64::IntDisable;
 use super::options_weak_autodestroy;
@@ -49,7 +50,12 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<us
 /// the mapped memory read, write, and execute permissions depend on cap_read, cap_write, and cap_prod permissions respectively
 /// will fail if `mem` overlaps with any other mapped memory
 /// 
-/// NOTE: weak_auto_destroy option does not currently apply to the memory capability
+/// NOTE: weak auto destroy does not apply to the `mem` capability
+/// 
+/// # Options
+/// bit 0 (mem_read): the mapped memory region shold be readable (requires read permissions on memory capability)
+/// bit 1 (mem_write): the mapped memory region should be writable (requires write permissions on memory capability)
+/// bit 2 (mem_exec): the mapped memory region should be executable (requires read permissions on memory capability)
 ///
 /// # Required Capability Permissions
 /// `process`: cap_write
@@ -60,6 +66,7 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<us
 /// InvlAlign: `addr` is not page aligned
 /// InvlMemZone: the value passed in for `addr` causes the mapped memory to overlap with other virtual memory
 /// InvlWeak: `mem` is a weak capability, mapping a weak capability is not allowed
+/// InvlArgs: options has no bits set indicating read, write, or exec permissions
 /// 
 /// # Returns
 /// size: size of the memory that was mapped into address space (this will be the size of memory capability)
@@ -80,7 +87,21 @@ pub fn memory_map(
         .cap_map()
         .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?;
 
-    process.map_memory(memory_cap_id, addr)
+    let map_flags = PageMappingFlags::from_bits_truncate((options & 0b111) as usize);
+
+    let mut required_cap_flags = CapFlags::empty();
+    if map_flags.contains(PageMappingFlags::READ | PageMappingFlags::EXEC) {
+        required_cap_flags |= CapFlags::READ;
+    }
+    if map_flags.contains(PageMappingFlags::WRITE) {
+        required_cap_flags |= CapFlags::WRITE;
+    }
+
+    if !memory_cap_id.flags().contains(required_cap_flags) {
+        return Err(SysErr::InvlPerm);
+    }
+
+    process.map_memory(memory_cap_id, addr, map_flags)
 }
 
 /// Unmaps memory mapped by [`memory_map`]

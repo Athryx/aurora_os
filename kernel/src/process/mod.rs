@@ -286,10 +286,13 @@ impl Process {
     /// `memory_cap_id` must reference a capability already present in this process
     /// returns the size in pages of the memory that was mapped
     /// 
+    /// `flags` specifies the read, write, and execute permissions, but the memory is always mapped as user
+    /// Returns invalid args if not bits in falgs are set
+    /// 
     /// # Locking
     /// 
     /// acquires `addr_space_data` lock
-    pub fn map_memory(&self, memory_cap_id: CapId, addr: VirtAddr) -> KResult<usize> {
+    pub fn map_memory(&self, memory_cap_id: CapId, addr: VirtAddr, flags: PageMappingFlags) -> KResult<usize> {
         let memory = self.cap_map.get_memory(memory_cap_id)?;
 
         let mut addr_space_data = self.addr_space_data.lock();
@@ -311,7 +314,7 @@ impl Process {
 
             let map_result = addr_space_data.addr_space.map_memory(
                 &[(mem_virt_range, memory_inner.phys_addr())],
-                memory.flags.into(),
+                flags | PageMappingFlags::USER,
             );
 
             if let Err(error) = map_result {
