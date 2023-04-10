@@ -118,7 +118,7 @@ pub fn memory_unmap(
 /// `memory` must not be mapped anywhere in memory
 /// 
 /// # Required Capability Permissions
-/// `memory`: cap_write
+/// `memory`: cap_prod
 /// 
 /// # Syserr Code
 /// InvlOp: `memory` is mapped into memory somewhere
@@ -135,11 +135,12 @@ pub fn memory_resize(
     let memory = cpu_local_data()
         .current_process()
         .cap_map()
-        .get_memory_with_perms(memory_id, CapFlags::WRITE, weak_auto_destroy)?;
+        .get_memory_with_perms(memory_id, CapFlags::PROD, weak_auto_destroy)?;
 
     let mut memory_inner = memory.inner();
 
     if memory_inner.map_ref_count == 0 {
+        // Safety: map ref count is checked to be 0
         unsafe {
             memory_inner.resize(new_page_size)
         }
