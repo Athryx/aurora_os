@@ -31,7 +31,10 @@ extern "C" {
 }
 
 lazy_static! {
+    /// This is the address that the kernel address range starts at
+    /// Physical address 0 is mapped starting at this address in kernel memory
     pub static ref KERNEL_VMA: usize = unsafe { &__KERNEL_VMA } as *const _ as usize;
+    /// This is the physical address the kernel resides at in memory
     pub static ref KERNEL_LMA: usize = unsafe { &__KERNEL_LMA } as *const _ as usize;
 
     /// This is the address the ap trampoline is compiled in the kernel at
@@ -56,9 +59,17 @@ lazy_static! {
 
     pub static ref TEXT_START: usize = unsafe { &__TEXT_START } as *const _ as usize;
     pub static ref TEXT_END: usize = unsafe { &__TEXT_END } as *const _ as usize;
+    pub static ref TEXT_VIRT_RANGE: AVirtRange = AVirtRange::new_aligned(
+        VirtAddr::new(*TEXT_START),
+        *TEXT_END - *TEXT_START,
+    );
 
     pub static ref RODATA_START: usize = unsafe { &__RODATA_START } as *const _ as usize;
     pub static ref RODATA_END: usize = unsafe { &__RODATA_END } as *const _ as usize;
+    pub static ref RODATA_VIRT_RANGE: AVirtRange = AVirtRange::new_aligned(
+        VirtAddr::new(*RODATA_START),
+        *RODATA_END - *RODATA_START,
+    );
 
     pub static ref DATA_START: usize = unsafe { &__DATA_START } as *const _ as usize;
     pub static ref DATA_END: usize = unsafe { &__DATA_END } as *const _ as usize;
@@ -69,13 +80,13 @@ lazy_static! {
     pub static ref KERNEL_START: usize = unsafe { &__KERNEL_START } as *const _ as usize;
     pub static ref KERNEL_END: usize = unsafe { &__KERNEL_END } as *const _ as usize;
 
-    pub static ref KERNEL_PHYS_RANGE: UPhysRange = UPhysRange::new_aligned(
+    pub static ref KERNEL_PHYS_RANGE: APhysRange = APhysRange::new_aligned(
         PhysAddr::new(*KERNEL_LMA),
-        *KERNEL_END - *KERNEL_START
+        *KERNEL_END - *KERNEL_START,
     );
-    pub static ref KERNEL_VIRT_RANGE: UVirtRange = UVirtRange::new_aligned(
+    pub static ref KERNEL_VIRT_RANGE: AVirtRange = AVirtRange::new_aligned(
         VirtAddr::new(*KERNEL_START),
-        *KERNEL_END - *KERNEL_START
+        *KERNEL_END - *KERNEL_START,
     );
 
     pub static ref INIT_STACK: AVirtRange = AVirtRange::new_aligned(

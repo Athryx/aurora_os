@@ -250,10 +250,11 @@ macro_rules! impl_addr_range {
             }
 
             pub fn new_aligned(addr: $addr, size: usize) -> Self {
-                let addr2 = (addr + size).align_up(PAGE_SIZE);
+                let end_addr = (addr + size).align_up(PAGE_SIZE);
+                let start_addr = addr.align_down(PAGE_SIZE);
                 Self {
-                    addr: addr.align_down(PAGE_SIZE),
-                    size: align_up((addr2 - addr), PAGE_SIZE),
+                    addr: start_addr,
+                    size: end_addr - start_addr,
                 }
             }
 
@@ -411,10 +412,11 @@ macro_rules! impl_addr_range {
 
             /// Aligns address down, and end address up
             pub fn new_aligned(addr: $addr, size: usize) -> Self {
-                let addr2 = (addr + size).align_up(PAGE_SIZE);
+                let end_addr = (addr + size).align_up(PAGE_SIZE);
+                let start_addr = addr.align_down(PAGE_SIZE);
                 Self {
-                    addr: addr.align_down(PAGE_SIZE),
-                    size: align_up((addr2 - addr), PAGE_SIZE),
+                    addr: start_addr,
+                    size: end_addr - start_addr,
                 }
             }
 

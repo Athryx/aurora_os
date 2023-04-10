@@ -101,8 +101,8 @@ impl MemoryMap {
     // pushes kernel zone on list if applicable
     fn push(&mut self, region: MemoryRegionType) {
         // this is kind of ugly to do here
-        if region.range().addr() == consts::KERNEL_PHYS_RANGE.addr() + consts::KERNEL_PHYS_RANGE.size() {
-            self.push(MemoryRegionType::Kernel(*consts::KERNEL_PHYS_RANGE));
+        if region.range().addr() == consts::KERNEL_PHYS_RANGE.end_addr() {
+            self.push(MemoryRegionType::Kernel(consts::KERNEL_PHYS_RANGE.as_unaligned()));
         }
         assert!(self.len < MAX_MEMORY_REGIONS);
         self.data[self.len] = region;
@@ -150,7 +150,7 @@ impl MemoryRegionType {
         };
 
         UPhysRange::new(PhysAddr::new(region.addr as usize), region.len as usize)
-            .split_at_iter(*consts::KERNEL_PHYS_RANGE)
+            .split_at_iter(consts::KERNEL_PHYS_RANGE.as_unaligned())
             .flat_map(move |range| range.split_at_iter(initrd_range))
             .flat_map(|range| range.split_at_iter(consts::AP_CODE_DEST_RANGE.as_unaligned()))
             .map(convert_to_memory_region)

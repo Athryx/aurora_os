@@ -21,8 +21,10 @@ use self::page_table::PageTableFlags;
 mod page_table;
 
 lazy_static! {
-	static ref HIGHER_HALF_PAGE_POINTER: PageTablePointer = PageTablePointer::new(*consts::KZONE_PAGE_TABLE_POINTER,
-		PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::GLOBAL);
+	static ref HIGHER_HALF_PAGE_POINTER: PageTablePointer = PageTablePointer::new(
+        *consts::KZONE_PAGE_TABLE_POINTER,
+        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
+    );
     
     /// Most permissive page table flags used by parent tables
     static ref PARENT_FLAGS: PageTableFlags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER;
@@ -115,6 +117,18 @@ impl VirtAddrSpace {
             cr3: pml4_table,
             page_allocator,
         })
+    }
+
+    /// Sets up the kernel memory mapping
+    /// 
+    /// Kernel memory is the last 512 GiB of the virtual address space
+    /// 
+    /// Will mark kernel .text as executable, .rodata as read only, everything else as read and write
+    /// The global flag will also be set because this mapping is shared between all processess
+    /// 
+    /// This is only sets up the mapping once, then the page table pointer is cached for future use
+    fn initialize_kernel_mapping(&mut self) -> KResult<()> {
+        Ok(())
     }
 
     pub fn cr3_addr(&self) -> PhysAddr {
