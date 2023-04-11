@@ -51,7 +51,7 @@ use arch::x64::*;
 use consts::INIT_STACK;
 use int::apic;
 use mb2::BootInfo;
-use process::VirtAddrSpace;
+use process::{VirtAddrSpace, get_kernel_process};
 use gs_data::Prid;
 use prelude::*;
 use sched::kernel_stack::KernelStack;
@@ -82,11 +82,6 @@ fn init(boot_info_addr: usize) -> KResult<()> {
         alloc::init(&boot_info.memory_map)?;
     }
 
-	// make the virt mapper here, so that zm will choose the earliest physical memory zone to allocate the pml4 from
-	// this is necessary because we have to use a pml4 below 4 gib because aps can only load a 32 bit address at first
-	let ap_addr_space =
-        VirtAddrSpace::new(root_alloc_page_ref(), root_alloc_ref().downgrade())?;
-
     // initialize the cpu local data
     gs_data::init(Prid::from(0));
 
@@ -99,6 +94,8 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     syscall::init();
 
     process::init_kernel_process();
+    // load kernel process address space
+    set_cr3(get_kernel_process().get_cr3());
 
     // initislise the scheduler
     sched::init(*INIT_STACK)?;
@@ -111,7 +108,7 @@ fn init(boot_info_addr: usize) -> KResult<()> {
         apic::init_local_apic();
     }
 
-    apic::smp_init(&ap_apic_ids, ap_addr_space)?;
+    apic::smp_init(&ap_apic_ids)?;
 
     Ok(())
 }
@@ -158,6 +155,9 @@ fn ap_init(id: usize, stack_addr: usize) -> KResult<()> {
     cpu_local_data().idt.load();
 
     syscall::init();
+
+    // load kernel process address space
+    set_cr3(get_kernel_process().get_cr3());
 
     let stack_range = AVirtRange::new(
         VirtAddr::new(stack_addr + 8 - KernelStack::DEFAULT_SIZE),

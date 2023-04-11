@@ -10,7 +10,6 @@ use crate::{config, consts};
 use crate::int::apic::io_apic::IrqEntry;
 use crate::int::IRQ_BASE;
 use crate::prelude::*;
-use crate::process::{VirtAddrSpace, PageMappingFlags};
 use crate::sync::IMutex;
 use crate::{acpi::madt::{Madt, MadtElem}, alloc::root_alloc_ref};
 use crate::sched::kernel_stack::KernelStack;
@@ -136,16 +135,15 @@ static APS_GO: AtomicBool = AtomicBool::new(false);
 /// Data structure that communicates information to ap boot assembly
 #[repr(C)]
 struct ApData {
-    /// Pointer to pml4 table used to boot aps
-    cr3: u32,
     /// Atomic counter used to assign ids to ap cores
     id_counter: AtomicU32,
+    padding: u32,
     /// Address to an array of stack pointers that the aps will use
     stacks: usize,
 }
 
 /// Initializes all other cpu cores
-pub fn smp_init(ap_apic_ids: &[u8], mut ap_init_addr_space: VirtAddrSpace) -> KResult<()> {
+pub fn smp_init(ap_apic_ids: &[u8]) -> KResult<()> {
     let num_aps = ap_apic_ids.len();
     eprintln!("booting {} ap cores...", num_aps);
 
@@ -168,20 +166,11 @@ pub fn smp_init(ap_apic_ids: &[u8], mut ap_init_addr_space: VirtAddrSpace) -> KR
         VirtAddr::new(consts::AP_CODE_DEST_RANGE.as_usize()),
         consts::AP_CODE_DEST_RANGE.size(),
     );
-    ap_init_addr_space.map_memory(
-        &[(
-            ap_trampoline_virt_map_range,
-            PhysAddr::new(*consts::AP_CODE_RUN_START),
-        )],
-        PageMappingFlags::READ | PageMappingFlags::WRITE | PageMappingFlags::EXEC,
-    )?;
 
     // set up ap data
     let ap_data_offset = *consts::AP_DATA - *consts::AP_CODE_RUN_START;
 	let ap_data = (ap_code_dest_virt_range.as_usize() + ap_data_offset) as *mut ApData;
 	let ap_data = unsafe { ap_data.as_mut().unwrap() };
-	// this lossy as cast is ok because ap addr space cr3 is guarenteed to be bellow 4 GiB
-	ap_data.cr3 = ap_init_addr_space.cr3_addr().as_usize() as u32;
 	ap_data.id_counter.store(1, Ordering::Release);
 
     let mut stacks = Vec::try_with_capacity(root_alloc_ref().downgrade(), num_aps)?;
@@ -209,11 +198,6 @@ pub fn smp_init(ap_apic_ids: &[u8], mut ap_init_addr_space: VirtAddrSpace) -> KR
 	}
 
 	APS_GO.store(true, Ordering::Release);
-
-    unsafe {
-        // safety: all aps would have initialized themselves and switched to the kernel address space by now
-        ap_init_addr_space.dealloc_addr_space();
-    }
 
     Ok(())
 }

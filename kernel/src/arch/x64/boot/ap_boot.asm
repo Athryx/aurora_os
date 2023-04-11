@@ -1,6 +1,7 @@
 global ap_data
 extern AP_START_DATA
 extern _ap_start
+extern PML4_table
 
 section .ap_text
 bits 16
@@ -11,9 +12,9 @@ ap_start:
 
 align 8
 ap_data:
-.cr3:
-	resd 1
 .id_counter:
+	resd 1
+.padding:
 	resd 1
 .stacks:
 	resq 1
@@ -30,7 +31,7 @@ align 32
 bits 32
 ap_32:
 ; put pml4 address in cr3
-	mov eax, [ap_data.cr3]
+	mov eax, PML4_table
 	mov cr3, eax
 
 ; enable pae bit

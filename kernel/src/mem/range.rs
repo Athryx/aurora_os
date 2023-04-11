@@ -30,6 +30,8 @@ pub enum PageSize {
 }
 
 impl PageSize {
+    pub const MAX_SIZE: u64 = PageSize::G1 as u64;
+
     pub fn from_u64(n: u64) -> Self {
         Self::from_usize(n as _)
     }

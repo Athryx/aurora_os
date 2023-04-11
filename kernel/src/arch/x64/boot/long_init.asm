@@ -32,13 +32,6 @@ higher_half_start:
 	add rsp, 4
 	add rdi, rax
 
-; unmap lower half
-	mov qword [PML4_table], 0
-
-; force tlb flush
-	mov rax, cr3
-	mov cr3, rax
-
 ; call rust entry point
 	call _start
 

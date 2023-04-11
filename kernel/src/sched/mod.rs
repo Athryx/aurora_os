@@ -240,9 +240,6 @@ pub fn switch_other_thread_to(thread_handle: *const ThreadHandle, state: ThreadS
 pub fn init(stack: AVirtRange) -> KResult<()> {
     let kernel_process = get_kernel_process();
 
-    // load kernel process address space
-    set_cr3(kernel_process.get_cr3());
-
     let (thread, thread_handle) = kernel_process.create_idle_thread(
         String::from_str(root_alloc_ref().downgrade(), "idle_thread")?,
         stack,

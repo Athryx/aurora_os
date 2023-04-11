@@ -188,8 +188,13 @@ impl PageTable {
 	}
 
 	/// Returns a pointer to the page table at the given index, or null if it doesn't exist
-	pub unsafe fn get(&mut self, index: usize) -> *mut PageTable {
+	pub fn get(&mut self, index: usize) -> *mut PageTable {
 		self.0[index].as_mut_ptr()
+	}
+
+	/// Returns a page table pointer to the table at the given index
+	pub fn get_page_table_pointer(&self, index: usize) -> PageTablePointer {
+		self.0[index]
 	}
 
 	pub fn get_or_alloc<'a>(

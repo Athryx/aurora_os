@@ -2,17 +2,15 @@
 
 use bitflags::bitflags;
 use lazy_static::lazy_static;
+use spin::Once;
 
-use crate::arch::x64::get_cr3;
 use crate::arch::x64::invlpg;
-use crate::arch::x64::set_cr3;
 use crate::cap::CapFlags;
+use crate::mem::PageSize;
 use crate::mem::PhysFrame;
 use crate::mem::VirtFrame;
 use crate::prelude::*;
 use crate::consts;
-use crate::sync::IMutex;
-use crate::sync::IMutexGuard;
 use crate::alloc::{PaRef, AllocRef};
 use page_table::{PageTable, PageTablePointer};
 
@@ -21,14 +19,12 @@ use self::page_table::PageTableFlags;
 mod page_table;
 
 lazy_static! {
-	static ref HIGHER_HALF_PAGE_POINTER: PageTablePointer = PageTablePointer::new(
-        *consts::KZONE_PAGE_TABLE_POINTER,
-        PageTableFlags::PRESENT | PageTableFlags::WRITABLE,
-    );
-    
     /// Most permissive page table flags used by parent tables
     static ref PARENT_FLAGS: PageTableFlags = PageTableFlags::PRESENT | PageTableFlags::WRITABLE | PageTableFlags::USER;
 }
+
+/// Cached page table pointer of kernel memory region
+static KERNEL_MEMORY_PAGE_POINTER: Once<PageTablePointer> = Once::new();
 
 bitflags! {
     /// Flags that represent properties of the memory we want to map
@@ -102,21 +98,18 @@ pub struct VirtAddrSpace {
 
 impl VirtAddrSpace {
     pub fn new(mut page_allocator: PaRef, alloc_ref: AllocRef) -> KResult<Self> {
-        let mut pml4_table = PageTable::new(page_allocator.allocator(), PageTableFlags::NONE)
+        let pml4_table = PageTable::new(page_allocator.allocator(), PageTableFlags::NONE)
             .ok_or(SysErr::OutOfMem)?;
 
-        unsafe {
-            pml4_table.as_mut_ptr()
-                .as_mut()
-                .unwrap()
-                .add_entry(511, *HIGHER_HALF_PAGE_POINTER);
-        }
-
-        Ok(VirtAddrSpace {
+        let mut out = VirtAddrSpace {
             mem_zones: Vec::new(alloc_ref),
             cr3: pml4_table,
             page_allocator,
-        })
+        };
+
+        out.initialize_kernel_mapping();
+
+        Ok(out)
     }
 
     /// Sets up the kernel memory mapping
@@ -127,8 +120,75 @@ impl VirtAddrSpace {
     /// The global flag will also be set because this mapping is shared between all processess
     /// 
     /// This is only sets up the mapping once, then the page table pointer is cached for future use
-    fn initialize_kernel_mapping(&mut self) -> KResult<()> {
-        Ok(())
+    fn initialize_kernel_mapping(&mut self) {
+        const FAIL_MESSAGE: &'static str = "Failed to initialize kernel memory page tables";
+
+        if let Some(page_table_pointer) = KERNEL_MEMORY_PAGE_POINTER.get() {
+            // safety: cr3 is not referenced anywhere else because we have a mutable reference to self
+            unsafe {
+                self.cr3.as_mut_ptr()
+                    .as_mut()
+                    .unwrap()
+                    .add_entry(511, *page_table_pointer);
+            }
+        } else {
+            let text_phys_addr = consts::TEXT_VIRT_RANGE.addr().to_phys();
+            self.map_memory_inner(
+                &[(*consts::TEXT_VIRT_RANGE, text_phys_addr)],
+                PageMappingFlags::READ | PageMappingFlags::EXEC,
+                true,
+            ).expect(FAIL_MESSAGE);
+
+            let rodata_phys_addr = consts::RODATA_VIRT_RANGE.addr().to_phys();
+            self.map_memory_inner(
+                &[(*consts::RODATA_VIRT_RANGE, rodata_phys_addr)],
+                PageMappingFlags::READ,
+                true,
+            ).expect(FAIL_MESSAGE);
+
+            // this is to fix an issue since the last address in KERNEL_VIRTUAL_MEMORY is 2^64 - 1,
+            // so end_addr() of KERNEL_VIRTUAL_MEMORY (which is called by split_at_iter) will cause an overflow
+            // we just reduce the size of KERNEL_VIRTUAL_MEMORY by the size of the largest frame,
+            // then map that one seperately
+            let max_frame_size = PageSize::MAX_SIZE as usize;
+            let mem_region = AVirtRange::new_aligned(
+                VirtAddr::new(*consts::KERNEL_VMA),
+                (usize::MAX - *consts::KERNEL_VMA) - 1 - max_frame_size,
+            );
+
+            let mem_iter = mem_region
+                .split_at_iter(*consts::TEXT_VIRT_RANGE)
+                .flat_map(|range| range.split_at_iter(*consts::RODATA_VIRT_RANGE));
+
+            for mem_range in mem_iter {
+                let mem_phys_addr = mem_range.addr().to_phys();
+                self.map_memory_inner(
+                    &[(mem_range, mem_phys_addr)],
+                    PageMappingFlags::READ | PageMappingFlags::WRITE,
+                    true,
+                ).expect(FAIL_MESSAGE);
+            }
+
+            // map the last frame
+            let last_phys_frame = PhysFrame::G1(PhysAddr::new(mem_region.size()));
+            let last_virt_frame = VirtFrame::G1(mem_region.end_addr());
+            self.map_frame(
+                last_virt_frame,
+                last_phys_frame,
+                PageMappingFlags::READ | PageMappingFlags::WRITE,
+                true,
+            ).expect(FAIL_MESSAGE);
+
+            // safety: cr3 is not referenced anywhere else because we have a mutable reference to self
+            let kernel_page_pointer = unsafe {
+                self.cr3.as_mut_ptr()
+                    .as_mut()
+                    .unwrap()
+                    .get_page_table_pointer(511)
+            };
+
+            KERNEL_MEMORY_PAGE_POINTER.call_once(|| kernel_page_pointer);
+        }
     }
 
     pub fn cr3_addr(&self) -> PhysAddr {
@@ -161,6 +221,20 @@ impl VirtAddrSpace {
 
         self.add_virt_addr_entries(memory)?;
 
+        self.map_memory_inner(memory, flags, false)
+    }
+
+    /// Same as map_memory but doesn't make the zones as in use
+    /// 
+    /// This is used when creating the kernel mappings
+    /// 
+    /// `global` specifies if the mapping should be global
+    fn map_memory_inner(
+        &mut self,
+        memory: &[(AVirtRange, PhysAddr)],
+        flags: PageMappingFlags,
+        global: bool,
+    ) -> KResult<()> {
         for (virt_range, phys_addr) in memory {
             let phys_range = APhysRange::new(*phys_addr, virt_range.size());
 
@@ -171,7 +245,7 @@ impl VirtAddrSpace {
 
             while let Some((phys_frame, virt_frame)) = frame_taker.take() {
                 // TODO: handle out of memory condition more elegantly
-                if let Err(error) = self.map_frame(virt_frame, phys_frame, flags) {
+                if let Err(error) = self.map_frame(virt_frame, phys_frame, flags, global) {
                     self.remove_virt_addr_entries(memory).unwrap();
 
                     self.unmap_internal(memory);
@@ -283,7 +357,7 @@ impl VirtAddrSpace {
         Ok(())
     }
 
-    fn map_frame(&mut self, virt_frame: VirtFrame, phys_frame: PhysFrame, flags: PageMappingFlags) -> KResult<()> {
+    fn map_frame(&mut self, virt_frame: VirtFrame, phys_frame: PhysFrame, flags: PageMappingFlags, global: bool) -> KResult<()> {
         let virt_addr = virt_frame.start_addr().as_usize();
         let page_table_indicies = [
             get_bits(virt_addr, 39..48),
@@ -298,6 +372,12 @@ impl VirtAddrSpace {
             VirtFrame::G1(_) => (2, PageTableFlags::HUGE),
         };
 
+        let global_flag = if global {
+            PageTableFlags::GLOBAL
+        } else {
+            PageTableFlags::NONE
+        };
+
         let mut page_table = unsafe {
             self.cr3.as_mut_ptr().as_mut().unwrap()
         };
@@ -306,7 +386,7 @@ impl VirtAddrSpace {
             let index = page_table_indicies[level];
 
             if level == depth - 1 {
-                let flags = PageTableFlags::PRESENT | huge_flag | flags.into();
+                let flags = PageTableFlags::PRESENT | huge_flag | global_flag | flags.into();
                 page_table.add_entry(index, PageTablePointer::new(phys_frame.start_addr(), flags));
             } else {
                 page_table = page_table
