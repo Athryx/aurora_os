@@ -77,6 +77,13 @@ impl CapId {
         CapId(flags.bits | ((is_weak as usize) << 4) | (cap_type.as_usize() << 5) | (base_id << 9))
     }
 
+    /// Creates a null capid with the given flags
+    /// 
+    /// Used when a capid has not yet been asigned to an object, but it has some specified flags
+    pub fn null_flags(flags: CapFlags, is_weak: bool) -> Self {
+        CapId(flags.bits | ((is_weak as usize) << 4))
+    }
+
     pub fn flags(&self) -> CapFlags {
         CapFlags::from_bits_truncate(self.0)
     }

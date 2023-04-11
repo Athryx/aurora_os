@@ -16,36 +16,47 @@ pub trait CapObject {
 #[derive(Debug)]
 pub struct StrongCapability<T: CapObject> {
     object: Arc<T>,
-    pub flags: CapFlags,
+    pub id: CapId,
 }
 
 impl<T: CapObject> StrongCapability<T> {
-    pub fn new(object: T, flags: CapFlags, allocer: OrigRef) -> KResult<Self> {
+    pub fn new(object: T, id: CapId, allocer: OrigRef) -> KResult<Self> {
         Ok(StrongCapability {
             object: Arc::new(object, allocer)?,
-            flags,
+            id,
         })
+    }
+
+    pub fn new_flags(object: T, flags: CapFlags, allocer: OrigRef) -> KResult<Self> {
+        Self::new(object, CapId::null_flags(flags, false), allocer)
     }
 
     pub fn inner(&self) -> &Arc<T> {
         &self.object
     }
 
-    pub fn and_from_flags(cap: &Self, flags: CapFlags) -> Self {
-        let mut out = cap.clone();
-        out.flags &= flags;
-        out
+    pub fn into_inner(self) -> Arc<T> {
+        self.object
+    }
+
+    pub fn object(&self) -> &T {
+        &self.object
+    }
+
+    pub fn flags(&self) -> CapFlags {
+        self.id.flags()
+    }
+
+    /// Returns true if this capability references a strong capability in the capability map
+    pub fn references_strong(&self) -> bool {
+        !self.id.is_weak()
     }
 
     pub fn downgrade(&self) -> WeakCapability<T> {
         WeakCapability {
             object: Arc::downgrade(&self.object),
-            flags: self.flags,
+            id: self.id,
         }
-    }
-
-    pub fn object(&self) -> &T {
-        &self.object
     }
 }
 
@@ -54,7 +65,7 @@ impl<T: CapObject> Clone for StrongCapability<T> {
     fn clone(&self) -> Self {
         StrongCapability {
             object: self.object.clone(),
-            flags: self.flags,
+            id: self.id,
         }
     }
 }
@@ -62,27 +73,27 @@ impl<T: CapObject> Clone for StrongCapability<T> {
 #[derive(Debug)]
 pub struct WeakCapability<T: CapObject> {
     object: Weak<T>,
-    pub flags: CapFlags,
+    pub id: CapId,
 }
 
 impl<T: CapObject> WeakCapability<T> {
-    // fails if memory has been dropped or cap refcount is 0
-    // NOTE: if do_refcount is false, this will succeeed if there is any arc pointing to the CapObject, even if there are no string capabilities
-    pub fn upgrade(&self) -> Option<StrongCapability<T>> {
-        Some(StrongCapability {
-            object: self.object.upgrade()?,
-            flags: self.flags,
-        })
-    }
-
     pub fn inner(&self) -> &Weak<T> {
         &self.object
     }
 
-    pub fn and_from_flags(cap: &Self, flags: CapFlags) -> Self {
-        let mut out: WeakCapability<T> = cap.clone();
-        out.flags &= flags;
-        out
+    pub fn into_inner(self) -> Weak<T> {
+        self.object
+    }
+
+    pub fn flags(&self) -> CapFlags {
+        self.id.flags()
+    }
+
+    pub fn upgrade(&self) -> Option<StrongCapability<T>> {
+        Some(StrongCapability {
+            object: self.object.upgrade()?,
+            id: self.id,
+        })
     }
 }
 
@@ -91,7 +102,7 @@ impl<T: CapObject> Clone for WeakCapability<T> {
     fn clone(&self) -> Self {
         WeakCapability {
             object: self.object.clone(),
-            flags: self.flags,
+            id: self.id,
         }
     }
 }
@@ -104,11 +115,22 @@ pub enum Capability<T: CapObject> {
 }
 
 impl<T: CapObject> Capability<T> {
-    pub fn flags(&self) -> CapFlags {
+    pub fn id(&self) -> CapId {
         match self {
-            Self::Strong(cap) => cap.flags,
-            Self::Weak(cap) => cap.flags,
+            Self::Strong(cap) => cap.id,
+            Self::Weak(cap) => cap.id,
         }
+    }
+
+    pub fn set_id(&mut self, id: CapId) {
+        match self {
+            Self::Strong(cap) => cap.id = id,
+            Self::Weak(cap) => cap.id = id,
+        }
+    }
+
+    pub fn flags(&self) -> CapFlags {
+        self.id().flags()
     }
 
     pub fn is_weak(&self) -> bool {
@@ -129,25 +151,23 @@ impl<T: CapObject> Clone for Capability<T> {
 /// From the userspace perspective, these capabilites act like normal capabilties, except the object is not dropped ever
 pub struct StaticCapability<T: CapObject + 'static> {
     object: &'static T,
-    pub flags: CapFlags,
+    pub id: CapId,
 }
 
 impl<T: CapObject + 'static> StaticCapability<T> {
-    pub fn new(object: &'static T, flags: CapFlags) -> Self {
+    pub fn new(object: &'static T, id: CapId) -> Self {
         Self {
             object,
-            flags,
+            id,
         }
-    }
-
-    pub fn and_from_flags(cap: &Self, flags: CapFlags) -> Self {
-        let mut out = *cap;
-        out.flags &= flags;
-        out
     }
 
     pub fn object(&self) -> &'static T {
         self.object
+    }
+
+    pub fn flags(&self) -> CapFlags {
+        self.id.flags()
     }
 }
 
@@ -155,7 +175,7 @@ impl<T: CapObject + 'static> Clone for StaticCapability<T> {
     fn clone(&self) -> Self {
         StaticCapability {
             object: self.object,
-            flags: self.flags,
+            id: self.id,
         }
     }
 }

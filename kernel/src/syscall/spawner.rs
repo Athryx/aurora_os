@@ -34,17 +34,19 @@ pub fn spawner_new(
     let current_process = cpu_local_data().current_process();
 
     let allocator = current_process.cap_map()
-        .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?;
+        .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?
+        .into_inner();
     let alloc_ref = OrigRef::from_arc(allocator);
 
     let spawn_key = current_process.cap_map()
-        .get_key_with_perms(spawn_key_id, CapFlags::READ, weak_auto_destroy)?;
+        .get_key_with_perms(spawn_key_id, CapFlags::READ, weak_auto_destroy)?
+        .into_inner();
 
     if Spawner::key_id() != spawn_key.id() {
         return Err(SysErr::InvlArgs);
     }
 
-    let spawner = StrongCapability::new(
+    let spawner = StrongCapability::new_flags(
         Spawner::new(alloc_ref.downgrade()),
         spawner_cap_flags,
         alloc_ref,
@@ -66,6 +68,7 @@ pub fn spawner_kill_all(options: u32, spawner_id: usize) -> KResult<()> {
         .current_process()
         .cap_map()
         .get_spawner_with_perms(spawner_id, CapFlags::WRITE, weak_auto_destroy)?
+        .into_inner()
         .kill_all_processes();
 
     if let Some(current_process) = current_process {

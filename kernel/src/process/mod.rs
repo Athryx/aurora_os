@@ -4,6 +4,7 @@ use core::slice;
 use spin::Once;
 
 use crate::arch::x64::{asm_thread_init, IntDisable};
+use crate::cap::memory::Memory;
 use crate::container::{Arc, Weak, HashMap};
 use crate::int::IPI_PROCESS_EXIT;
 use crate::int::apic::{Ipi, IpiDest};
@@ -70,7 +71,7 @@ impl Process {
     pub fn new(page_allocator: PaRef, allocer: OrigRef, name: String) -> KResult<WeakCapability<Self>> {
         let addr_space = VirtAddrSpace::new(page_allocator.clone(), allocer.downgrade())?;
 
-        let strong_cap = StrongCapability::new(
+        let strong_cap = StrongCapability::new_flags(
             Process {
                 name,
                 page_allocator: page_allocator,
@@ -281,10 +282,11 @@ impl Process {
         }
     }
 
-    /// Maps the memory specified by the given capid at the given virtual address
+    /// Maps the memory specified by the given capability at the given virtual address
     /// 
-    /// `memory_cap_id` must reference a capability already present in this process
     /// returns the size in pages of the memory that was mapped
+    /// 
+    /// `memory` must reference a strong capability
     /// 
     /// `flags` specifies the read, write, and execute permissions, but the memory is always mapped as user
     /// Returns invalid args if not bits in falgs are set
@@ -292,82 +294,100 @@ impl Process {
     /// # Locking
     /// 
     /// acquires `addr_space_data` lock
-    pub fn map_memory(&self, memory_cap_id: CapId, addr: VirtAddr, flags: PageMappingFlags) -> KResult<usize> {
-        let memory = self.cap_map.get_memory(memory_cap_id)?;
+    pub fn map_memory(&self, memory: StrongCapability<Memory>, addr: VirtAddr, flags: PageMappingFlags) -> KResult<usize> {
+        assert!(memory.references_strong());
 
         let mut addr_space_data = self.addr_space_data.lock();
 
-        if let Capability::Strong(memory) = memory {
-            if addr_space_data.mapped_memory_capabilities.get(&memory_cap_id).is_some() {
-                // memory is already mapped
-                return Err(SysErr::InvlOp);
-            }
+        if addr_space_data.mapped_memory_capabilities.get(&memory.id).is_some() {
+            // memory is already mapped
+            return Err(SysErr::InvlOp);
+        }
 
-            let mut memory_inner = memory.object().inner();
+        let mut memory_inner = memory.object().inner();
 
-            let mem_virt_range = AVirtRange::try_new_aligned(
-                addr,
-                memory_inner.size(),
-            ).ok_or(SysErr::InvlAlign)?;
+        let mem_virt_range = AVirtRange::try_new_aligned(
+            addr,
+            memory_inner.size(),
+        ).ok_or(SysErr::InvlAlign)?;
 
-            addr_space_data.mapped_memory_capabilities.insert(memory_cap_id, addr)?;
+        addr_space_data.mapped_memory_capabilities.insert(memory.id, addr)?;
 
-            let map_result = addr_space_data.addr_space.map_memory(
-                &[(mem_virt_range, memory_inner.phys_addr())],
-                flags | PageMappingFlags::USER,
-            );
+        let map_result = addr_space_data.addr_space.map_memory(
+            &[(mem_virt_range, memory_inner.phys_addr())],
+            flags | PageMappingFlags::USER,
+        );
 
-            if let Err(error) = map_result {
-                // if mapping failed, remove entry from mapped_memory_capabilities
-                addr_space_data.mapped_memory_capabilities.remove(&memory_cap_id);
+        if let Err(error) = map_result {
+            // if mapping failed, remove entry from mapped_memory_capabilities
+            addr_space_data.mapped_memory_capabilities.remove(&memory.id);
 
-                Err(error)
-            } else {
-                memory_inner.map_ref_count += 1;
-
-                Ok(memory_inner.size_pages())
-            }
+            Err(error)
         } else {
-            Err(SysErr::InvlWeak)
+            memory_inner.map_ref_count += 1;
+
+            Ok(memory_inner.size_pages())
         }
     }
 
-    /// Unmaps the memory specified by the given capid if it was already mapped with [`map_memory`]
-    /// 
-    /// `memory_cap_id` must reference a capability already present in this process
+    /// Unmaps the memory specified by the given capability if it was already mapped with [`map_memory`]
     /// 
     /// # Locking
     /// 
     /// acquires `addr_space_data` lock
-    pub fn unmap_memory(&self, memory_cap_id: CapId) -> KResult<()> {
-        let memory = self.cap_map.get_memory(memory_cap_id)?;
+    /// acquires the `inner` lock on the memory capability
+    pub fn unmap_memory(&self, memory: StrongCapability<Memory>) -> KResult<()> {
+        assert!(memory.references_strong());
 
         let mut addr_space_data = self.addr_space_data.lock();
+        let mut memory_inner = memory.object().inner();
 
-        if let Capability::Strong(memory) = memory {
-            if let Some(map_addr) = addr_space_data.mapped_memory_capabilities.get(&memory_cap_id) {
-                let mut memory_inner = memory.object().inner();
+        if let Some(map_addr) = addr_space_data.mapped_memory_capabilities.get(&memory.id) {
+            let mem_virt_range = AVirtRange::try_new_aligned(
+                *map_addr,
+                memory_inner.size(),
+            ).ok_or(SysErr::InvlAlign)?;
 
-                let mem_virt_range = AVirtRange::try_new_aligned(
-                    *map_addr,
-                    memory_inner.size(),
-                ).ok_or(SysErr::InvlAlign)?;
+            // this should not fail because we ensore that memory was already mapped
+            addr_space_data.addr_space.unmap_memory(&[(mem_virt_range, memory_inner.phys_addr())])
+                .expect("failed to unmap memory that should have been mapped");
 
-                // this should not fail because we ensore that memory was already mapped
-                addr_space_data.addr_space.unmap_memory(&[(mem_virt_range, memory_inner.phys_addr())])
-                    .expect("failed to unmap memory that should have been mapped");
+            addr_space_data.mapped_memory_capabilities.remove(&memory.id);
 
-                addr_space_data.mapped_memory_capabilities.remove(&memory_cap_id);
+            memory_inner.map_ref_count -= 1;
 
-                memory_inner.map_ref_count -= 1;
-
-                Ok(())
-            } else {
-                // memory was not yet mapped
-                Err(SysErr::InvlOp)
-            }
+            Ok(())
         } else {
-            Err(SysErr::InvlWeak)
+            // memory was not yet mapped
+            Err(SysErr::InvlOp)
+        }
+    }
+
+    /// Resizes the specified memory capability specified by `memory` to be the size of `new_size_pages`
+    /// 
+    /// If `resize_in_place` is true, the memory can be resized even if it is currently mapped
+    /// 
+    /// # Locking
+    /// 
+    /// acquires `addr_space_data` lock
+    /// acquires the `inner` lock on the memory capability
+    pub fn resize_memory(&self, memory: StrongCapability<Memory>, new_page_size: usize, resize_in_place: bool) -> KResult<()> {
+        let mut addr_space_data = self.addr_space_data.lock();
+        let mut memory_inner = memory.object().inner();
+
+        if memory_inner.size_pages() == new_page_size {
+            return Ok(());
+        }
+
+        if memory_inner.map_ref_count == 0 {
+            // Safety: map ref count is checked to be 0
+            unsafe {
+                memory_inner.resize(new_page_size)
+            }
+        } else if resize_in_place && memory_inner.map_ref_count == 1 {
+            Err(SysErr::InvlOp)
+        } else {
+            Err(SysErr::InvlOp)
         }
     }
 }

@@ -1,3 +1,5 @@
+use sys::CapId;
+
 use crate::{prelude::*,
     cap::{CapFlags, Capability},
     arch::x64::IntDisable,
@@ -16,7 +18,7 @@ use super::options_weak_autodestroy;
 /// the process is not freed when all weak references are destroyed
 ///
 /// # Options
-/// bits 0-3 (process_cap_flags): CapPriv representing read, prod, and write privalidges of new capability
+/// bits 0-2 (process_cap_flags): CapPriv representing read, prod, and write privalidges of new capability
 ///
 /// # Required Capability Permissions:
 /// `allocator`: cap_prod
@@ -27,17 +29,19 @@ use super::options_weak_autodestroy;
 // TODO: process name
 pub fn process_new(options: u32, allocator_id: usize, spawner_id: usize) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
-    let process_cap_flags = CapFlags::from_bits_truncate(get_bits(options as usize, 0..4));
+    let process_cap_flags = CapFlags::from_bits_truncate(get_bits(options as usize, 0..2));
 
     let _int_disable = IntDisable::new();
 
     let current_process = cpu_local_data().current_process();
 
     let allocator = current_process.cap_map()
-        .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?;
+        .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?
+        .into_inner();
 
     let spawner = current_process.cap_map()
-        .get_spawner_with_perms(spawner_id, CapFlags::PROD, weak_auto_destroy)?;
+        .get_spawner_with_perms(spawner_id, CapFlags::PROD, weak_auto_destroy)?
+        .into_inner();
 
     let page_allocator = PaRef::from_arc(allocator.clone());
     let heap_allocator = OrigRef::from_arc(allocator);
@@ -50,7 +54,7 @@ pub fn process_new(options: u32, allocator_id: usize, spawner_id: usize) -> KRes
         name,
     )?;
 
-    new_process.flags = process_cap_flags;
+    new_process.id = CapId::null_flags(process_cap_flags, true);
 
     spawner.add_process(new_process.inner().clone())?;
 
@@ -69,7 +73,8 @@ pub fn process_exit(options: u32, process_id: usize) -> KResult<()> {
     let process = cpu_local_data()
         .current_process()
         .cap_map()
-        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?;
+        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?
+        .into_inner();
 
     // no other object references are held, safe to call
     Process::exit(process);
@@ -117,7 +122,8 @@ pub fn thread_new(
     let process = cpu_local_data()
         .current_process()
         .cap_map()
-        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?;
+        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?
+        .into_inner();
 
     let thread_start_mode = if get_bits(options as usize, 0..1) == 1 {
         ThreadStartMode::Ready

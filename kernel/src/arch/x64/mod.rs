@@ -328,7 +328,7 @@ pub fn gs_addr() -> usize {
 
 /// Sets various miscalaneous cpu settings in control registers
 pub fn config_cpu_settings() {
-    // FIXME: set UMIP and SMEP
+    // FIXME: set UMIP, SMEP, and SMAP
     // find out why setting these completely breaks things for some reason
 
     // enable global bit in page tables

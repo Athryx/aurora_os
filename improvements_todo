@@ -3,4 +3,11 @@ it is unnecassarily generic even though there will only be 1 allocator
 
 Also improve the kernel heap allocator, it is very bad
 
+add guard pages at the end of kernel stacks
+
 remove all unbound and fix linked list, remove as much unsafe as possible
+
+change to use relative call instructions instead of absolute call with register
+
+document old code
+run auto formatter

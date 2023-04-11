@@ -1,7 +1,7 @@
 #!/bin/sh
 
 IMG="disk.img"
-SUBDIRS="kernel userland"
+SUBDIRS="kernel"
 KERNEL="kernel/kernel.bin"
 INITRD="userland/initrd"
 

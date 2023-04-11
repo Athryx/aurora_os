@@ -30,11 +30,12 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<us
     let current_process = cpu_local_data().current_process();
 
     let allocator = current_process.cap_map()
-        .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?;
+        .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?
+        .into_inner();
     let page_allocator = PaRef::from_arc(allocator.clone());
     let heap_allocator = OrigRef::from_arc(allocator);
 
-    let memory = StrongCapability::new(
+    let memory = StrongCapability::new_flags(
         Memory::new(page_allocator, pages)?,
         mem_cap_flags,
         heap_allocator,
@@ -78,14 +79,6 @@ pub fn memory_map(
 ) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
     let addr = VirtAddr::try_new(addr).ok_or(SysErr::InvlVirtAddr)?;
-    let memory_cap_id = CapId::try_from(memory_id).ok_or(SysErr::InvlId)?;
-
-    let _int_disable = IntDisable::new();
-
-    let process = cpu_local_data()
-        .current_process()
-        .cap_map()
-        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?;
 
     let map_flags = PageMappingFlags::from_bits_truncate((options & 0b111) as usize);
 
@@ -97,11 +90,18 @@ pub fn memory_map(
         required_cap_flags |= CapFlags::WRITE;
     }
 
-    if !memory_cap_id.flags().contains(required_cap_flags) {
-        return Err(SysErr::InvlPerm);
-    }
+    let _int_disable = IntDisable::new();
 
-    process.map_memory(memory_cap_id, addr, map_flags)
+    let process = cpu_local_data()
+        .current_process()
+        .cap_map()
+        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?
+        .into_inner();
+
+    let memory = process.cap_map()
+        .get_strong_memory_with_perms(memory_id, required_cap_flags)?;
+
+    process.map_memory(memory, addr, map_flags)
 }
 
 /// Unmaps memory mapped by [`memory_map`]
@@ -122,27 +122,34 @@ pub fn memory_unmap(
     memory_id: usize,
 ) -> KResult<()> {
     let weak_auto_destroy = options_weak_autodestroy(options);
-    let memory_cap_id = CapId::try_from(memory_id).ok_or(SysErr::InvlId)?;
 
     let _int_disable = IntDisable::new();
 
     let process = cpu_local_data()
         .current_process()
         .cap_map()
-        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?;
+        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?
+        .into_inner();
 
-    process.unmap_memory(memory_cap_id)
+    let memory = process.cap_map()
+        .get_strong_memory_with_perms(memory_id, CapFlags::empty())?;
+
+    process.unmap_memory(memory)
 }
 
 /// Resizes the memory capability referenced by `memory`
 /// 
-/// `memory` must not be mapped anywhere in memory
+/// `memory` must not be mapped anywhere in memory, unless `mem_resize_in_place` is set
+/// 
+/// # Options
+/// bit 0 (mem_resize_in_place): allows the memory to be resived even if it is mapped in memory
+/// as long as the only capability for which it is mappe in memory is `memory`
 /// 
 /// # Required Capability Permissions
 /// `memory`: cap_prod
 /// 
 /// # Syserr Code
-/// InvlOp: `memory` is mapped into memory somewhere
+/// InvlOp: `memory` is mapped into memory somewhere when it shouldn't be
 /// InvlArgs: `new_page_size` is 0
 pub fn memory_resize(
     options: u32,
@@ -150,22 +157,19 @@ pub fn memory_resize(
     new_page_size: usize,
 ) -> KResult<()> {
     let weak_auto_destroy = options_weak_autodestroy(options);
+    let resize_in_place = get_bits(options as usize, 0..1) != 0;
+    let memory_cap_id = CapId::try_from(memory_id).ok_or(SysErr::InvlId)?;
+
+    if !memory_cap_id.flags().contains(CapFlags::PROD) {
+        return Err(SysErr::InvlPerm);
+    }
 
     let _int_disable = IntDisable::new();
 
-    let memory = cpu_local_data()
-        .current_process()
-        .cap_map()
+    let current_process = cpu_local_data().current_process();
+
+    let memory = current_process.cap_map()
         .get_memory_with_perms(memory_id, CapFlags::PROD, weak_auto_destroy)?;
 
-    let mut memory_inner = memory.inner();
-
-    if memory_inner.map_ref_count == 0 {
-        // Safety: map ref count is checked to be 0
-        unsafe {
-            memory_inner.resize(new_page_size)
-        }
-    } else {
-        Err(SysErr::InvlOp)
-    }
+    current_process.resize_memory(memory, new_page_size, resize_in_place)
 }

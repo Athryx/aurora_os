@@ -26,10 +26,11 @@ pub fn key_new(options: u32, allocator_id: usize) -> KResult<usize> {
     let current_process = cpu_local_data().current_process();
 
     let allocator = current_process.cap_map()
-        .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?;
+        .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?
+        .into_inner();
     let alloc_ref = OrigRef::from_arc(allocator);
 
-    let key = StrongCapability::new(
+    let key = StrongCapability::new_flags(
         Key::new(),
         key_cap_flags,
         alloc_ref,
@@ -54,5 +55,6 @@ pub fn key_id(options: u32, key_cap_id: usize) -> KResult<usize> {
         .current_process()
         .cap_map()
         .get_key_with_perms(key_cap_id, CapFlags::READ, weak_auto_destroy)?
+        .into_inner()
         .id() as usize)
 }
