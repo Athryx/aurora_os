@@ -314,7 +314,8 @@ impl Process {
         addr_space_data.mapped_memory_capabilities.insert(memory.id, addr)?;
 
         let map_result = addr_space_data.addr_space.map_memory(
-            &[(mem_virt_range, memory_inner.phys_addr())],
+            mem_virt_range,
+            memory_inner.phys_addr(),
             flags | PageMappingFlags::USER,
         );
 
@@ -349,7 +350,7 @@ impl Process {
             ).ok_or(SysErr::InvlAlign)?;
 
             // this should not fail because we ensore that memory was already mapped
-            addr_space_data.addr_space.unmap_memory(&[(mem_virt_range, memory_inner.phys_addr())])
+            addr_space_data.addr_space.unmap_memory(mem_virt_range)
                 .expect("failed to unmap memory that should have been mapped");
 
             addr_space_data.mapped_memory_capabilities.remove(&memory.id);

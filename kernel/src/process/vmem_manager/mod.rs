@@ -89,7 +89,7 @@ impl PageMappingTaker {
 pub struct VirtAddrSpace {
     /// All virtual memory which is currently in use
     // TODO: write btreemap for this, it will be faster with many zones
-    mem_zones: Vec<AVirtRange>,
+    mem_zones: Vec<(AVirtRange, PhysAddr)>,
     /// Page table pointer which will go in the cr3 register, it points to the pml4 table
     cr3: PageTablePointer,
     /// Page allocator used to allocate page frames for page tables
@@ -134,14 +134,16 @@ impl VirtAddrSpace {
         } else {
             let text_phys_addr = consts::TEXT_VIRT_RANGE.addr().to_phys();
             self.map_memory_inner(
-                &[(*consts::TEXT_VIRT_RANGE, text_phys_addr)],
+                *consts::TEXT_VIRT_RANGE,
+                text_phys_addr,
                 PageMappingFlags::READ | PageMappingFlags::EXEC,
                 true,
             ).expect(FAIL_MESSAGE);
 
             let rodata_phys_addr = consts::RODATA_VIRT_RANGE.addr().to_phys();
             self.map_memory_inner(
-                &[(*consts::RODATA_VIRT_RANGE, rodata_phys_addr)],
+                *consts::RODATA_VIRT_RANGE,
+                rodata_phys_addr,
                 PageMappingFlags::READ,
                 true,
             ).expect(FAIL_MESSAGE);
@@ -163,7 +165,8 @@ impl VirtAddrSpace {
             for mem_range in mem_iter {
                 let mem_phys_addr = mem_range.addr().to_phys();
                 self.map_memory_inner(
-                    &[(mem_range, mem_phys_addr)],
+                    mem_range,
+                    mem_phys_addr,
                     PageMappingFlags::READ | PageMappingFlags::WRITE,
                     true,
                 ).expect(FAIL_MESSAGE);
@@ -214,48 +217,51 @@ impl VirtAddrSpace {
     /// If any one of the memeory regions fails, none will be mapped
     /// 
     /// Will return InvlArgs if `flags` does not specify either read, write, or execute
-    pub fn map_memory(&mut self, memory: &[(AVirtRange, PhysAddr)], flags: PageMappingFlags) -> KResult<()> {
+    pub fn map_memory(&mut self, virt_range: AVirtRange, phys_addr: PhysAddr, flags: PageMappingFlags) -> KResult<()> {
         if !flags.exists() {
             return Err(SysErr::InvlArgs);
         }
 
-        self.add_virt_addr_entries(memory)?;
+        self.add_virt_addr_entry(virt_range, phys_addr)?;
 
-        self.map_memory_inner(memory, flags, false)
+        let result = self.map_memory_inner(virt_range, phys_addr, flags, false);
+
+        if result.is_err() {
+            self.remove_virt_addr_entry(virt_range).unwrap();
+        }
+
+        result
     }
 
-    /// Same as map_memory but doesn't make the zones as in use
+    /// Same as [`map_memory`] but doesn't make the zones as in use
     /// 
     /// This is used when creating the kernel mappings
     /// 
     /// `global` specifies if the mapping should be global
     fn map_memory_inner(
         &mut self,
-        memory: &[(AVirtRange, PhysAddr)],
+        virt_range: AVirtRange,
+        phys_addr: PhysAddr,
         flags: PageMappingFlags,
         global: bool,
     ) -> KResult<()> {
-        for (virt_range, phys_addr) in memory {
-            let phys_range = APhysRange::new(*phys_addr, virt_range.size());
+        let phys_range = APhysRange::new(phys_addr, virt_range.size());
 
-            let mut frame_taker = PageMappingTaker {
-                virt_range: *virt_range,
-                phys_range,
-            };
+        let mut frame_taker = PageMappingTaker {
+            virt_range,
+            phys_range,
+        };
 
-            while let Some((phys_frame, virt_frame)) = frame_taker.take() {
-                // TODO: handle out of memory condition more elegantly
-                if let Err(error) = self.map_frame(virt_frame, phys_frame, flags, global) {
-                    self.remove_virt_addr_entries(memory).unwrap();
+        while let Some((phys_frame, virt_frame)) = frame_taker.take() {
+            // TODO: handle out of memory condition more elegantly
+            if let Err(error) = self.map_frame(virt_frame, phys_frame, flags, global) {
+                self.unmap_memory_inner(virt_range, phys_addr);
 
-                    self.unmap_internal(memory);
-
-                    return Err(error);
-                }
-
-                // TODO: check if address space is loaded
-                invlpg(virt_frame.start_addr().as_usize());
+                return Err(error);
             }
+
+            // TODO: check if address space is loaded
+            invlpg(virt_frame.start_addr().as_usize());
         }
 
         Ok(())
@@ -267,12 +273,29 @@ impl VirtAddrSpace {
     /// 
     /// If any one of the memeory regions fails, none will be unmapped
     // FIXME: don't require phys addr to be passed in
-    pub fn unmap_memory(&mut self, memory: &[(AVirtRange, PhysAddr)]) -> KResult<()> {
-        self.remove_virt_addr_entries(memory)?;
+    pub fn unmap_memory(&mut self, virt_range: AVirtRange) -> KResult<()> {
+        let phys_addr = self.remove_virt_addr_entry(virt_range)?;
 
-        self.unmap_internal(memory);
+        self.unmap_memory_inner(virt_range, phys_addr);
 
         Ok(())
+    }
+
+    /// Same as [`unmap_memory`] but it doesn't modify the virtual adress entries
+    fn unmap_memory_inner(&mut self, virt_range: AVirtRange, phys_addr: PhysAddr) {
+        let phys_range = APhysRange::new(phys_addr, virt_range.size());
+
+        let mut frame_taker = PageMappingTaker {
+            virt_range,
+            phys_range,
+        };
+
+        while let Some((_, virt_frame)) = frame_taker.take() {
+            self.unmap_frame(virt_frame);
+
+            // TODO: check if address space is loaded
+            invlpg(virt_frame.start_addr().as_usize());
+        }
     }
 
     /// Returns Some(index) if the given virt range in the virtual address space is not occupied
@@ -284,12 +307,12 @@ impl VirtAddrSpace {
             return None;
         }
 
-        match self.mem_zones.binary_search_by_key(&virt_range.addr(), AVirtRange::addr) {
+        match self.mem_zones.binary_search_by_key(&virt_range.addr(), |(virt_range, _)| virt_range.addr()) {
             // If we find the address it is occupied
             Ok(_) => None,
             Err(index) => {
-                if (index == 0 || self.mem_zones[index - 1].end_addr() <= virt_range.addr())
-                    && (index == self.mem_zones.len() || virt_range.end_addr() <= self.mem_zones[index].addr()) {
+                if (index == 0 || self.mem_zones[index - 1].0.end_addr() <= virt_range.addr())
+                    && (index == self.mem_zones.len() || virt_range.end_addr() <= self.mem_zones[index].0.addr()) {
                     Some(index)
                 } else {
                     None
@@ -298,63 +321,21 @@ impl VirtAddrSpace {
         }
     }
 
-    // this takes in a slice with the phys addrs as well because that is what map_memory takes in
-    fn add_virt_addr_entries(&mut self, memory: &[(AVirtRange, PhysAddr)]) -> KResult<()> {
-        // this vector stores indexes where new mem zones were inserted
-        // if there is a conflict, we can backtrack and remove all the prevoius ones that were inserted
-        let mut new_mem_indexes = Vec::new(self.mem_zones.alloc_ref());
-
-        let mut inserted_count = 0;
-
-        let _: Option<()> = try {
-            for (virt_range, _) in memory {
-                let index = self.virt_range_unoccupied(*virt_range)?;
-                new_mem_indexes.push(index).ok()?;
-                self.mem_zones.insert(index, *virt_range).ok()?;
-
-                inserted_count += 1;
-            }
-
-            return Ok(());
-        };
-
-        // if we exit the try block adding the new ranges failed, we have to undo the operation
-
-        // if the inserted count is less, it means the last operation failed when inserting into the mem_zones vector,
-        // so we just ignore the last indes in new_mem_indexes
-        if inserted_count < new_mem_indexes.len() {
-            new_mem_indexes.pop();
-        }
-
-        for index in new_mem_indexes.iter().rev() {
-            self.mem_zones.remove(*index);
-        }
-
-        Err(SysErr::InvlMemZone)
+    /// Marks the virt_range as mapped to phys_addr, so no future mappings will overwrite this data
+    fn add_virt_addr_entry(&mut self, virt_range: AVirtRange, phys_addr: PhysAddr,) -> KResult<()> {
+        let index = self.virt_range_unoccupied(virt_range).ok_or(SysErr::InvlMemZone)?;
+        self.mem_zones.insert(index, (virt_range, phys_addr)).or(Err(SysErr::OutOfMem))
     }
 
-    fn remove_virt_addr_entries(&mut self, memory: &[(AVirtRange, PhysAddr)]) -> KResult<()> {
-        // TODO: figure out if this atomic removing is even necessary, we might not need 2 passess
+    /// No longer marks the given virt_range as mapped
+    /// 
+    /// Returns the physical address the the range's mapping started at
+    fn remove_virt_addr_entry(&mut self, virt_range: AVirtRange) -> KResult<PhysAddr> {
+        let index = self.mem_zones
+            .binary_search_by_key(&virt_range.addr(), |(virt_range, _)| virt_range.addr())
+            .map_err(|_| SysErr::InvlMemZone)?;
 
-        for (virt_range, _) in memory {
-            let index = self.mem_zones
-                .binary_search_by_key(&virt_range.addr(), AVirtRange::addr)
-                .map_err(|_| SysErr::InvlMemZone)?;
-            
-            if self.mem_zones[index] != *virt_range {
-                return Err(SysErr::InvlMemZone);
-            }
-        }
-
-        for (virt_range, _) in memory {
-            let index = self.mem_zones
-                .binary_search_by_key(&virt_range.addr(), AVirtRange::addr)
-                .map_err(|_| SysErr::InvlMemZone)?;
-            
-            self.mem_zones.remove(index);
-        }
-
-        Ok(())
+        Ok(self.mem_zones.remove(index).1)
     }
 
     fn map_frame(&mut self, virt_frame: VirtFrame, phys_frame: PhysFrame, flags: PageMappingFlags, global: bool) -> KResult<()> {
@@ -458,24 +439,6 @@ impl VirtAddrSpace {
                 } else {
                     break;
                 }
-            }
-        }
-    }
-
-    fn unmap_internal(&mut self, memory: &[(AVirtRange, PhysAddr)]) {
-        for (virt_range, phys_addr) in memory {
-            let phys_range = APhysRange::new(*phys_addr, virt_range.size());
-
-            let mut frame_taker = PageMappingTaker {
-                virt_range: *virt_range,
-                phys_range,
-            };
-
-            while let Some((_, virt_frame)) = frame_taker.take() {
-                self.unmap_frame(virt_frame);
-
-                // TODO: check if address space is loaded
-                invlpg(virt_frame.start_addr().as_usize());
             }
         }
     }
