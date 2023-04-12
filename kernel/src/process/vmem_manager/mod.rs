@@ -84,12 +84,20 @@ impl PageMappingTaker {
     }
 }
 
+/// Represents a memory zone that has been mapped in the page tables
+#[derive(Debug)]
+struct MappedZone {
+    virt_range: AVirtRange,
+    phys_addr: PhysAddr,
+    mapping_flags: PageMappingFlags,
+}
+
 /// This represents a virtual address space that can have memory mapped into it
 #[derive(Debug)]
 pub struct VirtAddrSpace {
-    /// All virtual memory which is currently in use
+    /// All virtual memory which is currently mapped
     // TODO: write btreemap for this, it will be faster with many zones
-    mem_zones: Vec<(AVirtRange, PhysAddr)>,
+    mem_zones: Vec<MappedZone>,
     /// Page table pointer which will go in the cr3 register, it points to the pml4 table
     cr3: PageTablePointer,
     /// Page allocator used to allocate page frames for page tables
@@ -222,7 +230,7 @@ impl VirtAddrSpace {
             return Err(SysErr::InvlArgs);
         }
 
-        self.add_virt_addr_entry(virt_range, phys_addr)?;
+        self.add_virt_addr_entry(virt_range, phys_addr, flags)?;
 
         let result = self.map_memory_inner(virt_range, phys_addr, flags, false);
 
@@ -267,12 +275,21 @@ impl VirtAddrSpace {
         Ok(())
     }
 
+    /// Resizes the memory mapping starting at the addres of `new_mapping_range`
+    /// to have the size of `new_mapping_range`
+    pub fn resize_mapping(&mut self, new_mapping_range: AVirtRange) -> KResult<()> {
+        let mapping_index = self.get_mapped_range_by_addr(new_mapping_range.addr())
+            .ok_or(SysErr::InvlMemZone)?;
+
+        let old_size = self.mem_zones[mapping_index].virt_range.size();
+        let new_size = new_mapping_range.size();
+    }
+
     /// Unmaps all the virtual memory ranges in the slice
     /// 
     /// Phys addr must be the same memory it was mapped with
     /// 
     /// If any one of the memeory regions fails, none will be unmapped
-    // FIXME: don't require phys addr to be passed in
     pub fn unmap_memory(&mut self, virt_range: AVirtRange) -> KResult<()> {
         let phys_addr = self.remove_virt_addr_entry(virt_range)?;
 
@@ -307,12 +324,12 @@ impl VirtAddrSpace {
             return None;
         }
 
-        match self.mem_zones.binary_search_by_key(&virt_range.addr(), |(virt_range, _)| virt_range.addr()) {
+        match self.mem_zones.binary_search_by_key(&virt_range.addr(), |mapping| mapping.virt_range.addr()) {
             // If we find the address it is occupied
             Ok(_) => None,
             Err(index) => {
-                if (index == 0 || self.mem_zones[index - 1].0.end_addr() <= virt_range.addr())
-                    && (index == self.mem_zones.len() || virt_range.end_addr() <= self.mem_zones[index].0.addr()) {
+                if (index == 0 || self.mem_zones[index - 1].virt_range.end_addr() <= virt_range.addr())
+                    && (index == self.mem_zones.len() || virt_range.end_addr() <= self.mem_zones[index].virt_range.addr()) {
                     Some(index)
                 } else {
                     None
@@ -321,21 +338,39 @@ impl VirtAddrSpace {
         }
     }
 
+    /// Returns the index of the mapped range that starts at the give address, or none if no such range exists
+    fn get_mapped_range_by_addr(&self, virt_addr: VirtAddr) -> Option<usize> {
+        self.mem_zones
+            .binary_search_by_key(&virt_addr, |mapping| mapping.virt_range.addr())
+            .ok()
+    }
+
     /// Marks the virt_range as mapped to phys_addr, so no future mappings will overwrite this data
-    fn add_virt_addr_entry(&mut self, virt_range: AVirtRange, phys_addr: PhysAddr,) -> KResult<()> {
+    fn add_virt_addr_entry(
+        &mut self,
+        virt_range: AVirtRange,
+        phys_addr: PhysAddr,
+        mapping_flags: PageMappingFlags,
+    ) -> KResult<()> {
         let index = self.virt_range_unoccupied(virt_range).ok_or(SysErr::InvlMemZone)?;
-        self.mem_zones.insert(index, (virt_range, phys_addr)).or(Err(SysErr::OutOfMem))
+        
+        let new_mapping = MappedZone {
+            virt_range,
+            phys_addr,
+            mapping_flags,
+        };
+
+        self.mem_zones.insert(index, new_mapping).or(Err(SysErr::OutOfMem))
     }
 
     /// No longer marks the given virt_range as mapped
     /// 
     /// Returns the physical address the the range's mapping started at
     fn remove_virt_addr_entry(&mut self, virt_range: AVirtRange) -> KResult<PhysAddr> {
-        let index = self.mem_zones
-            .binary_search_by_key(&virt_range.addr(), |(virt_range, _)| virt_range.addr())
-            .map_err(|_| SysErr::InvlMemZone)?;
+        let index = self.get_mapped_range_by_addr(virt_range.addr())
+            .ok_or(SysErr::InvlMemZone)?;
 
-        Ok(self.mem_zones.remove(index).1)
+        Ok(self.mem_zones.remove(index).phys_addr)
     }
 
     fn map_frame(&mut self, virt_frame: VirtFrame, phys_frame: PhysFrame, flags: PageMappingFlags, global: bool) -> KResult<()> {
