@@ -69,7 +69,7 @@ macro_rules! impl_addr_range {
         $unaligned_range:ident,
         $iter:ident
     ) => {
-        #[derive(Debug, Clone, Copy)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum $frame {
             K4($addr),
             M2($addr),

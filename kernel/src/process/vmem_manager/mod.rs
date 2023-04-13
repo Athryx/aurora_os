@@ -65,17 +65,31 @@ impl From<CapFlags> for PageMappingFlags {
 }
 
 /// Use to take a large as possible page size for use with huge pages
+#[derive(Debug, Clone, Copy)]
 struct PageMappingTaker {
     virt_range: AVirtRange,
     phys_range: APhysRange,
 }
 
 impl PageMappingTaker {
-    fn take(&mut self) -> Option<(PhysFrame, VirtFrame)> {
-        let take_size = core::cmp::min(
+    fn get_take_size(&self) -> Option<PageSize> {
+        Some(core::cmp::min(
             self.phys_range.get_take_size()?,
             self.virt_range.get_take_size()?,
-        );
+        ))
+    }
+
+    fn peek(&self) -> Option<(PhysFrame, VirtFrame)> {
+        let take_size = self.get_take_size()?;
+
+        Some((
+            PhysFrame::new(self.phys_range.addr(), take_size),
+            VirtFrame::new(self.virt_range.addr(), take_size),
+        ))
+    }
+
+    fn take(&mut self) -> Option<(PhysFrame, VirtFrame)> {
+        let take_size = self.get_take_size()?;
 
         Some((
             self.phys_range.take(take_size)?,
@@ -85,7 +99,7 @@ impl PageMappingTaker {
 }
 
 /// Represents a memory zone that has been mapped in the page tables
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 struct MappedZone {
     virt_range: AVirtRange,
     phys_addr: PhysAddr,
@@ -235,7 +249,7 @@ impl VirtAddrSpace {
         let result = self.map_memory_inner(virt_range, phys_addr, flags, false);
 
         if result.is_err() {
-            self.remove_virt_addr_entry(virt_range).unwrap();
+            self.remove_virt_addr_entry(virt_range.addr()).unwrap();
         }
 
         result
@@ -255,15 +269,32 @@ impl VirtAddrSpace {
     ) -> KResult<()> {
         let phys_range = APhysRange::new(phys_addr, virt_range.size());
 
-        let mut frame_taker = PageMappingTaker {
+        let page_taker = PageMappingTaker {
             virt_range,
             phys_range,
         };
 
-        while let Some((phys_frame, virt_frame)) = frame_taker.take() {
+        let result = self.map_memory_from_page_taker(page_taker, flags, global);
+
+        if result.is_err() {
             // TODO: handle out of memory condition more elegantly
+            self.unmap_memory_inner(virt_range, phys_addr);
+        }
+
+        result
+    }
+
+    fn map_memory_from_page_taker(
+        &mut self,
+        mut page_taker: PageMappingTaker,
+        flags: PageMappingFlags,
+        global: bool,
+    ) -> KResult<()> {
+        let page_taker_copy = page_taker;
+
+        while let Some((phys_frame, virt_frame)) = page_taker.take() {
             if let Err(error) = self.map_frame(virt_frame, phys_frame, flags, global) {
-                self.unmap_memory_inner(virt_range, phys_addr);
+                self.unmap_memory_from_page_taker(page_taker_copy);
 
                 return Err(error);
             }
@@ -278,11 +309,51 @@ impl VirtAddrSpace {
     /// Resizes the memory mapping starting at the addres of `new_mapping_range`
     /// to have the size of `new_mapping_range`
     pub fn resize_mapping(&mut self, new_mapping_range: AVirtRange) -> KResult<()> {
-        let mapping_index = self.get_mapped_range_by_addr(new_mapping_range.addr())
-            .ok_or(SysErr::InvlMemZone)?;
+        let old_mapping = self.resize_virt_addr_entry(new_mapping_range)?;
 
-        let old_size = self.mem_zones[mapping_index].virt_range.size();
-        let new_size = new_mapping_range.size();
+        let phys_addr = old_mapping.phys_addr;
+        let flags = old_mapping.mapping_flags;
+
+        let old_mapping_range = AVirtRange::new(new_mapping_range.addr(), old_mapping.virt_range.size());
+
+        let mut old_frame_taker = PageMappingTaker {
+            virt_range: old_mapping_range,
+            phys_range: APhysRange::new(phys_addr, old_mapping_range.size()),
+        };
+
+        let mut new_frame_taker = PageMappingTaker {
+            virt_range: new_mapping_range,
+            phys_range: APhysRange::new(phys_addr, new_mapping_range.size()),
+        };
+
+        // using the old and new frame takers, keep getting frames until they don't match
+        // then unmap all the different zones from the old_frame_taker
+        // and map the zones form the new_frame_taker
+        // TODO: don't use this easier approach since it is a bit slower
+        loop {
+            if old_frame_taker.peek() != new_frame_taker.peek() {
+                break;
+            }
+
+            old_frame_taker.take();
+            new_frame_taker.take();
+        }
+
+        self.unmap_memory_from_page_taker(old_frame_taker);
+
+        if let Err(error) = self.map_memory_from_page_taker(new_frame_taker, flags, false) {
+            // FIXME: this could fail if the memory freed when we unmapped this part
+            //  is used up by something else, and we hit an oom
+            self.map_memory_from_page_taker(old_frame_taker, flags, false)
+                .expect("FIXME: out of memory resizing problems");
+
+            // panic safety: since this was mapped before, it should still be available
+            self.resize_virt_addr_entry(old_mapping_range).unwrap();
+
+            return Err(error);
+        }
+
+        Ok(())
     }
 
     /// Unmaps all the virtual memory ranges in the slice
@@ -291,7 +362,7 @@ impl VirtAddrSpace {
     /// 
     /// If any one of the memeory regions fails, none will be unmapped
     pub fn unmap_memory(&mut self, virt_range: AVirtRange) -> KResult<()> {
-        let phys_addr = self.remove_virt_addr_entry(virt_range)?;
+        let phys_addr = self.remove_virt_addr_entry(virt_range.addr())?.phys_addr;
 
         self.unmap_memory_inner(virt_range, phys_addr);
 
@@ -302,12 +373,16 @@ impl VirtAddrSpace {
     fn unmap_memory_inner(&mut self, virt_range: AVirtRange, phys_addr: PhysAddr) {
         let phys_range = APhysRange::new(phys_addr, virt_range.size());
 
-        let mut frame_taker = PageMappingTaker {
+        let page_taker = PageMappingTaker {
             virt_range,
             phys_range,
         };
 
-        while let Some((_, virt_frame)) = frame_taker.take() {
+        self.unmap_memory_from_page_taker(page_taker);
+    }
+
+    fn unmap_memory_from_page_taker(&mut self, mut page_taker: PageMappingTaker) {
+        while let Some((_, virt_frame)) = page_taker.take() {
             self.unmap_frame(virt_frame);
 
             // TODO: check if address space is loaded
@@ -363,14 +438,33 @@ impl VirtAddrSpace {
         self.mem_zones.insert(index, new_mapping).or(Err(SysErr::OutOfMem))
     }
 
-    /// No longer marks the given virt_range as mapped
-    /// 
-    /// Returns the physical address the the range's mapping started at
-    fn remove_virt_addr_entry(&mut self, virt_range: AVirtRange) -> KResult<PhysAddr> {
+    /// Resizes a mapped zone, and returns the old value
+    fn resize_virt_addr_entry(&mut self, virt_range: AVirtRange) -> KResult<MappedZone> {
+        // can't map anything beyond the kernel region
+        if virt_range.end_usize() > *consts::KERNEL_VMA {
+            return Err(SysErr::InvlMemZone);
+        }
+
         let index = self.get_mapped_range_by_addr(virt_range.addr())
             .ok_or(SysErr::InvlMemZone)?;
 
-        Ok(self.mem_zones.remove(index).phys_addr)
+        if index == self.mem_zones.len() - 1 || virt_range.end_addr() <= self.mem_zones[index + 1].virt_range.addr() {
+            let mapping = self.mem_zones[index];
+            self.mem_zones[index].virt_range = virt_range;
+            Ok(mapping)
+        } else {
+            Err(SysErr::InvlMemZone)
+        }
+    }
+
+    /// No longer marks the given range starting at virt_addr as mapped
+    /// 
+    /// Returns the zones corresponding mapping
+    fn remove_virt_addr_entry(&mut self, virt_addr: VirtAddr) -> KResult<MappedZone> {
+        let index = self.get_mapped_range_by_addr(virt_addr)
+            .ok_or(SysErr::InvlMemZone)?;
+
+        Ok(self.mem_zones.remove(index))
     }
 
     fn map_frame(&mut self, virt_frame: VirtFrame, phys_frame: PhysFrame, flags: PageMappingFlags, global: bool) -> KResult<()> {
