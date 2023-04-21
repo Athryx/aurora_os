@@ -12,10 +12,9 @@ use crate::mem::VirtFrame;
 use crate::prelude::*;
 use crate::consts;
 use crate::alloc::{PaRef, AllocRef};
-use page_table::{PageTable, PageTablePointer};
+use page_table::{PageTable, PageTablePointer, PageTableFlags};
 
-use self::page_table::PageTableFlags;
-
+//mod frame_mapper;
 mod page_table;
 
 lazy_static! {
@@ -210,6 +209,7 @@ impl VirtAddrSpace {
                     .as_mut()
                     .unwrap()
                     .get_page_table_pointer(511)
+                    .expect(FAIL_MESSAGE)
             };
 
             KERNEL_MEMORY_PAGE_POINTER.call_once(|| kernel_page_pointer);
@@ -316,6 +316,11 @@ impl VirtAddrSpace {
 
         let old_mapping_range = AVirtRange::new(new_mapping_range.addr(), old_mapping.virt_range.size());
 
+        if old_mapping_range.size() == new_mapping_range.size() {
+            // size is not changing, do nothing
+            return Ok(())
+        }
+
         let mut old_frame_taker = PageMappingTaker {
             virt_range: old_mapping_range,
             phys_range: APhysRange::new(phys_addr, old_mapping_range.size()),
@@ -339,21 +344,56 @@ impl VirtAddrSpace {
             new_frame_taker.take();
         }
 
-        self.unmap_memory_from_page_taker(old_frame_taker);
+        let result = if let Some(old_frame) = old_frame_taker.peek()
+            && let Some(new_frame) = new_frame_taker.peek() {
+            if old_frame.1.get_size() > new_frame.1.get_size() {
+                // we will unmap some pages with 1 overlap
+                todo!();
+                Ok(())
+            } else {
+                // we will map some pages with 1 overlap
+                // panic safety: we know this page table exists because of addr entries
+                let old_page_table = self.get_page_table(new_frame.1)
+                    .expect("memory resize error");
 
-        if let Err(error) = self.map_memory_from_page_taker(new_frame_taker, flags, false) {
-            // FIXME: this could fail if the memory freed when we unmapped this part
-            //  is used up by something else, and we hit an oom
-            self.map_memory_from_page_taker(old_frame_taker, flags, false)
-                .expect("FIXME: out of memory resizing problems");
+                if let Err(error) = self.map_memory_from_page_taker(new_frame_taker, flags, false) {
+                    // panic safety: no oom should occcur because no allocations are necassary
+                    self.map_page_table(new_frame.1, old_page_table)
+                        .expect("memory resize error");
 
+                    // TODO: check if address space is loaded
+                    invlpg(new_frame.1.start_addr().as_usize());
+
+                    // take the frame that we restored above
+                    new_frame_taker.take();
+                    
+                    // unmap the rest
+                    self.unmap_memory_from_page_taker(new_frame_taker);
+
+                    Err(error)
+                } else {
+                    Ok(())
+                }
+            }
+        } else if new_frame_taker.peek().is_none() {
+            // no new pages need to be mapped, just unmap old pages
+            self.unmap_memory_from_page_taker(old_frame_taker);
+            Ok(())
+        } else if old_frame_taker.peek().is_none() {
+            // no pages need to be unmapped, just map new pages
+            self.map_memory_from_page_taker(new_frame_taker, flags, false)
+        } else {
+            // no changes need to be made
+            Ok(())
+        };
+
+        if result.is_err() {
+            // reset virt addr entry if mapping failed
             // panic safety: since this was mapped before, it should still be available
             self.resize_virt_addr_entry(old_mapping_range).unwrap();
-
-            return Err(error);
         }
 
-        Ok(())
+        result
     }
 
     /// Unmaps all the virtual memory ranges in the slice
@@ -467,7 +507,8 @@ impl VirtAddrSpace {
         Ok(self.mem_zones.remove(index))
     }
 
-    fn map_frame(&mut self, virt_frame: VirtFrame, phys_frame: PhysFrame, flags: PageMappingFlags, global: bool) -> KResult<()> {
+    /// Gets the page table at the given address and level of `virt_frame`
+    fn get_page_table(&self, virt_frame: VirtFrame) -> Option<PageTablePointer> {
         let virt_addr = virt_frame.start_addr().as_usize();
         let page_table_indicies = [
             get_bits(virt_addr, 39..48),
@@ -476,10 +517,34 @@ impl VirtAddrSpace {
 			get_bits(virt_addr, 12..21),
         ];
 
-        let (depth, huge_flag) = match virt_frame {
-            VirtFrame::K4(_) => (4, PageTableFlags::NONE),
-            VirtFrame::M2(_) => (3, PageTableFlags::HUGE),
-            VirtFrame::G1(_) => (2, PageTableFlags::HUGE),
+        let depth = virt_frame.get_size().page_table_depth();
+
+        let mut page_table_pointer = self.cr3;
+
+        for level in 0..depth {
+            let index = page_table_indicies[level];
+
+            if !page_table_pointer.is_page_table() {
+                return None;
+            }
+
+            // safety: we have checked that page table pointer is a page table
+            let page_table = unsafe {
+                page_table_pointer.as_mut_ptr().as_mut().unwrap()
+            };
+
+            let Some(new_page_table) = page_table.get_page_table_pointer(index) else { return None };
+            page_table_pointer = new_page_table;
+        }
+
+        Some(page_table_pointer)
+    }
+
+    fn map_frame(&mut self, virt_frame: VirtFrame, phys_frame: PhysFrame, flags: PageMappingFlags, global: bool) -> KResult<()> {
+        let huge_flag = match virt_frame {
+            VirtFrame::K4(_) => PageTableFlags::NONE,
+            VirtFrame::M2(_) => PageTableFlags::HUGE,
+            VirtFrame::G1(_) => PageTableFlags::HUGE,
         };
 
         let global_flag = if global {
@@ -487,6 +552,21 @@ impl VirtAddrSpace {
         } else {
             PageTableFlags::NONE
         };
+
+        let flags = PageTableFlags::PRESENT | huge_flag | global_flag | flags.into();
+        self.map_page_table(virt_frame, PageTablePointer::new(phys_frame.start_addr(), flags))
+    }
+
+    fn map_page_table(&mut self, virt_frame: VirtFrame, page_table_pointer: PageTablePointer) -> KResult<()> {
+        let virt_addr = virt_frame.start_addr().as_usize();
+        let page_table_indicies = [
+            get_bits(virt_addr, 39..48),
+			get_bits(virt_addr, 30..39),
+			get_bits(virt_addr, 21..30),
+			get_bits(virt_addr, 12..21),
+        ];
+
+        let depth = virt_frame.get_size().page_table_depth();
 
         let mut page_table = unsafe {
             self.cr3.as_mut_ptr().as_mut().unwrap()
@@ -496,8 +576,7 @@ impl VirtAddrSpace {
             let index = page_table_indicies[level];
 
             if level == depth - 1 {
-                let flags = PageTableFlags::PRESENT | huge_flag | global_flag | flags.into();
-                page_table.add_entry(index, PageTablePointer::new(phys_frame.start_addr(), flags));
+                page_table.add_entry(index, page_table_pointer);
             } else {
                 page_table = page_table
                     .get_or_alloc(index, self.page_allocator.allocator(), *PARENT_FLAGS)
@@ -520,11 +599,7 @@ impl VirtAddrSpace {
 			get_bits(virt_addr, 12..21),
         ];
 
-        let depth = match virt_frame {
-            VirtFrame::K4(_) => 4,
-            VirtFrame::M2(_) => 3,
-            VirtFrame::G1(_) => 2,
-        };
+        let depth = virt_frame.get_size().page_table_depth();
 
         let mut tables = [self.cr3.as_mut_ptr(), null_mut(), null_mut(), null_mut()];
 

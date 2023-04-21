@@ -49,6 +49,15 @@ impl PageSize {
             _ => None,
         }
     }
+
+    /// Returns the depth in the page table that entries of this size will be present at
+    pub fn page_table_depth(&self) -> usize {
+        match self {
+            Self::K4 => 4,
+            Self::M2 => 3,
+            Self::G1 => 2,
+        }
+    }
 }
 
 /*pub struct RangeAlignError;

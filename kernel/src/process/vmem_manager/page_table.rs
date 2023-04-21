@@ -11,6 +11,8 @@ use super::PageMappingFlags;
 /// Bitmask of page table entry address, all other bits are reserved or used for metadata bits
 const PAGE_ADDR_BITMASK: usize = 0x000ffffffffff000;
 
+pub const NUM_ENTRIES: usize = PAGE_SIZE / 8;
+
 bitflags! {
     /// Bitmask of all the flags in a page table that the cpu uses
 	pub struct PageTableFlags: usize {
@@ -24,6 +26,9 @@ bitflags! {
 		const DIRTY = 		1 << 6;
 		const HUGE = 		1 << 7;
 		const GLOBAL = 		1 << 8;
+		// this flag is an ignored bit, used by os to detemine if page table pointer
+		// references a page table or if it maps a page directly
+		const PAGE_TABLE =  1 << 9;
 		const NO_EXEC =		1 << 63;
 	}
 }
@@ -67,6 +72,10 @@ impl PageTablePointer {
 		PageTablePointer(addr | flags.bits())
 	}
 
+	pub fn is_page_table(&self) -> bool {
+		self.flags().contains(PageTableFlags::PAGE_TABLE)
+	}
+
 	pub fn as_mut_ptr(&mut self) -> *mut PageTable {
 		if self.0 & PageTableFlags::PRESENT.bits() == 0 {
 			null_mut()
@@ -91,7 +100,7 @@ impl PageTablePointer {
 
 #[repr(transparent)]
 #[derive(Debug)]
-pub struct PageTable([PageTablePointer; PAGE_SIZE / 8]);
+pub struct PageTable([PageTablePointer; NUM_ENTRIES]);
 
 impl PageTable {
     /// Creates a new page table
@@ -115,7 +124,7 @@ impl PageTable {
 		}
 
 		let addr = virt_to_phys(frame);
-		let flags = flags | PageTableFlags::PRESENT;
+		let flags = flags | PageTableFlags::PRESENT | PageTableFlags::PAGE_TABLE;
 
 		Some(PageTablePointer(addr | flags.bits()))
 	}
@@ -180,11 +189,12 @@ impl PageTable {
     /// 
     /// # Panics
     /// 
-    /// panics if `index` is out of the page table bounds, or if the given index is already occupied
+    /// panics if `index` is out of the page table bounds
 	pub fn add_entry(&mut self, index: usize, ptr: PageTablePointer) {
-		assert!(!self.present(index));
+		if !self.0[index].flags().present() {
+			self.inc_entry_count(1);
+		}
 		self.0[index] = ptr;
-		self.inc_entry_count(1);
 	}
 
 	/// Returns a pointer to the page table at the given index, or null if it doesn't exist
@@ -193,8 +203,8 @@ impl PageTable {
 	}
 
 	/// Returns a page table pointer to the table at the given index
-	pub fn get_page_table_pointer(&self, index: usize) -> PageTablePointer {
-		self.0[index]
+	pub fn get_page_table_pointer(&self, index: usize) -> Option<PageTablePointer> {
+		self.0.get(index).copied()
 	}
 
 	pub fn get_or_alloc<'a>(
