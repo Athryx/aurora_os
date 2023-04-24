@@ -42,9 +42,33 @@
                 "source": false
               }
             }
+          },
+          {
+            "id": "610be148ed9b66e1",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "General Design.md",
+                "mode": "source",
+                "source": false
+              }
+            }
+          },
+          {
+            "id": "e5a14b2575512193",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Kernel Structures.md",
+                "mode": "source",
+                "source": false
+              }
+            }
           }
         ],
-        "currentTab": 2
+        "currentTab": 4
       }
     ],
     "direction": "vertical"
@@ -110,7 +134,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Server APIs.md",
+                "file": "Kernel Structures.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -127,7 +151,7 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "Server APIs.md",
+                "file": "Kernel Structures.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
               }
@@ -150,7 +174,7 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "Server APIs.md"
+                "file": "Kernel Structures.md"
               }
             }
           }
@@ -171,10 +195,12 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "6d071d5497ea26f9",
+  "active": "e5a14b2575512193",
   "lastOpenFiles": [
-    "Kernel Thread Switching Design.md",
     "General Design.md",
-    "Server APIs.md"
+    "Kernel Structures.md",
+    "Kernel Bytecode Interpreter.md",
+    "Server APIs.md",
+    "Kernel Thread Switching Design.md"
   ]
 }

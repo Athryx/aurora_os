@@ -1,8 +1,13 @@
 TODO:
 
 must do:
+work out how async recieves work
+(probably add another kernel object for recieving messages into a ring buffer)
+
+figure out how resizing the ring buffer with event pool works
 
 later:
+
 specify layout of global information table
 
 specify atomicity of syscalls
@@ -33,8 +38,8 @@ rbp: saved
 rsp: saved
 rsi: arg 3, return 3
 rdi: arg 4, return 4
-r8: arg 5, return 5
-r9: arg 6, return 6
+r8: saved
+r9: saved
 r10: not saved
 r11: not saved
 r12: arg 7, return 7

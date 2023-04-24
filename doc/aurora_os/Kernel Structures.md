@@ -1,0 +1,1 @@
+All capability objects are in an Arc with atomic refcounting

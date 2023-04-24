@@ -21,8 +21,6 @@ pub fn print_debug(
     a6: usize,
     a7: usize,
     a8: usize,
-    a9: usize,
-    a10: usize,
 ) -> KResult<()> {
     fn print_bytes(bytes: usize, mut n: usize) -> usize
 	{
@@ -37,7 +35,7 @@ pub fn print_debug(
 		n
 	}
 
-	let mut n = core::cmp::min(options, 80) as usize;
+	let mut n = core::cmp::min(options, 64) as usize;
 	n = print_bytes(a1, n);
 	n = print_bytes(a2, n);
 	n = print_bytes(a3, n);
@@ -45,9 +43,7 @@ pub fn print_debug(
 	n = print_bytes(a5, n);
 	n = print_bytes(a6, n);
 	n = print_bytes(a7, n);
-	n = print_bytes(a8, n);
-	n = print_bytes(a9, n);
-	print_bytes(a10, n);
+	print_bytes(a8, n);
 
     Ok(())
 }

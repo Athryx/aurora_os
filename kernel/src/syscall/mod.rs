@@ -33,11 +33,9 @@ pub struct SyscallVals {
 	pub a6: usize,
 	pub a7: usize,
 	pub a8: usize,
-	pub a9: usize,
-	pub a10: usize,
-	pub rsp: usize,
-	pub rflags: usize,
-    pub rip: usize,
+	//pub rsp: usize,
+	//pub rflags: usize,
+    //pub rip: usize,
 }
 
 macro_rules! syscall_0 {
@@ -223,8 +221,6 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 			vals.a6,
 			vals.a7,
 			vals.a8,
-			vals.a9,
-			vals.a10,
 		), vals),
 		PROCESS_NEW => sysret_1!(syscall_2!(process_new, vals), vals),
 		PROCESS_EXIT => sysret_0!(syscall_1!(process_exit, vals), vals),

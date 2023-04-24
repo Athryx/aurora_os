@@ -24,13 +24,14 @@ syscall_entry:
 	push r10		; save caller rsp
 	push rbp		; save rbp
 
+	push r9			; save r8
+	push r8			; save r9
+
 
 	push r15		; push args on stack
 	push r14
 	push r13
 	push r12
-	push r9
-	push r8
 	push rdi
 	push rsi
 	push rdx
@@ -64,6 +65,9 @@ syscall_entry:
 	pop r13
 	pop r14
 	pop r15
+
+	pop r8			; retrieve saved registers
+	pop r9
 
 	pop rbp			; retrieve old rbp
 	pop r10			; retrieve old rsp

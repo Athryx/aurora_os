@@ -104,7 +104,7 @@ macro_rules! syscall
                 inout("rdx") $a2 => o2,
                 inout("rsi") $a3 => o3,
                 inout("rdi") $a4 => o4,
-                inout("r8") $a5 => o5,
+                inout("r12") $a5 => o5,
                 );
         }
 		(o1, o2, o3, o4, o5)
@@ -128,8 +128,8 @@ macro_rules! syscall
                 inout("rdx") $a2 => o2,
                 inout("rsi") $a3 => o3,
                 inout("rdi") $a4 => o4,
-                inout("r8") $a5 => o5,
-                inout("r9") $a6 => o6,
+                inout("r12") $a5 => o5,
+                inout("r13") $a6 => o6,
                 );
         }
 		(o1, o2, o3, o4, o5, o6)
@@ -154,9 +154,9 @@ macro_rules! syscall
                 inout("rdx") $a2 => o2,
                 inout("rsi") $a3 => o3,
                 inout("rdi") $a4 => o4,
-                inout("r8") $a5 => o5,
-                inout("r9") $a6 => o6,
-                inout("r12") $a7 => o7,
+                inout("r12") $a5 => o5,
+                inout("r13") $a6 => o6,
+                inout("r14") $a7 => o7,
                 );
         }
 		(o1, o2, o3, o4, o5, o6, o7)
@@ -182,77 +182,13 @@ macro_rules! syscall
                 inout("rdx") $a2 => o2,
                 inout("rsi") $a3 => o3,
                 inout("rdi") $a4 => o4,
-                inout("r8") $a5 => o5,
-                inout("r9") $a6 => o6,
-                inout("r12") $a7 => o7,
-                inout("r13") $a8 => o8,
+                inout("r12") $a5 => o5,
+                inout("r13") $a6 => o6,
+                inout("r14") $a7 => o7,
+                inout("r15") $a8 => o8,
                 );
         }
 		(o1, o2, o3, o4, o5, o6, o7, o8)
-	}};
-
-	($num:expr, $opt:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr, $a7:expr, $a8:expr, $a9:expr) => {{
-		let o1: usize;
-		let o2: usize;
-		let o3: usize;
-		let o4: usize;
-		let o5: usize;
-		let o6: usize;
-		let o7: usize;
-		let o8: usize;
-		let o9: usize;
-        unsafe {
-            asm!("push rbx",
-                "mov rbx, rcx",
-                "syscall",
-                "mov rcx, rbx",
-                "pop rbx",
-                inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
-                inout("rcx") $a1 => o1,
-                inout("rdx") $a2 => o2,
-                inout("rsi") $a3 => o3,
-                inout("rdi") $a4 => o4,
-                inout("r8") $a5 => o5,
-                inout("r9") $a6 => o6,
-                inout("r12") $a7 => o7,
-                inout("r13") $a8 => o8,
-                inout("r14") $a9 => o9,
-                );
-        }
-		(o1, o2, o3, o4, o5, o6, o7, o8, o9)
-	}};
-
-	($num:expr, $opt:expr, $a1:expr, $a2:expr, $a3:expr, $a4:expr, $a5:expr, $a6:expr, $a7:expr, $a8:expr, $a9:expr, $a10:expr) => {{
-		let o1: usize;
-		let o2: usize;
-		let o3: usize;
-		let o4: usize;
-		let o5: usize;
-		let o6: usize;
-		let o7: usize;
-		let o8: usize;
-		let o9: usize;
-		let o10: usize;
-        unsafe {
-            asm!("push rbx",
-                "mov rbx, rcx",
-                "syscall",
-                "mov rcx, rbx",
-                "pop rbx",
-                inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
-                inout("rcx") $a1 => o1,
-                inout("rdx") $a2 => o2,
-                inout("rsi") $a3 => o3,
-                inout("rdi") $a4 => o4,
-                inout("r8") $a5 => o5,
-                inout("r9") $a6 => o6,
-                inout("r12") $a7 => o7,
-                inout("r13") $a8 => o8,
-                inout("r14") $a9 => o9,
-                inout("r15") $a10 => o10,
-                );
-        }
-		(o1, o2, o3, o4, o5, o6, o7, o8, o9, o10)
 	}};
 }
 
@@ -346,7 +282,7 @@ const WEAK_AUTO_DESTROY: usize = 1 << 31;
 
 /// Prints up to 80 bytes from the input array to the kernel debug log
 pub fn print_debug(data: &[u8]) {
-    let num_chars = min(80, data.len());
+    let num_chars = min(64, data.len());
 
     let get_char = |n| *data.get(n).unwrap_or(&0) as usize;
 
@@ -373,9 +309,7 @@ pub fn print_debug(data: &[u8]) {
         get_arg(4),
         get_arg(5),
         get_arg(6),
-        get_arg(7),
-        get_arg(8),
-        get_arg(9)
+        get_arg(7)
     );
 }
 
