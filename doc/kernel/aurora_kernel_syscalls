@@ -130,34 +130,37 @@ listens to many events at once and writes the fired events into a ring buffer in
 5: Channel
 used for ipc, and can be used to send capabilities to other processess
 
-6: Key
+6: RecvPool
+used for asynchronous recieve operations
+
+7: Key
 a globally unique identifier, used to authenticate actions with other servers
 
-7: Interrupt
+8: Interrupt
 represents a hardware interrupt
 
-8: Port
+9: Port
 represents an io port that can be used from userspace
 
-9: Spawner
+10: Spawner
 gives permission to create processess and can kill processess that were spawned on it
 used to prevent malicious processess from spawning other processess and not killing them, which would leak memory
 
-10: Allocator
+11: Allocator
 represents permission to allocate a certain amount of memory for use by other objects
 
-11: RootOom
+12: RootOom
 used by the kernel to inform the userspace paging process that an out of memory event has occured on the root allocator
 normally a channel is used, but their are special requirements for the RootOom object,
 since it cannot allocate memory from a parent allocator like a channel can
 
-12: MmioAllocator
+13: MmioAllocator
 allows memory mapped io to be allocated
 
-13: IntAllocator
+14: IntAllocator
 allows interrupts to be created
 
-14: PortAllocator
+15: PortAllocator
 allows ports to be created
 
 // Thread id

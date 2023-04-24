@@ -5,45 +5,40 @@ use crate::{syscall_nums::*, CapId, CapType, CapFlags, SysErr, KResult, Tid};
 
 // need to use rcx because rbx is reserved by llvm
 // FIXME: ugly
-macro_rules! syscall
-{
+macro_rules! syscall {
+    ($num:expr) => {syscall!($num, 0)};
+
 	($num:expr, $opt:expr) => {{
-        unsafe {
-		    asm!("syscall", inout("rax") (($opt as usize) << 32) | ($num as usize) => _);
-        }
+        asm!("syscall", inout("rax") (($opt as usize) << 32) | ($num as usize) => _);
 	}};
 
 	($num:expr, $opt:expr, $a1:expr) => {{
 		let o1: usize;
         let o2: usize;
-        unsafe {
-            asm!("push rbx",
-                "mov rbx, rcx",
-                "syscall",
-                "mov rcx, rbx",
-                "pop rbx",
-                inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
-                inout("rcx") $a1 => o1,
-                out("rdx") o2,
-                );
-        }
+        asm!("push rbx",
+            "mov rbx, rcx",
+            "syscall",
+            "mov rcx, rbx",
+            "pop rbx",
+            inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
+            inout("rcx") $a1 => o1,
+            out("rdx") o2,
+        );
 		(o1, o2)
 	}};
 
 	($num:expr, $opt:expr, $a1:expr, $a2:expr) => {{
 		let o1: usize;
 		let o2: usize;
-        unsafe {
-            asm!("push rbx",
-                "mov rbx, rcx",
-                "syscall",
-                "mov rcx, rbx",
-                "pop rbx",
-                inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
-                inout("rcx") $a1 => o1,
-                inout("rdx") $a2 => o2,
-                );
-        }
+        asm!("push rbx",
+            "mov rbx, rcx",
+            "syscall",
+            "mov rcx, rbx",
+            "pop rbx",
+            inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
+            inout("rcx") $a1 => o1,
+            inout("rdx") $a2 => o2,
+        );
 		(o1, o2)
 	}};
 
@@ -51,18 +46,16 @@ macro_rules! syscall
 		let o1: usize;
 		let o2: usize;
 		let o3: usize;
-        unsafe {
-            asm!("push rbx",
-                "mov rbx, rcx",
-                "syscall",
-                "mov rcx, rbx",
-                "pop rbx",
-                inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
-                inout("rcx") $a1 => o1,
-                inout("rdx") $a2 => o2,
-                inout("rsi") $a3 => o3,
-                );
-        }
+        asm!("push rbx",
+            "mov rbx, rcx",
+            "syscall",
+            "mov rcx, rbx",
+            "pop rbx",
+            inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
+            inout("rcx") $a1 => o1,
+            inout("rdx") $a2 => o2,
+            inout("rsi") $a3 => o3,
+        );
 		(o1, o2, o3)
 	}};
 
@@ -71,19 +64,17 @@ macro_rules! syscall
 		let o2: usize;
 		let o3: usize;
 		let o4: usize;
-        unsafe {
-            asm!("push rbx",
-                "mov rbx, rcx",
-                "syscall",
-                "mov rcx, rbx",
-                "pop rbx",
-                inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
-                inout("rcx") $a1 => o1,
-                inout("rdx") $a2 => o2,
-                inout("rsi") $a3 => o3,
-                inout("rdi") $a4 => o4,
-                );
-        }
+        asm!("push rbx",
+            "mov rbx, rcx",
+            "syscall",
+            "mov rcx, rbx",
+            "pop rbx",
+            inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
+            inout("rcx") $a1 => o1,
+            inout("rdx") $a2 => o2,
+            inout("rsi") $a3 => o3,
+            inout("rdi") $a4 => o4,
+        );
 		(o1, o2, o3, o4)
 	}};
 
@@ -93,20 +84,18 @@ macro_rules! syscall
 		let o3: usize;
 		let o4: usize;
 		let o5: usize;
-        unsafe {
-            asm!("push rbx",
-                "mov rbx, rcx",
-                "syscall",
-                "mov rcx, rbx",
-                "pop rbx",
-                inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
-                inout("rcx") $a1 => o1,
-                inout("rdx") $a2 => o2,
-                inout("rsi") $a3 => o3,
-                inout("rdi") $a4 => o4,
-                inout("r12") $a5 => o5,
-                );
-        }
+        asm!("push rbx",
+            "mov rbx, rcx",
+            "syscall",
+            "mov rcx, rbx",
+            "pop rbx",
+            inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
+            inout("rcx") $a1 => o1,
+            inout("rdx") $a2 => o2,
+            inout("rsi") $a3 => o3,
+            inout("rdi") $a4 => o4,
+            inout("r12") $a5 => o5,
+        );
 		(o1, o2, o3, o4, o5)
 	}};
 
@@ -117,21 +106,19 @@ macro_rules! syscall
 		let o4: usize;
 		let o5: usize;
 		let o6: usize;
-        unsafe {
-            asm!("push rbx",
-                "mov rbx, rcx",
-                "syscall",
-                "mov rcx, rbx",
-                "pop rbx",
-                inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
-                inout("rcx") $a1 => o1,
-                inout("rdx") $a2 => o2,
-                inout("rsi") $a3 => o3,
-                inout("rdi") $a4 => o4,
-                inout("r12") $a5 => o5,
-                inout("r13") $a6 => o6,
-                );
-        }
+        asm!("push rbx",
+            "mov rbx, rcx",
+            "syscall",
+            "mov rcx, rbx",
+            "pop rbx",
+            inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
+            inout("rcx") $a1 => o1,
+            inout("rdx") $a2 => o2,
+            inout("rsi") $a3 => o3,
+            inout("rdi") $a4 => o4,
+            inout("r12") $a5 => o5,
+            inout("r13") $a6 => o6,
+        );
 		(o1, o2, o3, o4, o5, o6)
 	}};
 
@@ -143,22 +130,20 @@ macro_rules! syscall
 		let o5: usize;
 		let o6: usize;
 		let o7: usize;
-        unsafe {
-            asm!("push rbx",
-                "mov rbx, rcx",
-                "syscall",
-                "mov rcx, rbx",
-                "pop rbx",
-                inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
-                inout("rcx") $a1 => o1,
-                inout("rdx") $a2 => o2,
-                inout("rsi") $a3 => o3,
-                inout("rdi") $a4 => o4,
-                inout("r12") $a5 => o5,
-                inout("r13") $a6 => o6,
-                inout("r14") $a7 => o7,
-                );
-        }
+        asm!("push rbx",
+            "mov rbx, rcx",
+            "syscall",
+            "mov rcx, rbx",
+            "pop rbx",
+            inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
+            inout("rcx") $a1 => o1,
+            inout("rdx") $a2 => o2,
+            inout("rsi") $a3 => o3,
+            inout("rdi") $a4 => o4,
+            inout("r12") $a5 => o5,
+            inout("r13") $a6 => o6,
+            inout("r14") $a7 => o7,
+        );
 		(o1, o2, o3, o4, o5, o6, o7)
 	}};
 
@@ -171,23 +156,21 @@ macro_rules! syscall
 		let o6: usize;
 		let o7: usize;
 		let o8: usize;
-        unsafe {
-            asm!("push rbx",
-                "mov rbx, rcx",
-                "syscall",
-                "mov rcx, rbx",
-                "pop rbx",
-                inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
-                inout("rcx") $a1 => o1,
-                inout("rdx") $a2 => o2,
-                inout("rsi") $a3 => o3,
-                inout("rdi") $a4 => o4,
-                inout("r12") $a5 => o5,
-                inout("r13") $a6 => o6,
-                inout("r14") $a7 => o7,
-                inout("r15") $a8 => o8,
-                );
-        }
+        asm!("push rbx",
+            "mov rbx, rcx",
+            "syscall",
+            "mov rcx, rbx",
+            "pop rbx",
+            inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
+            inout("rcx") $a1 => o1,
+            inout("rdx") $a2 => o2,
+            inout("rsi") $a3 => o3,
+            inout("rdi") $a4 => o4,
+            inout("r12") $a5 => o5,
+            inout("r13") $a6 => o6,
+            inout("r14") $a7 => o7,
+            inout("r15") $a8 => o8,
+        );
 		(o1, o2, o3, o4, o5, o6, o7, o8)
 	}};
 }
@@ -299,93 +282,111 @@ pub fn print_debug(data: &[u8]) {
             | get_char(base + 7) << 56
     };
 
-    syscall!(
-        PRINT_DEBUG,
-        num_chars,
-        get_arg(0),
-        get_arg(1),
-        get_arg(2),
-        get_arg(3),
-        get_arg(4),
-        get_arg(5),
-        get_arg(6),
-        get_arg(7)
-    );
+    unsafe {
+        syscall!(
+            PRINT_DEBUG,
+            num_chars,
+            get_arg(0),
+            get_arg(1),
+            get_arg(2),
+            get_arg(3),
+            get_arg(4),
+            get_arg(5),
+            get_arg(6),
+            get_arg(7)
+        );
+    }
 }
 
 pub fn thread_yield() {
-    syscall!(
-        THREAD_YIELD,
-        0
-    );
+    unsafe {
+        syscall!(
+            THREAD_YIELD,
+            0
+        );
+    }
 }
 
 pub fn suspend() {
-    syscall!(
-        THREAD_SUSPEND,
-        0
-    );
+    unsafe {
+        syscall!(
+            THREAD_SUSPEND,
+            0
+        );
+    }
 }
 
 pub fn suspend_until(nsec: u64) {
-    syscall!(
-        THREAD_SUSPEND,
-        1,
-        nsec
-    );
+    unsafe {
+        syscall!(
+            THREAD_SUSPEND,
+            1,
+            nsec
+        );
+    }
 }
 
 make_cap_struct!(Process, CapType::Process);
 
 impl Process {
     pub fn new(flags: CapFlags, allocator: Allocator, spawner: Spawner) -> KResult<Self> {
-        sysret_1!(syscall!(
-            PROCESS_NEW,
-            flags.bits() | WEAK_AUTO_DESTROY,
-            allocator.as_usize(),
-            spawner.as_usize()
-        )).map(|num| Process(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
+        unsafe {
+            sysret_1!(syscall!(
+                PROCESS_NEW,
+                flags.bits() | WEAK_AUTO_DESTROY,
+                allocator.as_usize(),
+                spawner.as_usize()
+            )).map(|num| Process(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
+        }
     }
 
     pub fn exit(&self) -> KResult<()> {
-        sysret_0!(syscall!(
-            PROCESS_EXIT,
-            WEAK_AUTO_DESTROY,
-            self.as_usize()
-        ))
+        unsafe {
+            sysret_0!(syscall!(
+                PROCESS_EXIT,
+                WEAK_AUTO_DESTROY,
+                self.as_usize()
+            ))
+        }
     }
 
     pub fn thread_new(&self, autostart_thread: bool, rip: usize, rsp: usize, regs: (usize, usize, usize, usize)) -> KResult<Tid> {
-        sysret_1!(syscall!(
-            THREAD_NEW,
-            autostart_thread as usize | WEAK_AUTO_DESTROY,
-            self.as_usize(),
-            rip,
-            rsp,
-            regs.0,
-            regs.1,
-            regs.2,
-            regs.3
-        )).map(Tid::from)
+        unsafe {
+            sysret_1!(syscall!(
+                THREAD_NEW,
+                autostart_thread as usize | WEAK_AUTO_DESTROY,
+                self.as_usize(),
+                rip,
+                rsp,
+                regs.0,
+                regs.1,
+                regs.2,
+                regs.3
+            )).map(Tid::from)
+        }
     }
 
     pub fn map_memory(&self, memory: Memory, address: usize) -> KResult<()> {
-        sysret_0!(syscall!(
-            MEMORY_MAP,
-            WEAK_AUTO_DESTROY,
-            self.as_usize(),
-            memory.as_usize(),
-            address
-        ))
+        unsafe {
+            sysret_0!(syscall!(
+                MEMORY_MAP,
+                WEAK_AUTO_DESTROY,
+                self.as_usize(),
+                memory.as_usize(),
+                address
+            ))
+        }
     }
 
     pub fn unmap_memory(&self, memory: Memory) -> KResult<()> {
-        sysret_0!(syscall!(
-            MEMORY_UNMAP,
-            WEAK_AUTO_DESTROY,
-            self.as_usize(),
-            memory.as_usize()
-        ))
+        unsafe {
+            sysret_0!(syscall!(
+                MEMORY_UNMAP,
+                WEAK_AUTO_DESTROY,
+                self.as_usize(),
+                memory.as_usize()
+            ))
+        }
     }
 }
 
@@ -393,12 +394,14 @@ make_cap_struct!(Memory, CapType::Memory);
 
 impl Memory {
     pub fn new(flags: CapFlags, allocator: Allocator, pages: usize) -> KResult<Self> {
-        sysret_1!(syscall!(
-            MEMORY_NEW,
-            flags.bits() | WEAK_AUTO_DESTROY,
-            allocator.as_usize(),
-            pages
-        )).map(|num| Memory(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
+        unsafe {
+            sysret_1!(syscall!(
+                MEMORY_NEW,
+                flags.bits() | WEAK_AUTO_DESTROY,
+                allocator.as_usize(),
+                pages
+            )).map(|num| Memory(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
+        }
     }
 }
 
@@ -406,19 +409,23 @@ make_cap_struct!(Key, CapType::Key);
 
 impl Key {
     pub fn new(flags: CapFlags, allocator: Allocator) -> KResult<Self> {
-        sysret_1!(syscall!(
-            KEY_NEW,
-            flags.bits() | WEAK_AUTO_DESTROY,
-            allocator.as_usize()
-        )).map(|num| Key(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
+        unsafe {
+            sysret_1!(syscall!(
+                KEY_NEW,
+                flags.bits() | WEAK_AUTO_DESTROY,
+                allocator.as_usize()
+            )).map(|num| Key(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
+        }
     }
 
     pub fn key_id(&self) -> KResult<usize> {
-        sysret_1!(syscall!(
-            KEY_ID,
-            WEAK_AUTO_DESTROY,
-            self.as_usize()
-        ))
+        unsafe {
+            sysret_1!(syscall!(
+                KEY_ID,
+                WEAK_AUTO_DESTROY,
+                self.as_usize()
+            ))
+        }
     }
 }
 
@@ -426,20 +433,24 @@ make_cap_struct!(Spawner, CapType::Spawner);
 
 impl Spawner {
     pub fn new(flags: CapFlags, allocator: Allocator, spawn_key: Key) -> KResult<Self> {
-        sysret_1!(syscall!(
-            SPAWNER_NEW,
-            flags.bits() | WEAK_AUTO_DESTROY,
-            allocator.as_usize(),
-            spawn_key.as_usize()
-        )).map(|num| Spawner(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
+        unsafe {
+            sysret_1!(syscall!(
+                SPAWNER_NEW,
+                flags.bits() | WEAK_AUTO_DESTROY,
+                allocator.as_usize(),
+                spawn_key.as_usize()
+            )).map(|num| Spawner(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
+        }
     }
 
     pub fn kill_all(&self) -> KResult<()> {
-        sysret_0!(syscall!(
-            SPAWNER_KILL_ALL,
-            WEAK_AUTO_DESTROY,
-            self.as_usize()
-        ))
+        unsafe {
+            sysret_0!(syscall!(
+                SPAWNER_KILL_ALL,
+                WEAK_AUTO_DESTROY,
+                self.as_usize()
+            ))
+        }
     }
 }
 
