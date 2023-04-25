@@ -33,9 +33,6 @@ pub struct SyscallVals {
 	pub a6: usize,
 	pub a7: usize,
 	pub a8: usize,
-	//pub rsp: usize,
-	//pub rflags: usize,
-    //pub rip: usize,
 }
 
 macro_rules! syscall_0 {
