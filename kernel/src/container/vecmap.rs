@@ -2,6 +2,7 @@ use core::cmp::Ordering;
 use core::iter::FusedIterator;
 use core::ops::{Bound, RangeBounds};
 use core::slice::{Iter, IterMut};
+use core::fmt::{self, Debug};
 
 use super::Vec;
 use crate::alloc::{AllocRef, HeapAllocator};
@@ -302,3 +303,9 @@ impl<K: Ord, V> DoubleEndedIterator for RangeIterMut<'_, K, V> {
 
 impl<K: Ord, V> ExactSizeIterator for RangeIterMut<'_, K, V> {}
 impl<K: Ord, V> FusedIterator for RangeIterMut<'_, K, V> {}
+
+impl<K: Ord + Debug, V: Debug> Debug for VecMap<K, V> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_map().entries(self.range(..)).finish()
+    }
+}

@@ -1,36 +1,36 @@
 use core::mem::{self, MaybeUninit};
 use core::ops::{Deref, DerefMut};
 
-use crate::alloc::{OrigAllocator, OrigRef};
-use crate::mem::{HeapAllocation, MemOwner};
+use crate::alloc::{HeapAllocator, AllocRef};
+use crate::mem::MemOwner;
 use crate::prelude::*;
 
 #[derive(Debug)]
 pub struct Box<T> {
     data: MemOwner<T>,
-    allocator: OrigRef,
+    allocator: AllocRef,
 }
 
 impl<T> Box<T> {
-    pub fn new(data: T, mut allocator: OrigRef) -> KResult<Self> {
+    pub fn new(data: T, mut allocator: AllocRef) -> KResult<Self> {
         Ok(Box {
             data: MemOwner::new(data, allocator.allocator())?,
             allocator,
         })
     }
 
-    pub fn new_uninit(allocator: OrigRef) -> KResult<Box<MaybeUninit<T>>> {
+    pub fn new_uninit(allocator: AllocRef) -> KResult<Box<MaybeUninit<T>>> {
         Box::new(MaybeUninit::<T>::uninit(), allocator)
     }
 
-    pub unsafe fn from_raw(ptr: *mut T, allocator: OrigRef) -> Self {
+    pub unsafe fn from_raw(ptr: *mut T, allocator: AllocRef) -> Self {
         Box {
             data: unsafe { MemOwner::from_raw(ptr) },
             allocator,
         }
     }
 
-    pub fn into_raw(this: Self) -> (*mut T, OrigRef) {
+    pub fn into_raw(this: Self) -> (*mut T, AllocRef) {
         let data = unsafe { ptr::read(&this.data) };
         let allocator = unsafe { ptr::read(&this.allocator) };
         mem::forget(this);
@@ -56,7 +56,7 @@ impl<T> Box<T> {
         this.data.ptr_mut()
     }
 
-    pub fn allocator(this: &mut Self) -> &dyn OrigAllocator {
+    pub fn allocator(this: &mut Self) -> &dyn HeapAllocator {
         this.allocator.allocator()
     }
 }
@@ -77,9 +77,12 @@ impl<T> DerefMut for Box<T> {
 
 impl<T> Drop for Box<T> {
     fn drop(&mut self) {
-        let allocation = HeapAllocation::from_ptr(Box::ptr(self));
         unsafe {
-            self.allocator.allocator().dealloc_orig(allocation);
+            // safety: we read out of data to copy the memowner,
+            // but then never use the original mem owner
+            // so it is ok to drop the new mem owner in place
+            let inner = ptr::read(&self.data);
+            inner.drop_in_place(self.allocator.allocator());
         }
     }
 }

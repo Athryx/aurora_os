@@ -241,7 +241,7 @@ pub fn init(stack: AVirtRange) -> KResult<()> {
     let kernel_process = get_kernel_process();
 
     let (thread, thread_handle) = kernel_process.create_idle_thread(
-        String::from_str(root_alloc_ref().downgrade(), "idle_thread")?,
+        String::from_str(root_alloc_ref(), "idle_thread")?,
         stack,
     )?;
 

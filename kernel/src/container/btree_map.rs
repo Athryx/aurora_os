@@ -1,7 +1,7 @@
 use arrayvec::ArrayVec;
 
 use super::Box;
-use crate::alloc::OrigRef;
+use crate::alloc::AllocRef;
 use crate::prelude::*;
 
 // this should be an odd number
@@ -58,7 +58,7 @@ impl<K: Ord, V> TreeNode<K, V> {
         mut key: K,
         mut value: V,
         mut right_child: Option<Box<TreeNode<K, V>>>,
-        allocer: &OrigRef,
+        allocer: &AllocRef,
     ) -> KResult<Option<ValueCombination<K, V>>> {
         match self.values.binary_search_by(|probe| probe.0.cmp(&key)) {
             Ok(_) => Ok(None),
@@ -121,7 +121,7 @@ impl<K: Ord, V> TreeNode<K, V> {
     fn insert_value_or_split(
         &mut self,
         value: ValueCombination<K, V>,
-        allocer: &OrigRef,
+        allocer: &AllocRef,
     ) -> KResult<Option<ValueCombination<K, V>>> {
         let ValueCombination {
             key,
@@ -135,7 +135,7 @@ impl<K: Ord, V> TreeNode<K, V> {
         &mut self,
         key: K,
         value: V,
-        allocer: &OrigRef,
+        allocer: &AllocRef,
     ) -> KResult<Option<ValueCombination<K, V>>> {
         self.insert_or_split_inner(key, value, None, allocer)
     }
@@ -199,11 +199,11 @@ impl<'a, K: Ord, V> NodeVisitor<'a, K, V> {
 pub struct BTreeMap<K: Ord, V> {
     root: Option<Box<TreeNode<K, V>>>,
     len: usize,
-    allocer: OrigRef,
+    allocer: AllocRef,
 }
 
 impl<K: Ord, V> BTreeMap<K, V> {
-    pub fn new(allocator: OrigRef) -> Self {
+    pub fn new(allocator: AllocRef) -> Self {
         BTreeMap {
             root: None,
             len: 0,

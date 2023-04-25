@@ -1,11 +1,12 @@
 use core::alloc::Layout;
 use core::sync::atomic::{AtomicBool, Ordering};
+use core::ptr::NonNull;
 
-use super::linked_list_allocator::LinkedListAllocatorInner;
-use super::{heap, zm, HeapAllocator, OrigAllocator, PageAllocator, OrigRef};
+use super::linked_list_allocator::LinkedListAllocator;
+use super::{heap, zm, HeapAllocator, PageAllocator};
 use crate::cap::{CapObject, CapType};
 use crate::container::Arc;
-use crate::mem::{Allocation, HeapAllocation, PageLayout};
+use crate::mem::{Allocation, PageLayout};
 use crate::prelude::*;
 use crate::sync::{IMutex, IMutexGuard};
 
@@ -180,13 +181,13 @@ impl PageAllocator for CapAllocator {
     }
 }
 
-impl HeapAllocator for CapAllocator {
-    fn alloc(&self, layout: Layout) -> Option<HeapAllocation> {
+unsafe impl HeapAllocator for CapAllocator {
+    fn alloc(&self, layout: Layout) -> Option<NonNull<[u8]>> {
         let allocation = heap().alloc(layout)?;
-        let result = self.alloc_bytes(allocation.size());
+        let result = self.alloc_bytes(allocation.len());
         if result.is_err() {
             unsafe {
-                heap().dealloc(allocation);
+                heap().dealloc(allocation.as_non_null_ptr(), layout);
             }
             None
         } else {
@@ -194,18 +195,10 @@ impl HeapAllocator for CapAllocator {
         }
     }
 
-    unsafe fn dealloc(&self, allocation: HeapAllocation) {
-        self.dealloc_bytes(allocation.size());
-        unsafe { heap().dealloc(allocation) }
-    }
-}
-
-impl OrigAllocator for CapAllocator {
-    fn as_heap_allocator(&self) -> &dyn HeapAllocator {
-        self
-    }
-
-    fn compute_alloc_properties(&self, allocation: HeapAllocation) -> Option<HeapAllocation> {
-        LinkedListAllocatorInner::compute_alloc_properties(allocation)
+    unsafe fn dealloc(&self, allocation_start: NonNull<u8>, layout: Layout) {
+        let allocation = LinkedListAllocator::get_allocation(allocation_start, layout)
+            .expect("invalid deallocation");
+        self.dealloc_bytes(allocation.len());
+        unsafe { heap().dealloc(allocation_start, layout) }
     }
 }

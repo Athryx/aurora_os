@@ -2,9 +2,9 @@ use core::fmt;
 use core::ops::Deref;
 use core::ptr::NonNull;
 use core::sync::atomic::{fence, AtomicUsize, Ordering};
+use core::alloc::Layout;
 
-use crate::alloc::{OrigRef, OrigAllocator};
-use crate::mem::HeapAllocation;
+use crate::alloc::AllocRef;
 use crate::prelude::*;
 
 const MAX_REFCOUNT: usize = isize::MAX as usize;
@@ -13,8 +13,8 @@ struct ArcInner<T: ?Sized> {
     strong: AtomicUsize,
     weak: AtomicUsize,
 
-    allocer: OrigRef,
-    allocation: Option<HeapAllocation>,
+    allocer: AllocRef,
+    layout: Option<Layout>,
 
     data: T,
 }
@@ -45,7 +45,7 @@ impl<T: ?Sized> Arc<T> {
     }
 
     /// Returns the allocator this arc is using
-    pub fn alloc_ref(this: &Self) -> OrigRef {
+    pub fn alloc_ref(this: &Self) -> AllocRef {
         this.inner().allocer.clone()
     }
 
@@ -64,24 +64,24 @@ impl<T: ?Sized> Arc<T> {
 }
 
 impl<T> Arc<T> {
-    pub fn new(data: T, mut allocer: OrigRef) -> KResult<Self> {
+    pub fn new(data: T, mut allocer: AllocRef) -> KResult<Self> {
         let ptr = to_heap(
             ArcInner {
                 strong: AtomicUsize::new(1),
                 weak: AtomicUsize::new(1),
                 allocer: allocer.clone(),
-                allocation: None,
+                layout: None,
                 data,
             },
             allocer.allocator(),
         )?;
 
         // meed to calculate this here becaust T is unsized in the Drop implementation
-        // this could maybe be made different to get the HeapAllocation returned by the allocator so an OrigRef is not necessary
-        let allocation = HeapAllocation::from_ptr(ptr);
+        // this could maybe be made different to get the HeapAllocation returned by the allocator so an AllocRef is not necessary
+        let layout = Layout::new::<ArcInner<T>>();
 
         unsafe {
-            ptr.as_mut().unwrap().allocation = Some(allocation);
+            ptr.as_mut().unwrap().layout = Some(layout);
         }
 
         unsafe { Ok(Self::from_ptr(ptr)) }
@@ -154,7 +154,7 @@ impl<T: ?Sized> Weak<T> {
     }
 
     /// Returns the allocator this weak is using
-    pub fn alloc_ref(&self) -> OrigRef {
+    pub fn alloc_ref(&self) -> AllocRef {
         self.inner().allocer.clone()
     }
 
@@ -221,10 +221,10 @@ unsafe impl<#[may_dangle] T: ?Sized> Drop for Weak<T> {
         let mut allocer = unsafe { ptr::read(&self.inner().allocer) };
 
         // panic safety: all constructors will initilize this field to Some
-        let allocation = self.inner().allocation.unwrap();
+        let layout = self.inner().layout.unwrap();
 
         unsafe {
-            allocer.allocator().dealloc_orig(allocation);
+            allocer.allocator().dealloc(self.ptr.cast(), layout);
         }
     }
 }

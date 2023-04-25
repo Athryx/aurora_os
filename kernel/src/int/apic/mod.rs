@@ -44,7 +44,7 @@ pub unsafe fn init_io_apic(madt: &Madt) -> KResult<Vec<u8>> {
 
     let mut local_apic_addr = PhysAddr::new(madt.lapic_addr as usize);
 
-    let mut ap_apic_ids: Vec<u8> = Vec::new(root_alloc_ref().downgrade());
+    let mut ap_apic_ids: Vec<u8> = Vec::new(root_alloc_ref());
     let startup_core_apic_id = cpuid::apic_id();
 
     for madt_entry in madt.iter() {
@@ -173,7 +173,7 @@ pub fn smp_init(ap_apic_ids: &[u8]) -> KResult<()> {
 	let ap_data = unsafe { ap_data.as_mut().unwrap() };
 	ap_data.id_counter.store(1, Ordering::Release);
 
-    let mut stacks = Vec::try_with_capacity(root_alloc_ref().downgrade(), num_aps)?;
+    let mut stacks = Vec::try_with_capacity(root_alloc_ref(), num_aps)?;
     for _ in 0..num_aps {
         // NOTE: this leaks memory on early return, shouldn't matter for now since we will panic on error
         let allocation = root_alloc().alloc(

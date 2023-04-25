@@ -13,7 +13,7 @@ pub struct ZoneMap<T: VirtRange> {
     len: usize,
 }
 
-impl<T: VirtRange> ZoneMap<T> {
+impl<T: VirtRange + core::fmt::Debug> ZoneMap<T> {
     pub fn new(allocator: AllocRef) -> Self {
         ZoneMap {
             data: VecMap::new(allocator),
@@ -23,7 +23,9 @@ impl<T: VirtRange> ZoneMap<T> {
 
     pub fn insert(&mut self, zone: T) -> KResult<()> {
         match self.data.get_mut(&zone.size()) {
-            Some(vec) => vec.push(zone)?,
+            Some(vec) => {
+                vec.push(zone)?;
+            },
             None => {
                 let mut range_vec = Vec::new(self.data.alloc_ref());
                 let zone_size = zone.size();

@@ -1,9 +1,6 @@
-use core::cell::Cell;
-//use core::ops::{Index, IndexMut};
 use core::fmt::{self, Debug, Formatter};
 use core::ops::{Index, IndexMut};
-use core::ptr::{Thin, NonNull};
-use core::sync::atomic::{AtomicPtr, Ordering};
+use core::ptr::NonNull;
 
 use crate::mem::MemOwner;
 use crate::prelude::*;
@@ -362,7 +359,7 @@ impl<'a, T: ListNode> CursorMut<'a, T> {
             self.list.start = ptr;
         }
 
-        if let Some(next) = self.prev_mut() {
+        if let Some(next) = self.next_mut() {
             *next.prev_mut() = ptr;
         } else {
             self.list.end = ptr;

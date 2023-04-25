@@ -14,6 +14,7 @@
 #![feature(ptr_metadata)]
 #![feature(let_chains)]
 #![feature(try_blocks)]
+#![feature(nonnull_slice_from_raw_parts)]
 // FIXME: get rid of this incomplete feature
 #![feature(return_position_impl_trait_in_trait)]
 #![allow(dead_code)]

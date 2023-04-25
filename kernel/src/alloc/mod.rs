@@ -11,7 +11,7 @@ mod page_allocator;
 mod pmem_manager;
 
 pub use cap_allocator::CapAllocator;
-pub use heap_allocator::{AllocRef, HeapAllocator, OrigAllocator, OrigRef};
+pub use heap_allocator::{AllocRef, HeapAllocator};
 use linked_list_allocator::LinkedListAllocator;
 pub use page_allocator::{PaRef, PageAllocator};
 use pmem_manager::PmemManager;
@@ -48,8 +48,8 @@ pub fn heap() -> &'static LinkedListAllocator {
 /// 
 /// # Panics
 /// Panics if the heap allocator has not yet been initilized
-pub fn heap_ref() -> OrigRef {
-    OrigRef::new(heap())
+pub fn heap_ref() -> AllocRef {
+    AllocRef::new(heap())
 }
 
 static ROOT_ALLOCATOR: Once<Arc<CapAllocator>> = Once::new();
@@ -68,8 +68,8 @@ pub fn root_alloc() -> &'static CapAllocator {
 /// 
 /// # Panics
 /// Panics if the root CapAllocator has not yet been intialized
-pub fn root_alloc_ref() -> OrigRef {
-    OrigRef::new(root_alloc())
+pub fn root_alloc_ref() -> AllocRef {
+    AllocRef::new(root_alloc())
 }
 
 /// Returns the root CapAllocator

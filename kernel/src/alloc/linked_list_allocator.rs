@@ -1,9 +1,10 @@
 use core::cell::Cell;
 use core::cmp::max;
+use core::ptr::NonNull;
 
-use super::{HeapAllocator, OrigAllocator, PaRef, PageAllocator};
+use super::{HeapAllocator, PaRef, PageAllocator};
 use crate::container::{LinkedList, ListNode, ListNodeData, CursorMut};
-use crate::mem::{Allocation, HeapAllocation, Layout, MemOwner, PageLayout};
+use crate::mem::{Allocation, Layout, MemOwner, PageLayout};
 use crate::prelude::*;
 use crate::sync::IMutex;
 
@@ -135,7 +136,7 @@ impl HeapZone {
         }
     }
 
-    unsafe fn alloc(&mut self, layout: Layout) -> Option<HeapAllocation> {
+    unsafe fn alloc(&mut self, layout: Layout) -> Option<NonNull<[u8]>> {
         let size = layout.size();
         let align = layout.align();
 
@@ -154,14 +155,24 @@ impl HeapZone {
                         let alloc_size = old_size - free_zone.size();
                         self.free_space.set(self.free_space() - alloc_size);
 
-                        return Some(HeapAllocation::new(addr, alloc_size, align));
+                        return Some(
+                            NonNull::slice_from_raw_parts(
+                                NonNull::new(addr as *mut u8).unwrap(),
+                                alloc_size,
+                            ),
+                        );
                     },
                     ResizeResult::Remove(addr) => {
                         cursor.remove_prev();
 
                         self.free_space.set(self.free_space() - old_size);
 
-                        return Some(HeapAllocation::new(addr, old_size, align));
+                        return Some(
+                            NonNull::slice_from_raw_parts(
+                                NonNull::new(addr as *mut u8).unwrap(),
+                                old_size,
+                            ),
+                        );
                     },
                     ResizeResult::NoCapacity => (),
                 }
@@ -171,22 +182,19 @@ impl HeapZone {
         None
     }
 
-    // does not chack if ptr is in this zone
-    // ptr should be chuk_size aligned
-    unsafe fn dealloc(&mut self, allocation: HeapAllocation) {
-        let addr = allocation.addr();
-        let size = allocation.size();
+    // does not check if allocation is in this zone
+    unsafe fn dealloc(&mut self, allocation: NonNull<[u8]>) {
+        let addr = allocation.as_mut_ptr() as usize;
+        let size = allocation.len();
 
         let new_node = unsafe { Node::new(addr, size) };
         let mut cursor = self.get_prev_next_node(addr);
 
-        if let Some(prev_node) = cursor.prev() {
-            if !prev_node.merge(&new_node) {
-                // only insert if nodes could not merge,
-                // otherwise the new_node merged with prev_node and can now be ignored
-                cursor.insert_prev(new_node);
-            }
+        if let Some(prev_node) = cursor.prev() && prev_node.merge(&new_node) {
+            // nodes were merged, do nothing
         } else {
+            // only insert if nodes could not merge,
+            // otherwise the new_node merged with prev_node and can now be ignored
             cursor.insert_prev(new_node);
         }
 
@@ -254,7 +262,7 @@ impl LinkedListAllocatorInner {
         }
     }
 
-    pub fn alloc(&mut self, layout: Layout, page_allocator: &dyn PageAllocator) -> Option<HeapAllocation> {
+    pub fn alloc(&mut self, layout: Layout, page_allocator: &dyn PageAllocator) -> Option<NonNull<[u8]>> {
         let size = layout.size();
         let align = layout.align();
 
@@ -279,9 +287,12 @@ impl LinkedListAllocatorInner {
         unsafe { zone.alloc(layout) }
     }
 
-    pub unsafe fn dealloc(&mut self, allocation: HeapAllocation) {
-        let addr = allocation.addr();
-        let size = allocation.size();
+    pub unsafe fn dealloc(&mut self, allocation_start: NonNull<u8>, layout: Layout) {
+        let allocation = LinkedListAllocator::get_allocation(allocation_start, layout)
+            .expect("invalid deallocation");
+
+        let addr = allocation.as_mut_ptr() as usize;
+        let size = allocation.len();
 
         for z in self.list.iter_mut() {
             if z.contains(addr, size) {
@@ -304,17 +315,6 @@ impl LinkedListAllocatorInner {
             }
         }
     }
-
-    /// Used for implementing the OrigAllocator trait on anything that wraps a LinkedListAllocatorInner
-    pub fn compute_alloc_properties(allocation: HeapAllocation) -> Option<HeapAllocation> {
-        if align_of(allocation.addr()) < CHUNK_SIZE {
-            None
-        } else {
-            let align = allocation.align();
-            let size = align_up(allocation.size(), max(CHUNK_SIZE, align));
-            Some(HeapAllocation::new(allocation.addr(), size, align))
-        }
-    }
 }
 
 // NOTE: can switch to schedular mutex once implemented
@@ -330,26 +330,27 @@ impl LinkedListAllocator {
             allocator: IMutex::new(page_allocator),
         }
     }
+
+    /// Given the pointer and layout, computes the actual allocation slice that was returned
+    pub fn get_allocation(allocation_start: NonNull<u8>, layout: Layout) -> Option<NonNull<[u8]>> {
+        if align_of(allocation_start.as_ptr() as usize) < CHUNK_SIZE {
+            None
+        } else {
+            let size = align_up(layout.size(), max(CHUNK_SIZE, layout.align()));
+
+            Some(NonNull::slice_from_raw_parts(allocation_start, size))
+        }
+    }
 }
 
 // TODO: add specialized realloc method
-impl HeapAllocator for LinkedListAllocator {
-    fn alloc(&self, layout: Layout) -> Option<HeapAllocation> {
+unsafe impl HeapAllocator for LinkedListAllocator {
+    fn alloc(&self, layout: Layout) -> Option<NonNull<[u8]>> {
         self.inner.lock().alloc(layout, self.allocator.lock().allocator())
     }
 
-    unsafe fn dealloc(&self, allocation: HeapAllocation) {
-        unsafe { self.inner.lock().dealloc(allocation) }
-    }
-}
-
-impl OrigAllocator for LinkedListAllocator {
-    fn as_heap_allocator(&self) -> &dyn HeapAllocator {
-        self
-    }
-
-    fn compute_alloc_properties(&self, allocation: HeapAllocation) -> Option<HeapAllocation> {
-        LinkedListAllocatorInner::compute_alloc_properties(allocation)
+    unsafe fn dealloc(&self, allocation: NonNull<u8>, layout: Layout) {
+        unsafe { self.inner.lock().dealloc(allocation, layout) }
     }
 }
 

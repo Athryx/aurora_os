@@ -8,9 +8,9 @@ use crate::cap::memory::Memory;
 use crate::container::{Arc, Weak, HashMap};
 use crate::int::IPI_PROCESS_EXIT;
 use crate::int::apic::{Ipi, IpiDest};
-use crate::mem::{MemOwner, addr};
+use crate::mem::MemOwner;
 use crate::sched::{Tid, Thread, ThreadHandle, ThreadState, PostSwitchAction, THREAD_MAP, switch_current_thread_to};
-use crate::alloc::{PaRef, OrigRef, root_alloc_page_ref, root_alloc_ref};
+use crate::alloc::{PaRef, AllocRef, root_alloc_page_ref, root_alloc_ref};
 use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability, CapabilityMap, CapType, CapId, Capability};
 use crate::prelude::*;
 use crate::sched::kernel_stack::KernelStack;
@@ -50,7 +50,7 @@ pub struct Process {
     name: String,
 
     page_allocator: PaRef,
-    heap_allocator: OrigRef,
+    heap_allocator: AllocRef,
 
     pub is_alive: AtomicBool,
     pub num_threads_running: AtomicUsize,
@@ -68,8 +68,8 @@ pub struct Process {
 }
 
 impl Process {
-    pub fn new(page_allocator: PaRef, allocer: OrigRef, name: String) -> KResult<WeakCapability<Self>> {
-        let addr_space = VirtAddrSpace::new(page_allocator.clone(), allocer.downgrade())?;
+    pub fn new(page_allocator: PaRef, allocer: AllocRef, name: String) -> KResult<WeakCapability<Self>> {
+        let addr_space = VirtAddrSpace::new(page_allocator.clone(), allocer.clone())?;
 
         let strong_cap = StrongCapability::new_flags(
             Process {
@@ -81,13 +81,13 @@ impl Process {
                 strong_reference: IMutex::new(None),
                 self_weak: Once::new(),
                 next_tid: AtomicUsize::new(0),
-                threads: IMutex::new(Vec::new(allocer.clone().downgrade())),
+                threads: IMutex::new(Vec::new(allocer.clone())),
                 cr3_addr: addr_space.cr3_addr(),
                 addr_space_data: IMutex::new(AddrSpaceData {
                     addr_space,
-                    mapped_memory_capabilities: HashMap::new(allocer.downgrade()),
+                    mapped_memory_capabilities: HashMap::new(allocer.clone()),
                 }),
-                cap_map: CapabilityMap::new(allocer.downgrade()),
+                cap_map: CapabilityMap::new(allocer.clone()),
             },
             CapFlags::READ | CapFlags::PROD | CapFlags::WRITE,
             allocer,
@@ -103,7 +103,7 @@ impl Process {
         self.page_allocator.clone()
     }
 
-    pub fn heap_allocator(&self) -> OrigRef {
+    pub fn heap_allocator(&self) -> AllocRef {
         self.heap_allocator.clone()
     }
 
@@ -407,7 +407,7 @@ pub fn init_kernel_process() {
         Process::new(
             root_alloc_page_ref(),
             root_alloc_ref(),
-            String::from_str(root_alloc_ref().downgrade(), "kernel")
+            String::from_str(root_alloc_ref(), "kernel")
                 .expect(FAIL_MESSAGE)
         ).expect(FAIL_MESSAGE)
             .inner()

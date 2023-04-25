@@ -1,4 +1,4 @@
-use crate::alloc::OrigRef;
+use crate::alloc::AllocRef;
 use crate::prelude::*;
 use crate::cap::{CapFlags, StrongCapability, Capability};
 use crate::arch::x64::IntDisable;
@@ -36,7 +36,7 @@ pub fn spawner_new(
     let allocator = current_process.cap_map()
         .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?
         .into_inner();
-    let alloc_ref = OrigRef::from_arc(allocator);
+    let alloc_ref = AllocRef::from_arc(allocator);
 
     let spawn_key = current_process.cap_map()
         .get_key_with_perms(spawn_key_id, CapFlags::READ, weak_auto_destroy)?
@@ -47,7 +47,7 @@ pub fn spawner_new(
     }
 
     let spawner = StrongCapability::new_flags(
-        Spawner::new(alloc_ref.downgrade()),
+        Spawner::new(alloc_ref.clone()),
         spawner_cap_flags,
         alloc_ref,
     )?;

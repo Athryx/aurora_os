@@ -7,7 +7,6 @@ use core::ptr::NonNull;
 use core::slice::SliceIndex;
 
 use crate::alloc::{AllocRef, HeapAllocator};
-use crate::mem::HeapAllocation;
 use crate::prelude::*;
 
 struct RawVec<T> {
@@ -42,10 +41,10 @@ impl<T> RawVec<T> {
                 .allocator()
                 .alloc(layout)
                 .ok_or(SysErr::OutOfMem)?
-                .as_mut_ptr();
+                .cast();
 
             Ok(RawVec {
-                ptr: NonNull::new(ptr).unwrap(),
+                ptr,
                 cap,
                 marker: PhantomData,
                 allocer,
@@ -80,15 +79,14 @@ impl<T> RawVec<T> {
         let new_alloc = if self.cap == 0 {
             allocator.alloc(new_layout)
         } else {
-            let old_ptr = self.ptr.as_ptr();
-            let old_alloc = HeapAllocation::array(old_ptr, self.cap);
-            unsafe { allocator.realloc(old_alloc, new_layout) }
+            let old_layout = Layout::array::<T>(self.cap).unwrap();
+            unsafe { allocator.realloc(self.ptr.cast(), old_layout, new_layout) }
         };
 
         // If allocation fails, `new_ptr` will be null, in which case we abort.
         match new_alloc {
-            Some(mut a) => {
-                self.ptr = NonNull::new(a.as_mut_ptr()).unwrap();
+            Some(ptr) => {
+                self.ptr = ptr.as_non_null_ptr().cast();
                 self.cap = new_cap;
                 Ok(())
             },
@@ -102,9 +100,9 @@ impl<T> Drop for RawVec<T> {
         let elem_size = size_of::<T>();
 
         if self.cap != 0 && elem_size != 0 {
-            let alloc = HeapAllocation::from_ptr(self.ptr.as_ptr());
+            let layout = Layout::array::<T>(self.cap).unwrap();
             unsafe {
-                self.allocer.allocator().dealloc(alloc);
+                self.allocer.allocator().dealloc(self.ptr.cast(), layout);
             }
         }
     }

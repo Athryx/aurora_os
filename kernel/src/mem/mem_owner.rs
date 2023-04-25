@@ -2,8 +2,7 @@ use core::alloc::Layout;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 
-use super::HeapAllocation;
-use crate::alloc::OrigAllocator;
+use crate::alloc::HeapAllocator;
 use crate::prelude::*;
 
 /// Represents an owned object in memory, but does not control allocation for that object
@@ -14,11 +13,11 @@ pub struct MemOwner<T>{
 }
 
 impl<T> MemOwner<T> {
-    pub fn new(data: T, allocator: &dyn OrigAllocator) -> KResult<Self> {
+    pub fn new(data: T, allocator: &dyn HeapAllocator) -> KResult<Self> {
         let layout = Layout::new::<T>();
 
-        let mut mem = allocator.alloc(layout).ok_or(SysErr::OutOfMem)?;
-        let ptr: *mut T = mem.as_mut_ptr();
+        let mem = allocator.alloc(layout).ok_or(SysErr::OutOfMem)?;
+        let ptr: *mut T = mem.as_mut_ptr() as *mut T;
 
         unsafe {
             core::ptr::write(ptr, data);
@@ -41,11 +40,6 @@ impl<T> MemOwner<T> {
         }
     }
 
-    // TODO: remove
-    /*pub unsafe fn clone(&self) -> Self {
-        MemOwner(self.0)
-    }*/
-
     pub fn ptr(&self) -> *const T {
         self.ptr_mut() as *const _
     }
@@ -65,10 +59,10 @@ impl<T> MemOwner<T> {
     }
 
     // safety: no other mem owner must point to this memory
-    pub unsafe fn drop_in_place(self, allocator: &dyn OrigAllocator) {
+    pub unsafe fn drop_in_place(self, allocator: &dyn HeapAllocator) {
         unsafe {
             ptr::drop_in_place(self.pointer.as_ptr());
-            allocator.dealloc_orig(HeapAllocation::from_ptr(self.ptr_mut()));
+            allocator.dealloc(self.pointer.cast(), Layout::new::<T>());
         }
     }
 }

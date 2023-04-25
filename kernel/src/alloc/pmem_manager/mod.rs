@@ -12,7 +12,7 @@ use zone_map::ZoneMap;
 
 use super::fixed_page_allocator::FixedPageAllocator;
 use super::linked_list_allocator::LinkedListAllocator;
-use super::{OrigAllocator, OrigRef, PaRef, PageAllocator};
+use super::{HeapAllocator, AllocRef, PaRef, PageAllocator};
 use crate::mb2::{MemoryMap, MemoryRegionType};
 use crate::mem::{Allocation, PageLayout};
 use crate::prelude::*;
@@ -27,6 +27,9 @@ type MainMap = ZoneMap<AVirtRange>;
 type MetaMap = ZoneMap<UVirtRange>;
 
 impl MetaRange {
+    /// Creates a new metadate range
+    /// 
+    /// The zone is taken from the meta map, or the main map if no zone in the meta map is large enough
     fn new(size: usize, main_map: &mut MainMap, meta_map: &mut MetaMap) -> Option<Self> {
         match meta_map.remove_zone_at_least_size(size) {
             Some(range) => Some(MetaRange::Meta(range)),
@@ -34,6 +37,7 @@ impl MetaRange {
         }
     }
 
+    /// Puts this metadata ranges's zone back where it came from (either main map or mata map)
     fn insert_into(&self, main_map: &mut MainMap, meta_map: &mut MetaMap) {
         match *self {
             Self::Main(range) => {
@@ -53,6 +57,41 @@ impl MetaRange {
     }
 }
 
+/// Iterates over all the sections of size aligned pages in an AVirtRange
+// TODO: maybe put this as a method on AVirtRange if it is ever used anywhere else
+#[derive(Clone)]
+struct SizeAlignedIter {
+    start: usize,
+    end: usize,
+}
+
+impl SizeAlignedIter {
+    fn new(range: AVirtRange) -> Self {
+        SizeAlignedIter {
+            start: range.as_usize(),
+            end: range.end_usize(),
+        }
+    }
+}
+
+impl Iterator for SizeAlignedIter {
+    type Item = AVirtRange;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.start >= self.end {
+            return None;
+        }
+
+        let size = min(align_of(self.start), 1 << log2(self.end - self.start));
+
+        let out = AVirtRange::new(VirtAddr::new(self.start), size);
+
+        self.start += size;
+
+        Some(out)
+    }
+}
+
 pub struct PmemManager {
     allocers: &'static [PmemAllocator],
     next_index: AtomicUsize,
@@ -63,32 +102,20 @@ impl PmemManager {
     /// Creates a new PmemManager from the memory map
     /// Also returns the total amount of bytes that can be allocated, used to set up the root allocator
     pub unsafe fn new(mem_map: &MemoryMap) -> (PmemManager, usize) {
-        // iterator over usable memory zones as a VirtRange
-        let usable = mem_map
+        // iterator that finds all the usable memory regions,
+        // and splits them up into size aligned chunks
+        // (so they are valid to be use for PmemAllocator)
+        let zone_iter = mem_map
             .iter()
             .filter(|zone| matches!(zone, MemoryRegionType::Usable(_)))
-            .filter_map(|mem| mem.range().to_virt().as_inside_aligned());
+            .filter_map(|mem| mem.range().to_virt().as_inside_aligned())
+            .flat_map(SizeAlignedIter::new);
 
-        // biggest usable virt range
-        // align to pages because we will use this for the initial allocator
-        let max = usable
+        // biggest usable zone, used for bootstrap heap
+        let init_heap_vrange = zone_iter
             .clone()
             .reduce(|z1, z2| if z1.size() > z2.size() { z1 } else { z2 })
             .expect("no usable memory zones found");
-
-        // get the size of the largest power of 2 aligned chunk of memory
-        // we will use this memory for the temporary bump allocator to store heap data needed to set up buddy allocators
-        // use the biggest chunk because smaller chunks will be used for allocator metadata,
-        // but the biggest chunk will always be selected as allocatable memory, so it won't be written to during inititilization
-        let mut level_size = 1 << log2(max.size());
-        let mut level_addr = align_up(max.as_usize(), level_size);
-        if level_addr + level_size > max.end_usize() {
-            level_size >>= 1;
-            level_addr = align_up(max.as_usize(), level_size);
-        }
-
-        // Panic safety: will be aligned because level_addr and level_size are aligned in above code
-        let init_heap_vrange = AVirtRange::new(VirtAddr::new(level_addr), level_size);
 
         // A fixed page allocator used as the initial page allocator
         // panic safety: this range is the biggest range, it should not fail
@@ -97,30 +124,19 @@ impl PmemManager {
         let page_ref = unsafe { PaRef::new_raw(pa_ptr) };
 
         let allocer = LinkedListAllocator::new(page_ref);
-        let temp = &allocer as *const dyn OrigAllocator;
+        let temp = &allocer as *const dyn HeapAllocator;
         // Safety: make sure not to use this outside of this function
-        let aref = unsafe { OrigRef::new_raw(temp) };
+        let aref = unsafe { AllocRef::new_raw(temp) };
 
         // holds zones of memory that have a size of power of 2 and an alignmant equal to their size
-        let mut zones = ZoneMap::new(aref.downgrade());
+        let mut zones = ZoneMap::new(aref.clone());
 
         // holds zones taken from zones vecmap that are used to store metadata
-        let mut metadata_zones = ZoneMap::new(aref.downgrade());
+        let mut metadata_zones = ZoneMap::new(aref);
 
-        for region in usable {
-            let mut start = region.as_usize();
-            let end = region.end_usize();
-
-            while start < end {
-                let size = min(align_of(start), 1 << log2(end - start));
-                // because region is aligned, this should be aligned
-                let range = AVirtRange::new(VirtAddr::new(start), size);
-                zones
-                    .insert(range)
-                    .expect("not enough memory to build zone map for pmem manager");
-
-                start += size;
-            }
+        for range in zone_iter {
+            zones.insert(range)
+                .expect("not enough memory to build zone map for pmem manager");
         }
 
         // one zone will be used to store the allocators
@@ -170,8 +186,11 @@ impl PmemManager {
             let tree_data = if let Some(data) = MetaRange::new(tree_size, &mut zones, &mut metadata_zones) {
                 data
             } else {
-                // give up on using this zone, use it for metadata instead
-                metadata_zones.insert(current_zone.as_unaligned()).unwrap();
+                // give up on using this zone, use it for metadata instead,
+                // but only if it is not being used by the bootstrap heap, otherwise discard
+                if !init_heap_vrange.contains_range(&current_zone) {
+                    metadata_zones.insert(current_zone.as_unaligned()).unwrap();
+                }
                 continue;
             };
 
@@ -214,11 +233,14 @@ impl PmemManager {
                     metadata_zones.insert(orig_index_range).unwrap();
                 }
             } else {
-                // give up on using this zone, use it for metadata instead
-                metadata_zones.insert(current_zone.as_unaligned()).unwrap();
-
                 // restore old zones before moving on to next zone
                 tree_data.insert_into(&mut zones, &mut metadata_zones);
+
+                // give up on using this zone, use it for metadata instead,
+                // but only if it is not being used by the bootstrap heap, otherwise discard
+                if !init_heap_vrange.contains_range(&current_zone) {
+                    metadata_zones.insert(current_zone.as_unaligned()).unwrap();
+                }
                 continue;
             }
 
@@ -241,7 +263,7 @@ impl PmemManager {
         }
 
         let allocator_slice =
-            unsafe { slice::from_raw_parts_mut(allocator_range.as_usize() as *mut PmemAllocator, i) };
+            unsafe { slice::from_raw_parts_mut(allocator_slice.as_mut_ptr() as *mut PmemAllocator, i) };
 
         allocator_slice.sort_unstable_by(|a, b| a.start_addr().cmp(&b.start_addr()));
 
