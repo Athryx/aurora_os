@@ -17,46 +17,6 @@ use crate::mb2::{MemoryMap, MemoryRegionType};
 use crate::mem::{Allocation, PageLayout};
 use crate::prelude::*;
 
-// metadata range
-enum MetaRange {
-    Main(AVirtRange),
-    Meta(UVirtRange),
-}
-
-type MainMap = ZoneMap<AVirtRange>;
-type MetaMap = ZoneMap<UVirtRange>;
-
-impl MetaRange {
-    /// Creates a new metadate range
-    /// 
-    /// The zone is taken from the meta map, or the main map if no zone in the meta map is large enough
-    fn new(size: usize, main_map: &mut MainMap, meta_map: &mut MetaMap) -> Option<Self> {
-        match meta_map.remove_zone_at_least_size(size) {
-            Some(range) => Some(MetaRange::Meta(range)),
-            None => main_map.remove_zone_at_least_size(size).map(MetaRange::Main),
-        }
-    }
-
-    /// Puts this metadata ranges's zone back where it came from (either main map or mata map)
-    fn insert_into(&self, main_map: &mut MainMap, meta_map: &mut MetaMap) {
-        match *self {
-            Self::Main(range) => {
-                main_map.insert(range).unwrap();
-            },
-            Self::Meta(range) => {
-                meta_map.insert(range).unwrap();
-            },
-        }
-    }
-
-    fn range(&self) -> UVirtRange {
-        match self {
-            Self::Main(range) => range.as_unaligned(),
-            Self::Meta(range) => *range,
-        }
-    }
-}
-
 /// Iterates over all the sections of size aligned pages in an AVirtRange
 // TODO: maybe put this as a method on AVirtRange if it is ever used anywhere else
 #[derive(Clone)]
