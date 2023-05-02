@@ -162,7 +162,7 @@ impl<'a> TreeNode<'a> {
 /// 
 /// Basically, this is a boddy allocator that has a series of levels, with the root level being the largest,
 /// and each subsequent level being half the size of previous
-/// An array called index uses status bits to track allocation status
+/// An array called tree uses status bits to track allocation status
 /// 
 /// Allocating an entry involves finding a free node at a given level, and going up the buddy tree,
 /// marking each node as having an occupied child and clearing the coalese bit to cancel any deallocations that might remove these marks
@@ -178,10 +178,6 @@ pub struct PmemAllocator {
     /// tree slice stores metadata about allocated memory
     pub tree: *const [AtomicU8],
 
-    /// index slice stores allocated size of each index
-    // TODO: remove because unused
-    pub index: *const [AtomicUsize],
-
     /// maximum depth of the tree
     /// depth of 0 is the root node, and each subsequent depth has nodes that are half the size of previous
     depth: usize,
@@ -194,17 +190,14 @@ pub struct PmemAllocator {
 }
 
 impl PmemAllocator {
-    /// Returns the required tree size and index size in bytes in a tuple, or none if vrange and level_size are not valid for the allocator
-    pub fn required_tree_index_size(vrange: AVirtRange, level_size: usize) -> Option<(usize, usize)> {
+    /// Returns the required tree array size in bytes, or none if vrange and level_size are not valid for the allocator
+    pub fn required_tree_array_size(vrange: AVirtRange, level_size: usize) -> Option<usize> {
         if level_size.is_power_of_two()
 			&& vrange.is_power2_size_align()
 			// because vrange size and level_size are both power of 2, they are guarenteed to divide eachother evenly
 			&& vrange.size() >= level_size
         {
-            Some((
-                2 * (vrange.size() / level_size) - 1,
-                size_of::<usize>() * vrange.size() / level_size,
-            ))
+            Some(2 * (vrange.size() / level_size) - 1)
         } else {
             None
         }
@@ -213,44 +206,38 @@ impl PmemAllocator {
     /// creates a new physical memory allocator, and panics if the invariants are not upheld
     ///
     /// # Safety
-    /// must not have a mutable reference to tree or index alive once you start calling other allocator methods
+    /// must not have a mutable reference to tree array alive once you start calling other allocator methods
     pub unsafe fn from(
         vrange: AVirtRange,
         tree: *mut [AtomicU8],
-        index: *mut [AtomicUsize],
         level_size: usize,
     ) -> Self {
         unsafe {
-            Self::try_from(vrange, tree, index, level_size).expect("failed to make physical memory allocator")
+            Self::try_from(vrange, tree, level_size).expect("failed to make physical memory allocator")
         }
     }
 
     /// creates a new physical memory allocator, and returns None if the invariants are not upheld
     ///
     /// # Safety
-    /// must not have a mutable reference to tree or index alive once you start calling other allocator methods
+    /// must not have a mutable reference to tree array alive once you start calling other allocator methods
     pub unsafe fn try_from(
         vrange: AVirtRange,
         tree: *mut [AtomicU8],
-        index: *mut [AtomicUsize],
         level_size: usize,
     ) -> Option<Self> {
-        if Self::required_tree_index_size(vrange, level_size)? == (tree.len(), index.len()) {
+        if Self::required_tree_array_size(vrange, level_size)? == tree.len() {
             // this is needed because Atomics do not have clone
             // might be slow, but shouldn't matter because this is done once
             unsafe {
                 // need to do it with raw integers because this is much faster
                 let tree_u8 = slice::from_raw_parts_mut(tree.as_mut_ptr() as *mut u8, tree.len());
-                // do not need to initilized index to 0
-                //let index_usize = slice::from_raw_parts_mut(index.as_mut_ptr() as *mut usize, index.len());
                 tree_u8.fill(0);
-                //index_usize.fill(0);
             }
 
             Some(PmemAllocator {
                 addr_range: vrange,
                 tree: tree as *const [AtomicU8],
-                index: index as *const [AtomicUsize],
                 depth: log2(vrange.size() / level_size),
                 max_size: vrange.size(),
                 level_size,
@@ -558,10 +545,6 @@ impl PmemAllocator {
 
     fn tree_slice(&self) -> &[AtomicU8] {
         unsafe { self.tree.as_ref().unwrap() }
-    }
-
-    fn index_slice(&self) -> &[AtomicUsize] {
-        unsafe { self.index.as_ref().unwrap() }
     }
 }
 

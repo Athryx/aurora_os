@@ -179,13 +179,15 @@ impl PmemManager {
         let mut total_mem_size = 0;
 
         while let Some(current_zone) = zones.remove_largest_zone() {
-            let (unaligned_tree_size, index_size) =
-                PmemAllocator::required_tree_index_size(current_zone, PAGE_SIZE).unwrap();
+            let unaligned_tree_size = PmemAllocator::required_tree_array_size(current_zone, PAGE_SIZE).unwrap();
             let tree_size = align_up(unaligned_tree_size, size_of::<usize>());
 
-            let tree_data = if let Some(data) = MetaRange::new(tree_size, &mut zones, &mut metadata_zones) {
-                data
-            } else {
+            let tree_zone = match metadata_zones.remove_zone_at_least_size(tree_size) {
+                Some(range) => Some(range),
+                None => zones.remove_zone_at_least_size(tree_size).map(|range| range.as_unaligned()),
+            };
+
+            let Some(mut tree_zone) = tree_zone else {
                 // give up on using this zone, use it for metadata instead,
                 // but only if it is not being used by the bootstrap heap, otherwise discard
                 if !init_heap_vrange.contains_range(&current_zone) {
@@ -194,54 +196,13 @@ impl PmemManager {
                 continue;
             };
 
-            let tree_range;
-            let index_range;
+            let tree_range = tree_zone
+                .take_layout(Layout::from_size_align(tree_size, size_of::<usize>()).unwrap())
+                .unwrap();
 
-            if index_size + tree_size <= tree_data.range().size() {
-                let mut range = tree_data.range();
-
-                // shouldn't fail now
-                tree_range = range
-                    .take_layout(Layout::from_size_align(tree_size, size_of::<usize>()).unwrap())
-                    .unwrap();
-                index_range = range
-                    .take_layout(Layout::from_size_align(index_size, size_of::<usize>()).unwrap())
-                    .unwrap();
-
-                // put this zone back into the metadata map
-                if range.size() != 0 {
-                    metadata_zones.insert(range).unwrap();
-                }
-            } else if let Some(index_data) = MetaRange::new(index_size, &mut zones, &mut metadata_zones) {
-                let mut orig_tree_range = tree_data.range();
-                let mut orig_index_range = index_data.range();
-
-                // shouldn't fail now
-                tree_range = orig_tree_range
-                    .take_layout(Layout::from_size_align(tree_size, size_of::<usize>()).unwrap())
-                    .unwrap();
-                index_range = orig_index_range
-                    .take_layout(Layout::from_size_align(index_size, size_of::<usize>()).unwrap())
-                    .unwrap();
-
-                // put this zone back into the metadata map
-                if orig_tree_range.size() != 0 {
-                    metadata_zones.insert(orig_tree_range).unwrap();
-                }
-
-                if orig_index_range.size() != 0 {
-                    metadata_zones.insert(orig_index_range).unwrap();
-                }
-            } else {
-                // restore old zones before moving on to next zone
-                tree_data.insert_into(&mut zones, &mut metadata_zones);
-
-                // give up on using this zone, use it for metadata instead,
-                // but only if it is not being used by the bootstrap heap, otherwise discard
-                if !init_heap_vrange.contains_range(&current_zone) {
-                    metadata_zones.insert(current_zone.as_unaligned()).unwrap();
-                }
-                continue;
+            // put tree data range back into metadata slice if it is not yet depleted
+            if tree_zone.size() != 0 {
+                metadata_zones.insert(tree_zone).unwrap();
             }
 
             // technically undefined behavior to make a slice of uninitilized AtomicU8s, but in practice it shouldn't matter
@@ -250,10 +211,7 @@ impl PmemManager {
                 slice::from_raw_parts_mut(tree_range.as_usize() as *mut AtomicU8, unaligned_tree_size)
             };
 
-            let index_slice =
-                unsafe { slice::from_raw_parts_mut(index_range.as_usize() as *mut AtomicUsize, index_size) };
-
-            let allocator = unsafe { PmemAllocator::from(current_zone, tree_slice, index_slice, PAGE_SIZE) };
+            let allocator = unsafe { PmemAllocator::from(current_zone, tree_slice, PAGE_SIZE) };
 
             total_mem_size += current_zone.page_size();
 
