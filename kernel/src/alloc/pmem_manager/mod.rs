@@ -277,14 +277,43 @@ impl PmemManager {
     }
 
     // gets index in search dealloc, where the zindex is not set
-    fn get_index_of_allocation(&self, allocation: Allocation) -> Result<usize, usize> {
-        self.allocers
-            .binary_search_by(|allocer| allocer.start_addr().cmp(&allocation.as_usize()))
+    fn get_allocator_for_allocation(&self, allocation: Allocation) -> &PmemAllocator {
+        let result = self.allocers
+            .binary_search_by(|allocer| allocer.start_addr().cmp(&allocation.as_usize()));
+
+        match result {
+            Ok(index) => &self.allocers[index],
+            // if index is 0, there is no allocator that contains this allocation
+            // because there has to be an allocator with a start address befor 0
+            Err(index) if index != 0 => &self.allocers[index - 1],
+            _ => panic!("could not find allocator that matched allocation"),
+        }
+    }
+
+    /// Takes in allocator that allocation was allocated from and performs reallocation
+    /// 
+    /// Called by both realloc and search_realloc
+    unsafe fn realloc_inner(&self, allocator: &PmemAllocator, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
+        assert!(
+            layout.align() <= align_of(layout.size()),
+            "PmemManager does not support allocations with a greater alignamant than size"
+        );
+
+        if let Some(new_allocation) = unsafe { allocator.realloc_in_place(allocation, layout.size()) } {
+            Some(new_allocation)
+        } else {
+            let mut out = self.alloc(layout)?;
+            out.copy_from_mem(allocation.as_slice());
+            unsafe {
+                allocator.dealloc(allocation);
+            }
+            Some(out)
+        }
     }
 }
 
 // TODO: add realloc
-impl PageAllocator for PmemManager {
+unsafe impl PageAllocator for PmemManager {
     fn alloc(&self, layout: PageLayout) -> Option<Allocation> {
         assert!(
             layout.align() <= align_of(layout.size()),
@@ -313,12 +342,20 @@ impl PageAllocator for PmemManager {
     }
 
     unsafe fn search_dealloc(&self, allocation: Allocation) {
-        match self.get_index_of_allocation(allocation) {
-            Ok(index) => unsafe { self.allocers[index].dealloc(allocation) },
-            // if index is 0, there is no allocator that contains this allocation
-            // because there has to be an allocator with a start address befor 0
-            Err(index) if index != 0 => unsafe { self.allocers[index - 1].dealloc(allocation) },
-            _ => panic!("could not find allocator that matched allocation"),
+        unsafe {
+            self.get_allocator_for_allocation(allocation).dealloc(allocation);
+        }
+    }
+
+    unsafe fn realloc(&self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
+        unsafe {
+            self.realloc_inner(&self.allocers[allocation.zindex], allocation, layout)
+        }
+    }
+
+    unsafe fn search_realloc(&self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
+        unsafe {
+            self.realloc_inner(self.get_allocator_for_allocation(allocation), allocation, layout)
         }
     }
 }

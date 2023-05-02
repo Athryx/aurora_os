@@ -19,7 +19,7 @@ impl FixedPageAllocator {
     }
 }
 
-impl PageAllocator for FixedPageAllocator {
+unsafe impl PageAllocator for FixedPageAllocator {
     fn alloc(&self, layout: PageLayout) -> Option<Allocation> {
         if self.alloced.load(Ordering::Acquire)
             || layout.size() > self.mem.size()

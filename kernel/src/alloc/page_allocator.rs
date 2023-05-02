@@ -3,7 +3,7 @@ use crate::mem::{Allocation, PageLayout};
 use crate::prelude::*;
 
 /// A trait that represents an object that can allocate physical memory pages
-pub trait PageAllocator: Send + Sync {
+pub unsafe trait PageAllocator: Send + Sync {
     /// Allocates a page according to page layout
     fn alloc(&self, layout: PageLayout) -> Option<Allocation>;
 

@@ -152,7 +152,7 @@ impl CapObject for CapAllocator {
 
 // NOTE: all of these allocator methods will fail if called on a dead CapAllocator,
 // because prealloc_size wil be 0, and all zones from heap will be moved to parent
-impl PageAllocator for CapAllocator {
+unsafe impl PageAllocator for CapAllocator {
     fn alloc(&self, layout: PageLayout) -> Option<Allocation> {
         let allocation = zm().alloc(layout)?;
         let result = self.alloc_bytes(allocation.size());
