@@ -8,7 +8,8 @@ use crate::prelude::*;
 pub struct Allocation {
     ptr: VirtAddr,
     size: usize,
-    pub zindex: usize,
+    /// specifies which PmemAllocator this allocation is from, or `None` if it is not known
+    pub zindex: Option<usize>,
 }
 
 impl Allocation {
@@ -17,7 +18,7 @@ impl Allocation {
         Allocation {
             ptr: VirtAddr::new(addr),
             size,
-            zindex: 0,
+            zindex: None,
         }
     }
 

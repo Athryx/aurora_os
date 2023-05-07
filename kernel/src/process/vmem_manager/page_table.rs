@@ -157,7 +157,7 @@ impl PageTable {
 	pub unsafe fn dealloc(&mut self, allocer: &dyn PageAllocator) {
 		let frame = Allocation::new(self.addr(), PAGE_SIZE);
 		// TODO: maybe use regular dealloc and store the zindex in unused bits of page tabel entries
-        unsafe { allocer.search_dealloc(frame); }
+        unsafe { allocer.dealloc(frame); }
 	}
 
 	pub unsafe fn dealloc_all(&mut self, allocer: &dyn PageAllocator) {

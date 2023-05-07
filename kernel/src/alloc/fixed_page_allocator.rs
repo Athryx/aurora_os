@@ -32,7 +32,7 @@ unsafe impl PageAllocator for FixedPageAllocator {
         }
     }
 
-    unsafe fn search_dealloc(&self, allocation: Allocation) {
+    unsafe fn dealloc(&self, allocation: Allocation) {
         if allocation.addr() == self.mem.addr() && allocation.size() == self.mem.size() {
             self.alloced.store(false, Ordering::Release);
         }

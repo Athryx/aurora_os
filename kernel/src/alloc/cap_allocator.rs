@@ -172,13 +172,6 @@ unsafe impl PageAllocator for CapAllocator {
             zm().dealloc(allocation);
         }
     }
-
-    unsafe fn search_dealloc(&self, allocation: Allocation) {
-        self.dealloc_bytes(allocation.size());
-        unsafe {
-            zm().search_dealloc(allocation);
-        }
-    }
 }
 
 unsafe impl HeapAllocator for CapAllocator {

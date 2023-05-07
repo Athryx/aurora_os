@@ -196,15 +196,19 @@ impl PmemManager {
 
     // gets index in search dealloc, where the zindex is not set
     fn get_allocator_for_allocation(&self, allocation: Allocation) -> &PmemAllocator {
-        let result = self.allocers
-            .binary_search_by(|allocer| allocer.start_addr().cmp(&allocation.as_usize()));
+        if let Some(index) = allocation.zindex {
+            &self.allocers[index]
+        } else {
+            let result = self.allocers
+                .binary_search_by(|allocer| allocer.start_addr().cmp(&allocation.as_usize()));
 
-        match result {
-            Ok(index) => &self.allocers[index],
-            // if index is 0, there is no allocator that contains this allocation
-            // because there has to be an allocator with a start address befor 0
-            Err(index) if index != 0 => &self.allocers[index - 1],
-            _ => panic!("could not find allocator that matched allocation"),
+            match result {
+                Ok(index) => &self.allocers[index],
+                // if index is 0, there is no allocator that contains this allocation
+                // because there has to be an allocator with a start address befor 0
+                Err(index) if index != 0 => &self.allocers[index - 1],
+                _ => panic!("could not find allocator that matched allocation"),
+            }
         }
     }
 
@@ -244,7 +248,7 @@ unsafe impl PageAllocator for PmemManager {
         for i in start_index..(start_index + self.allocers.len()) {
             let i = i % self.allocers.len();
             if let Some(mut allocation) = self.allocers[i].alloc(layout.size()) {
-                allocation.zindex = i;
+                allocation.zindex = Some(i);
                 return Some(allocation);
             }
         }
@@ -255,23 +259,11 @@ unsafe impl PageAllocator for PmemManager {
     unsafe fn dealloc(&self, allocation: Allocation) {
         // this will panic if allocation is not contained in the allocator
         unsafe {
-            self.allocers[allocation.zindex].dealloc(allocation);
-        }
-    }
-
-    unsafe fn search_dealloc(&self, allocation: Allocation) {
-        unsafe {
             self.get_allocator_for_allocation(allocation).dealloc(allocation);
         }
     }
 
     unsafe fn realloc(&self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
-        unsafe {
-            self.realloc_inner(&self.allocers[allocation.zindex], allocation, layout)
-        }
-    }
-
-    unsafe fn search_realloc(&self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
         unsafe {
             self.realloc_inner(self.get_allocator_for_allocation(allocation), allocation, layout)
         }
