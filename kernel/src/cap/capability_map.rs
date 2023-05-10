@@ -2,7 +2,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 use concat_idents::concat_idents;
 
-use crate::{prelude::*, alloc::AllocRef};
+use crate::{prelude::*, alloc::HeapRef};
 use crate::container::HashMap;
 use crate::process::{Process, Spawner};
 use crate::alloc::CapAllocator;
@@ -24,7 +24,7 @@ pub struct CapabilityMap {
 }
 
 impl CapabilityMap {
-    pub fn new(allocator: AllocRef) -> Self {
+    pub fn new(allocator: HeapRef) -> Self {
         CapabilityMap {
             next_id: AtomicUsize::new(0),
             process_map: IMutex::new(HashMap::new(allocator.clone())),

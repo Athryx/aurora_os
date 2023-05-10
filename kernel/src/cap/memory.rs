@@ -1,5 +1,3 @@
-use core::sync::atomic::AtomicUsize;
-
 use crate::prelude::*;
 use crate::alloc::PaRef;
 use crate::mem::{Allocation, PageLayout};
@@ -46,7 +44,7 @@ impl MemoryInner {
             .expect("failed to make page layout");
         
         self.allocation = unsafe {
-            self.page_allocator.allocator().realloc(self.allocation, layout)
+            self.page_allocator.realloc(self.allocation, layout)
                 .ok_or(SysErr::OutOfMem)?
         };
 
@@ -69,7 +67,6 @@ impl Memory {
 
         let inner = MemoryInner {
             allocation: page_allocator
-                .allocator()
                 .alloc(
                     PageLayout::from_size_align(pages * PAGE_SIZE, PAGE_SIZE)
                         .expect("could not create page layout for Memory capability"),

@@ -1,36 +1,36 @@
 use core::mem::{self, MaybeUninit};
 use core::ops::{Deref, DerefMut};
 
-use crate::alloc::{HeapAllocator, AllocRef};
+use crate::alloc::HeapRef;
 use crate::mem::MemOwner;
 use crate::prelude::*;
 
 #[derive(Debug)]
 pub struct Box<T> {
     data: MemOwner<T>,
-    allocator: AllocRef,
+    allocator: HeapRef,
 }
 
 impl<T> Box<T> {
-    pub fn new(data: T, mut allocator: AllocRef) -> KResult<Self> {
+    pub fn new(data: T, mut allocator: HeapRef) -> KResult<Self> {
         Ok(Box {
-            data: MemOwner::new(data, allocator.allocator())?,
+            data: MemOwner::new(data, &mut allocator)?,
             allocator,
         })
     }
 
-    pub fn new_uninit(allocator: AllocRef) -> KResult<Box<MaybeUninit<T>>> {
+    pub fn new_uninit(allocator: HeapRef) -> KResult<Box<MaybeUninit<T>>> {
         Box::new(MaybeUninit::<T>::uninit(), allocator)
     }
 
-    pub unsafe fn from_raw(ptr: *mut T, allocator: AllocRef) -> Self {
+    pub unsafe fn from_raw(ptr: *mut T, allocator: HeapRef) -> Self {
         Box {
             data: unsafe { MemOwner::from_raw(ptr) },
             allocator,
         }
     }
 
-    pub fn into_raw(this: Self) -> (*mut T, AllocRef) {
+    pub fn into_raw(this: Self) -> (*mut T, HeapRef) {
         let data = unsafe { ptr::read(&this.data) };
         let allocator = unsafe { ptr::read(&this.allocator) };
         mem::forget(this);
@@ -56,8 +56,8 @@ impl<T> Box<T> {
         this.data.ptr_mut()
     }
 
-    pub fn allocator(this: &mut Self) -> &dyn HeapAllocator {
-        this.allocator.allocator()
+    pub fn allocator(this: &mut Self) -> &mut HeapRef {
+        &mut this.allocator
     }
 }
 
@@ -82,7 +82,7 @@ impl<T> Drop for Box<T> {
             // but then never use the original mem owner
             // so it is ok to drop the new mem owner in place
             let inner = ptr::read(&self.data);
-            inner.drop_in_place(self.allocator.allocator());
+            inner.drop_in_place(&mut self.allocator);
         }
     }
 }

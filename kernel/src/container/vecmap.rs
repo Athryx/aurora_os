@@ -5,7 +5,7 @@ use core::slice::{Iter, IterMut};
 use core::fmt::{self, Debug};
 
 use super::Vec;
-use crate::alloc::{AllocRef, HeapAllocator};
+use crate::alloc::HeapRef;
 use crate::prelude::*;
 
 #[derive(Debug)]
@@ -33,7 +33,7 @@ pub struct VecMap<K: Ord, V> {
 }
 
 impl<K: Ord, V> VecMap<K, V> {
-    pub fn new(allocator: AllocRef) -> Self {
+    pub fn new(allocator: HeapRef) -> Self {
         VecMap {
             data: Vec::new(allocator),
             compare: None,
@@ -41,14 +41,14 @@ impl<K: Ord, V> VecMap<K, V> {
     }
 
     // compare returns wether first argument is less than, equal to, or greater than second argument
-    pub fn with_compare(allocator: AllocRef, compare: fn(&K, &K) -> Ordering) -> Self {
+    pub fn with_compare(allocator: HeapRef, compare: fn(&K, &K) -> Ordering) -> Self {
         VecMap {
             data: Vec::new(allocator),
             compare: Some(compare),
         }
     }
 
-    pub fn try_with_capacity(allocator: AllocRef, cap: usize) -> KResult<Self> {
+    pub fn try_with_capacity(allocator: HeapRef, cap: usize) -> KResult<Self> {
         Ok(VecMap {
             data: Vec::try_with_capacity(allocator, cap)?,
             compare: None,
@@ -56,7 +56,7 @@ impl<K: Ord, V> VecMap<K, V> {
     }
 
     pub fn try_with_capacity_compare(
-        allocator: AllocRef,
+        allocator: HeapRef,
         cap: usize,
         compare: fn(&K, &K) -> Ordering,
     ) -> KResult<Self> {
@@ -74,11 +74,11 @@ impl<K: Ord, V> VecMap<K, V> {
         self.data.capacity()
     }
 
-    pub fn allocator(&mut self) -> &dyn HeapAllocator {
+    pub fn allocator(&mut self) -> &mut HeapRef {
         self.data.allocator()
     }
 
-    pub fn alloc_ref(&self) -> AllocRef {
+    pub fn alloc_ref(&self) -> HeapRef {
         self.data.alloc_ref()
     }
 

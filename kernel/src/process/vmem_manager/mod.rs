@@ -4,7 +4,6 @@ use bitflags::bitflags;
 use lazy_static::lazy_static;
 use spin::Once;
 
-use crate::alloc::PageAllocator;
 use crate::arch::x64::invlpg;
 use crate::cap::CapFlags;
 use crate::mem::PageSize;
@@ -12,7 +11,7 @@ use crate::mem::PhysFrame;
 use crate::mem::VirtFrame;
 use crate::prelude::*;
 use crate::consts;
-use crate::alloc::{PaRef, AllocRef};
+use crate::alloc::{PaRef, HeapRef};
 use page_table::{PageTable, PageTablePointer, PageTableFlags};
 
 //mod frame_mapper;
@@ -119,8 +118,8 @@ pub struct VirtAddrSpace {
 }
 
 impl VirtAddrSpace {
-    pub fn new(mut page_allocator: PaRef, alloc_ref: AllocRef) -> KResult<Self> {
-        let pml4_table = PageTable::new(page_allocator.allocator(), PageTableFlags::NONE)
+    pub fn new(mut page_allocator: PaRef, alloc_ref: HeapRef) -> KResult<Self> {
+        let pml4_table = PageTable::new(&mut page_allocator, PageTableFlags::NONE)
             .ok_or(SysErr::OutOfMem)?;
 
         let mut out = VirtAddrSpace {
@@ -231,7 +230,7 @@ impl VirtAddrSpace {
     pub unsafe fn dealloc_addr_space(&mut self) {
         unsafe {
             self.cr3.as_mut_ptr().as_mut().unwrap()
-                .dealloc_all(self.page_allocator.allocator())
+                .dealloc_all(&mut self.page_allocator)
         }
     }
 
@@ -352,7 +351,7 @@ impl VirtAddrSpace {
                 if old_frame.1.get_size() > new_frame.1.get_size() {
                     // we will unmap some pages with 1 overlap
                     let depth = old_frame.1.get_size().page_table_depth();
-                    let mut new_page_table = PageTable::new(self.page_allocator.allocator(), *PARENT_FLAGS)
+                    let mut new_page_table = PageTable::new(&mut self.page_allocator, *PARENT_FLAGS)
                         .ok_or(SysErr::OutOfMem)?;
 
                     // map in the new table first
@@ -369,7 +368,7 @@ impl VirtAddrSpace {
                                 new_page_table.as_mut_ptr()
                                     .as_mut()
                                     .unwrap()
-                                    .dealloc_all(self.page_allocator.allocator());
+                                    .dealloc_all(&mut self.page_allocator);
                             }
             
                             Err(error)?
@@ -646,7 +645,7 @@ impl VirtAddrSpace {
                 page_table.add_entry(index, page_table_pointer);
             } else {
                 page_table = page_table
-                    .get_or_alloc(index, self.page_allocator.allocator(), *PARENT_FLAGS)
+                    .get_or_alloc(index, &mut self.page_allocator, *PARENT_FLAGS)
                     .ok_or(SysErr::OutOfMem)?;
             }
         }
@@ -706,7 +705,7 @@ impl VirtAddrSpace {
         for i in dealloc_start_index..depth {
             unsafe {
                 if let Some(table) = tables[i].as_mut() {
-                    table.dealloc(self.page_allocator.allocator())
+                    table.dealloc(&mut self.page_allocator)
                 } else {
                     break;
                 }

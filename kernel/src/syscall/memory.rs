@@ -1,4 +1,4 @@
-use crate::alloc::{PaRef, AllocRef};
+use crate::alloc::{PaRef, HeapRef};
 use crate::cap::{StrongCapability, Capability};
 use crate::cap::{CapFlags, CapId, memory::Memory};
 use crate::process::PageMappingFlags;
@@ -33,7 +33,7 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<us
         .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?
         .into_inner();
     let page_allocator = PaRef::from_arc(allocator.clone());
-    let heap_allocator = AllocRef::from_arc(allocator);
+    let heap_allocator = HeapRef::from_arc(allocator);
 
     let memory = StrongCapability::new_flags(
         Memory::new(page_allocator, pages)?,

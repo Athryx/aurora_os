@@ -10,7 +10,7 @@ use crate::int::IPI_PROCESS_EXIT;
 use crate::int::apic::{Ipi, IpiDest};
 use crate::mem::MemOwner;
 use crate::sched::{Tid, Thread, ThreadHandle, ThreadState, PostSwitchAction, THREAD_MAP, switch_current_thread_to};
-use crate::alloc::{PaRef, AllocRef, root_alloc_page_ref, root_alloc_ref};
+use crate::alloc::{PaRef, HeapRef, root_alloc_page_ref, root_alloc_ref};
 use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability, CapabilityMap, CapType, CapId, Capability};
 use crate::prelude::*;
 use crate::sched::kernel_stack::KernelStack;
@@ -50,7 +50,7 @@ pub struct Process {
     name: String,
 
     page_allocator: PaRef,
-    heap_allocator: AllocRef,
+    heap_allocator: HeapRef,
 
     pub is_alive: AtomicBool,
     pub num_threads_running: AtomicUsize,
@@ -68,7 +68,7 @@ pub struct Process {
 }
 
 impl Process {
-    pub fn new(page_allocator: PaRef, allocer: AllocRef, name: String) -> KResult<WeakCapability<Self>> {
+    pub fn new(page_allocator: PaRef, allocer: HeapRef, name: String) -> KResult<WeakCapability<Self>> {
         let addr_space = VirtAddrSpace::new(page_allocator.clone(), allocer.clone())?;
 
         let strong_cap = StrongCapability::new_flags(
@@ -103,7 +103,7 @@ impl Process {
         self.page_allocator.clone()
     }
 
-    pub fn heap_allocator(&self) -> AllocRef {
+    pub fn heap_allocator(&self) -> HeapRef {
         self.heap_allocator.clone()
     }
 

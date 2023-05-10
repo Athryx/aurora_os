@@ -2,7 +2,7 @@ use core::alloc::Layout;
 use core::ops::{Deref, DerefMut};
 use core::ptr::NonNull;
 
-use crate::alloc::HeapAllocator;
+use crate::alloc::HeapRef;
 use crate::prelude::*;
 
 /// Represents an owned object in memory, but does not control allocation for that object
@@ -13,7 +13,7 @@ pub struct MemOwner<T>{
 }
 
 impl<T> MemOwner<T> {
-    pub fn new(data: T, allocator: &dyn HeapAllocator) -> KResult<Self> {
+    pub fn new(data: T, allocator: &mut HeapRef) -> KResult<Self> {
         let layout = Layout::new::<T>();
 
         let mem = allocator.alloc(layout).ok_or(SysErr::OutOfMem)?;
@@ -59,7 +59,7 @@ impl<T> MemOwner<T> {
     }
 
     // safety: no other mem owner must point to this memory
-    pub unsafe fn drop_in_place(self, allocator: &dyn HeapAllocator) {
+    pub unsafe fn drop_in_place(self, allocator: &mut HeapRef) {
         unsafe {
             ptr::drop_in_place(self.pointer.as_ptr());
             allocator.dealloc(self.pointer.cast(), Layout::new::<T>());

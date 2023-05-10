@@ -12,7 +12,7 @@ use zone_map::ZoneMap;
 
 use super::fixed_page_allocator::FixedPageAllocator;
 use super::linked_list_allocator::LinkedListAllocator;
-use super::{HeapAllocator, AllocRef, PaRef, PageAllocator};
+use super::{HeapRef, PaRef, PageAllocator};
 use crate::mb2::{MemoryMap, MemoryRegionType};
 use crate::mem::{Allocation, PageLayout};
 use crate::prelude::*;
@@ -80,13 +80,13 @@ impl PmemManager {
         // A fixed page allocator used as the initial page allocator
         // panic safety: this range is the biggest range, it should not fail
         let page_allocator = unsafe { FixedPageAllocator::new(init_heap_vrange) };
-        let pa_ptr = &page_allocator as *const dyn PageAllocator;
-        let page_ref = unsafe { PaRef::new_raw(pa_ptr) };
+        let pa_ptr = &page_allocator as *const FixedPageAllocator;
+        let page_ref = unsafe { PaRef::init_allocator(pa_ptr) };
 
-        let allocer = LinkedListAllocator::new(page_ref);
-        let temp = &allocer as *const dyn HeapAllocator;
+        let init_heap_allocator = LinkedListAllocator::new(page_ref);
+        let init_allocator_ptr = &init_heap_allocator as *const LinkedListAllocator;
         // Safety: make sure not to use this outside of this function
-        let aref = unsafe { AllocRef::new_raw(temp) };
+        let aref = unsafe { HeapRef::init_allocator(init_allocator_ptr) };
 
         // holds zones of memory that have a size of power of 2 and an alignmant equal to their size
         let mut zones = ZoneMap::new(aref.clone());
@@ -194,6 +194,11 @@ impl PmemManager {
         )
     }
 
+    /// Returns the size that would be allocated for the given page layout
+    pub fn get_allocation_size_for_layout(layout: PageLayout) -> usize {
+        1 << log2_up(layout.size())
+    }
+
     // gets index in search dealloc, where the zindex is not set
     fn get_allocator_for_allocation(&self, allocation: Allocation) -> &PmemAllocator {
         if let Some(index) = allocation.zindex {
@@ -234,7 +239,6 @@ impl PmemManager {
     }
 }
 
-// TODO: add realloc
 unsafe impl PageAllocator for PmemManager {
     fn alloc(&self, layout: PageLayout) -> Option<Allocation> {
         assert!(

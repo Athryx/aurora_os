@@ -1,4 +1,3 @@
-use core::alloc::Layout;
 use core::cmp::min;
 
 use super::VirtAddr;

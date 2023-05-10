@@ -13,7 +13,7 @@ impl KernelStack {
     pub const DEFAULT_SIZE: usize = PAGE_SIZE * 16;
 
     pub fn new(mut page_allocator: PaRef) -> KResult<Self> {
-        let allocation = page_allocator.allocator()
+        let allocation = page_allocator
             .alloc(PageLayout::from_size_align(Self::DEFAULT_SIZE, PAGE_SIZE).unwrap())
             .ok_or(SysErr::OutOfMem)?;
         
@@ -39,7 +39,7 @@ impl KernelStack {
 impl Drop for KernelStack {
     fn drop(&mut self) {
         if let Self::Owned(allocation, allocator) = self {
-            unsafe { allocator.allocator().dealloc(*allocation); }
+            unsafe { allocator.dealloc(*allocation); }
         }
     }
 }

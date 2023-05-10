@@ -6,7 +6,7 @@ use core::fmt;
 use siphasher::sip::SipHasher;
 
 use super::{vec, Vec};
-use crate::alloc::AllocRef;
+use crate::alloc::HeapRef;
 use crate::prelude::*;
 
 enum HashMapCell<K, V> {
@@ -28,14 +28,14 @@ pub struct HashMap<K: Hash + Eq, V> {
 }
 
 impl<K: Hash + Eq, V> HashMap<K, V> {
-    pub fn new(allocer: AllocRef) -> Self {
+    pub fn new(allocer: HeapRef) -> Self {
         HashMap {
             data: Vec::new(allocer),
             len: 0,
         }
     }
 
-    pub fn try_with_capacity(allocer: AllocRef, capacity: usize) -> KResult<Self> {
+    pub fn try_with_capacity(allocer: HeapRef, capacity: usize) -> KResult<Self> {
         let mut out = HashMap {
             data: Vec::try_with_capacity(allocer, capacity)?,
             len: 0,

@@ -1,4 +1,4 @@
-use crate::alloc::AllocRef;
+use crate::alloc::HeapRef;
 use crate::container::{Arc, Weak};
 use crate::prelude::*;
 
@@ -20,14 +20,14 @@ pub struct StrongCapability<T: CapObject> {
 }
 
 impl<T: CapObject> StrongCapability<T> {
-    pub fn new(object: T, id: CapId, allocer: AllocRef) -> KResult<Self> {
+    pub fn new(object: T, id: CapId, allocer: HeapRef) -> KResult<Self> {
         Ok(StrongCapability {
             object: Arc::new(object, allocer)?,
             id,
         })
     }
 
-    pub fn new_flags(object: T, flags: CapFlags, allocer: AllocRef) -> KResult<Self> {
+    pub fn new_flags(object: T, flags: CapFlags, allocer: HeapRef) -> KResult<Self> {
         Self::new(object, CapId::null_flags(flags, false), allocer)
     }
 

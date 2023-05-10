@@ -107,7 +107,7 @@ impl ThreadHandle {
                 thread,
                 list_node_data: ListNodeData::default(),
             },
-            allocator.allocator(),
+            &mut allocator,
         )
     }
 
@@ -120,7 +120,7 @@ impl ThreadHandle {
         let mut allocator = Arc::alloc_ref(&thread_handle.thread);
 
         unsafe {
-            thread_handle.drop_in_place(allocator.allocator());
+            thread_handle.drop_in_place(&mut allocator);
         }
     }
 }

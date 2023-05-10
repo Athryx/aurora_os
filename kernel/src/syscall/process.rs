@@ -3,7 +3,7 @@ use sys::CapId;
 use crate::{prelude::*,
     cap::{CapFlags, Capability},
     arch::x64::IntDisable,
-    alloc::{PaRef, AllocRef},
+    alloc::{PaRef, HeapRef},
     process::ThreadStartMode,
     sched::{switch_current_thread_to, ThreadState, PostSwitchAction},
 };
@@ -44,7 +44,7 @@ pub fn process_new(options: u32, allocator_id: usize, spawner_id: usize) -> KRes
         .into_inner();
 
     let page_allocator = PaRef::from_arc(allocator.clone());
-    let heap_allocator = AllocRef::from_arc(allocator);
+    let heap_allocator = HeapRef::from_arc(allocator);
 
     // TODO: process name
     let name = String::new(heap_allocator.clone());

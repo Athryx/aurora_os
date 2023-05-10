@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use crate::alloc::AllocRef;
+use crate::alloc::HeapRef;
 use crate::cap::key::Key;
 use crate::cap::{CapObject, CapType};
 use crate::prelude::*;
@@ -18,7 +18,7 @@ pub struct Spawner {
 }
 
 impl Spawner {
-    pub fn new(allocer: AllocRef) -> Self {
+    pub fn new(allocer: HeapRef) -> Self {
         Spawner {
             process_list: IMutex::new(Vec::new(allocer)),
         }

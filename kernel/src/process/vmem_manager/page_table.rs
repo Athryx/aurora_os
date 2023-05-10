@@ -4,7 +4,7 @@
 use bitflags::bitflags;
 
 use crate::prelude::*;
-use crate::alloc::PageAllocator;
+use crate::alloc::PaRef;
 use crate::mem::{Allocation, PageLayout};
 use super::PageMappingFlags;
 
@@ -109,7 +109,7 @@ impl PageTable {
     /// Returns a PageTablePointer with the provided `flags`
     /// Returns None if there is not enough memory
 	pub fn new(
-		allocer: &dyn PageAllocator,
+		allocer: &mut PaRef,
 		flags: PageTableFlags,
 	) -> Option<PageTablePointer> {
         // FIXME: handle case where allocator gives us back more than 1 frame
@@ -154,18 +154,18 @@ impl PageTable {
 		(self.0[index].0 & PageTableFlags::PRESENT.bits()) != 0
 	}
 
-	pub unsafe fn dealloc(&mut self, allocer: &dyn PageAllocator) {
+	pub unsafe fn dealloc(&mut self, allocer: &mut PaRef) {
 		let frame = Allocation::new(self.addr(), PAGE_SIZE);
 		// TODO: maybe use regular dealloc and store the zindex in unused bits of page tabel entries
         unsafe { allocer.dealloc(frame); }
 	}
 
-	pub unsafe fn dealloc_all(&mut self, allocer: &dyn PageAllocator) {
+	pub unsafe fn dealloc_all(&mut self, allocer: &mut PaRef) {
 		unsafe { self.dealloc_recurse(allocer, 3); }
 	}
 
     // FIXME: this is super unsafe
-	unsafe fn dealloc_recurse(&mut self, allocer: &dyn PageAllocator, level: usize) {
+	unsafe fn dealloc_recurse(&mut self, allocer: &mut PaRef, level: usize) {
 		let last_entry_index = self.0.len() - 1;
 
 		if level > 0 {
@@ -210,7 +210,7 @@ impl PageTable {
 	pub fn get_or_alloc<'a>(
 		&'a mut self,
 		index: usize,
-		allocer: &dyn PageAllocator,
+		allocer: &mut PaRef,
 		flags: PageTableFlags,
 	) -> Option<&'a mut PageTable> {
 		if self.present(index) {

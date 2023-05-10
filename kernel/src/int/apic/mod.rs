@@ -3,7 +3,7 @@ use core::time::Duration;
 
 use spin::Once;
 
-use crate::alloc::{root_alloc, PageAllocator};
+use crate::alloc::{PaRef};
 use crate::arch::x64::{cpuid, io_wait};
 use crate::mem::PageLayout;
 use crate::{config, consts};
@@ -161,12 +161,6 @@ pub fn smp_init(ap_apic_ids: &[u8]) -> KResult<()> {
         ap_code_dest.copy_from_slice(ap_code_src);
     }
 
-    // map ap trampoline in ap address space
-    let ap_trampoline_virt_map_range = AVirtRange::new(
-        VirtAddr::new(consts::AP_CODE_DEST_RANGE.as_usize()),
-        consts::AP_CODE_DEST_RANGE.size(),
-    );
-
     // set up ap data
     let ap_data_offset = *consts::AP_DATA - *consts::AP_CODE_RUN_START;
 	let ap_data = (ap_code_dest_virt_range.as_usize() + ap_data_offset) as *mut ApData;
@@ -176,7 +170,7 @@ pub fn smp_init(ap_apic_ids: &[u8]) -> KResult<()> {
     let mut stacks = Vec::try_with_capacity(root_alloc_ref(), num_aps)?;
     for _ in 0..num_aps {
         // NOTE: this leaks memory on early return, shouldn't matter for now since we will panic on error
-        let allocation = root_alloc().alloc(
+        let allocation = PaRef::zm().alloc(
             PageLayout::new_rounded(KernelStack::DEFAULT_SIZE, PAGE_SIZE).unwrap(),
         ).ok_or(SysErr::OutOfMem)?;
         

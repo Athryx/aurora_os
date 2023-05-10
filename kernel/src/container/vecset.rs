@@ -1,26 +1,26 @@
 use core::cmp::Ordering;
 
 use super::VecMap;
-use crate::alloc::{AllocRef, HeapAllocator};
+use crate::alloc::HeapRef;
 use crate::prelude::*;
 
 pub struct VecSet<T: Ord>(VecMap<T, ()>);
 
 impl<T: Ord> VecSet<T> {
-    pub fn new(allocator: AllocRef) -> Self {
+    pub fn new(allocator: HeapRef) -> Self {
         VecSet(VecMap::new(allocator))
     }
 
-    pub fn with_compare(allocator: AllocRef, compare: fn(&T, &T) -> Ordering) -> Self {
+    pub fn with_compare(allocator: HeapRef, compare: fn(&T, &T) -> Ordering) -> Self {
         VecSet(VecMap::with_compare(allocator, compare))
     }
 
-    pub fn try_with_capacity(allocator: AllocRef, cap: usize) -> KResult<Self> {
+    pub fn try_with_capacity(allocator: HeapRef, cap: usize) -> KResult<Self> {
         Ok(VecSet(VecMap::try_with_capacity(allocator, cap)?))
     }
 
     pub fn try_with_capacity_compare(
-        allocator: AllocRef,
+        allocator: HeapRef,
         cap: usize,
         compare: fn(&T, &T) -> Ordering,
     ) -> KResult<Self> {
@@ -37,7 +37,7 @@ impl<T: Ord> VecSet<T> {
         self.0.cap()
     }
 
-    pub fn allocator(&mut self) -> &dyn HeapAllocator {
+    pub fn allocator(&mut self) -> &mut HeapRef {
         self.0.allocator()
     }
 

@@ -96,7 +96,7 @@ struct HeapZone {
 
 impl HeapZone {
     // size is aligned up to page size
-    unsafe fn new(size: usize, allocator: &dyn PageAllocator) -> Option<MemOwner<Self>> {
+    unsafe fn new(size: usize, allocator: &mut PaRef) -> Option<MemOwner<Self>> {
         let layout = PageLayout::new_rounded(size, PAGE_SIZE).unwrap();
         let mem = allocator.alloc(layout)?;
         let size = mem.size();
@@ -231,7 +231,7 @@ impl HeapZone {
 
     // TODO: add reporting of memory that is still allocated
     // safety: cannot use this heap zone after calling this method
-    unsafe fn dealloc_all(&mut self, allocator: &dyn PageAllocator) {
+    unsafe fn dealloc_all(&mut self, allocator: &mut PaRef) {
         //assert_eq!(self.free_space.get(), self.mem.size());
         unsafe {
             allocator.dealloc(self.mem);
@@ -250,19 +250,20 @@ impl ListNode for HeapZone {
 }
 
 // TODO: add drop implementation that frees all page allocations
-// This is public because it is used by CapAllocator
-pub struct LinkedListAllocatorInner {
+struct LinkedListAllocatorInner {
     list: LinkedList<HeapZone>,
+    page_allocator: PaRef,
 }
 
 impl LinkedListAllocatorInner {
-    pub fn new() -> Self {
+    pub fn new(page_allocator: PaRef) -> Self {
         LinkedListAllocatorInner {
             list: LinkedList::new(),
+            page_allocator,
         }
     }
 
-    pub fn alloc(&mut self, layout: Layout, page_allocator: &dyn PageAllocator) -> Option<NonNull<[u8]>> {
+    pub fn alloc(&mut self, layout: Layout) -> Option<NonNull<[u8]>> {
         let size = layout.size();
         let align = layout.align();
 
@@ -276,7 +277,7 @@ impl LinkedListAllocatorInner {
 
         // allocate new heapzone because there was no space in any others
         let size_inc = max(HEAP_ZONE_SIZE, size + max(align, CHUNK_SIZE) + INITIAL_CHUNK_SIZE);
-        let zone = match unsafe { HeapZone::new(size_inc, page_allocator) } {
+        let zone = match unsafe { HeapZone::new(size_inc, &mut self.page_allocator) } {
             Some(n) => n,
             None => return None,
         };
@@ -287,6 +288,7 @@ impl LinkedListAllocatorInner {
         unsafe { zone.alloc(layout) }
     }
 
+    // TODO: free heap zones that are no longer in use
     pub unsafe fn dealloc(&mut self, allocation_start: NonNull<u8>, layout: Layout) {
         let allocation = LinkedListAllocator::get_allocation(allocation_start, layout)
             .expect("invalid deallocation");
@@ -307,27 +309,24 @@ impl LinkedListAllocatorInner {
     }
 
     /// Deallocates all allocations in the linked list allocator
-    pub unsafe fn dealloc_all(&mut self, page_allocator: &dyn PageAllocator) {
+    pub unsafe fn dealloc_all(&mut self) {
         for zone in self.list.iter_mut() {
             // safety: these zones can never be referenced after this point
             unsafe {
-                zone.dealloc_all(page_allocator);
+                zone.dealloc_all(&mut self.page_allocator.clone());
             }
         }
     }
 }
 
-// NOTE: can switch to schedular mutex once implemented
 pub struct LinkedListAllocator {
     inner: IMutex<LinkedListAllocatorInner>,
-    allocator: IMutex<PaRef>,
 }
 
 impl LinkedListAllocator {
     pub fn new(page_allocator: PaRef) -> Self {
         LinkedListAllocator {
-            inner: IMutex::new(LinkedListAllocatorInner::new()),
-            allocator: IMutex::new(page_allocator),
+            inner: IMutex::new(LinkedListAllocatorInner::new(page_allocator)),
         }
     }
 
@@ -346,7 +345,7 @@ impl LinkedListAllocator {
 // TODO: add specialized realloc method
 unsafe impl HeapAllocator for LinkedListAllocator {
     fn alloc(&self, layout: Layout) -> Option<NonNull<[u8]>> {
-        self.inner.lock().alloc(layout, self.allocator.lock().allocator())
+        self.inner.lock().alloc(layout)
     }
 
     unsafe fn dealloc(&self, allocation: NonNull<u8>, layout: Layout) {
@@ -357,7 +356,7 @@ unsafe impl HeapAllocator for LinkedListAllocator {
 impl Drop for LinkedListAllocator {
     fn drop(&mut self) {
         unsafe {
-            self.inner.lock().dealloc_all(self.allocator.lock().allocator());
+            self.inner.lock().dealloc_all();
         }
     }
 }

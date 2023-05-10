@@ -2,7 +2,7 @@ use core::fmt;
 use core::ops::{Deref, DerefMut};
 use core::str;
 
-use crate::alloc::AllocRef;
+use crate::alloc::HeapRef;
 use crate::prelude::*;
 
 pub struct String {
@@ -10,7 +10,7 @@ pub struct String {
 }
 
 impl String {
-    pub fn new(allocer: AllocRef) -> String {
+    pub fn new(allocer: HeapRef) -> String {
         String {
             data: Vec::new(allocer),
         }
@@ -22,7 +22,7 @@ impl String {
         }
     }
 
-    pub fn from_str(allocer: AllocRef, str: &str) -> KResult<String> {
+    pub fn from_str(allocer: HeapRef, str: &str) -> KResult<String> {
         Ok(String {
             data: Vec::from_slice(allocer, str.as_bytes())?,
         })

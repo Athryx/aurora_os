@@ -2,7 +2,6 @@
 //! 
 //! This module includes the physical page allocator, the kernel heap, as well as the capability object allocator
 
-mod alloc_ref;
 mod cap_allocator;
 mod fixed_page_allocator;
 mod heap_allocator;
@@ -11,7 +10,7 @@ mod page_allocator;
 mod pmem_manager;
 
 pub use cap_allocator::CapAllocator;
-pub use heap_allocator::{AllocRef, HeapAllocator};
+pub use heap_allocator::{HeapRef, HeapAllocator};
 use linked_list_allocator::LinkedListAllocator;
 pub use page_allocator::{PaRef, PageAllocator};
 use pmem_manager::PmemManager;
@@ -44,21 +43,13 @@ pub fn heap() -> &'static LinkedListAllocator {
     HEAP.get().expect("heap not yet initilized")
 }
 
-/// Returns an orig ref to the heap allocator
-/// 
-/// # Panics
-/// Panics if the heap allocator has not yet been initilized
-pub fn heap_ref() -> AllocRef {
-    AllocRef::new(heap())
-}
-
 static ROOT_ALLOCATOR: Once<Arc<CapAllocator>> = Once::new();
 
 /// Returns the root CapAllocator
 /// 
 /// # Panics
 /// Panics if the root CapAllocator has not yet been intialized
-pub fn root_alloc() -> &'static CapAllocator {
+pub fn root_alloc() -> &'static Arc<CapAllocator> {
     ROOT_ALLOCATOR
         .get()
         .expect("root allocator accessed before it was initilized")
@@ -68,8 +59,8 @@ pub fn root_alloc() -> &'static CapAllocator {
 /// 
 /// # Panics
 /// Panics if the root CapAllocator has not yet been intialized
-pub fn root_alloc_ref() -> AllocRef {
-    AllocRef::new(root_alloc())
+pub fn root_alloc_ref() -> HeapRef {
+    HeapRef::cap_allocator(root_alloc().clone().into())
 }
 
 /// Returns the root CapAllocator
@@ -77,7 +68,7 @@ pub fn root_alloc_ref() -> AllocRef {
 /// # Panics
 /// Panics if the root CapAllocator has not yet been intialized
 pub fn root_alloc_page_ref() -> PaRef {
-    PaRef::new(root_alloc())
+    PaRef::cap_allocator(root_alloc().clone().into())
 }
 
 
@@ -93,10 +84,10 @@ pub unsafe fn init(mem_map: &MemoryMap) -> KResult<()> {
             pmem_manager
         });
 
-        HEAP.call_once(|| LinkedListAllocator::new(PaRef::new(zm())));
+        HEAP.call_once(|| LinkedListAllocator::new(PaRef::zm()));
 
         ROOT_ALLOCATOR.call_once(|| {
-            Arc::new(CapAllocator::new_root(total_pages), heap_ref())
+            Arc::new(CapAllocator::new_root(total_pages), HeapRef::heap())
                 .expect("failed to initilize root cap allocator")
         });
 

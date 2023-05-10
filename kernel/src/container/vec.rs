@@ -6,19 +6,19 @@ use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::ptr::NonNull;
 use core::slice::SliceIndex;
 
-use crate::alloc::{AllocRef, HeapAllocator};
+use crate::alloc::HeapRef;
 use crate::prelude::*;
 
 struct RawVec<T> {
     ptr: NonNull<T>,
     cap: usize,
     marker: PhantomData<T>,
-    allocer: AllocRef,
+    allocer: HeapRef,
 }
 
 // code from rustonomicon
 impl<T> RawVec<T> {
-    const fn new(allocer: AllocRef) -> Self {
+    const fn new(allocer: HeapRef) -> Self {
         // !0 is usize::MAX. This branch should be stripped at compile time.
         let cap = if size_of::<T>() == 0 { !0 } else { 0 };
 
@@ -32,13 +32,12 @@ impl<T> RawVec<T> {
     }
 
     // tries to create a raw vec with specified capacity, returns out of mem on failure
-    fn try_with_capacity(mut allocer: AllocRef, cap: usize) -> KResult<Self> {
+    fn try_with_capacity(mut allocer: HeapRef, cap: usize) -> KResult<Self> {
         if size_of::<T>() == 0 {
             Ok(RawVec::new(allocer))
         } else {
             let layout = Layout::array::<T>(cap).unwrap();
             let ptr = allocer
-                .allocator()
                 .alloc(layout)
                 .ok_or(SysErr::OutOfMem)?
                 .cast();
@@ -74,13 +73,11 @@ impl<T> RawVec<T> {
         // Ensure that the new allocation doesn't exceed `isize::MAX` bytes.
         assert!(new_layout.size() <= isize::MAX as usize, "Allocation too large");
 
-        let allocator = self.allocer.allocator();
-
         let new_alloc = if self.cap == 0 {
-            allocator.alloc(new_layout)
+            self.allocer.alloc(new_layout)
         } else {
             let old_layout = Layout::array::<T>(self.cap).unwrap();
-            unsafe { allocator.realloc(self.ptr.cast(), old_layout, new_layout) }
+            unsafe { self.allocer.realloc(self.ptr.cast(), old_layout, new_layout) }
         };
 
         // If allocation fails, `new_ptr` will be null, in which case we abort.
@@ -102,7 +99,7 @@ impl<T> Drop for RawVec<T> {
         if self.cap != 0 && elem_size != 0 {
             let layout = Layout::array::<T>(self.cap).unwrap();
             unsafe {
-                self.allocer.allocator().dealloc(self.ptr.cast(), layout);
+                self.allocer.dealloc(self.ptr.cast(), layout);
             }
         }
     }
@@ -117,14 +114,14 @@ pub struct Vec<T> {
 }
 
 impl<T> Vec<T> {
-    pub const fn new(allocer: AllocRef) -> Self {
+    pub const fn new(allocer: HeapRef) -> Self {
         Vec {
             inner: RawVec::new(allocer),
             len: 0,
         }
     }
 
-    pub fn try_with_capacity(allocer: AllocRef, capacity: usize) -> KResult<Self> {
+    pub fn try_with_capacity(allocer: HeapRef, capacity: usize) -> KResult<Self> {
         Ok(Vec {
             inner: RawVec::try_with_capacity(allocer, capacity)?,
             len: 0,
@@ -169,11 +166,11 @@ impl<T> Vec<T> {
         unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr(), self.len) }
     }
 
-    pub fn allocator(&mut self) -> &dyn HeapAllocator {
-        self.inner.allocer.allocator()
+    pub fn allocator(&mut self) -> &mut HeapRef {
+        &mut self.inner.allocer
     }
 
-    pub fn alloc_ref(&self) -> AllocRef {
+    pub fn alloc_ref(&self) -> HeapRef {
         self.inner.allocer.clone()
     }
 
@@ -288,7 +285,7 @@ impl<T> Vec<T> {
 }
 
 impl<T: Clone> Vec<T> {
-    pub fn from_slice(allocer: AllocRef, slice: &[T]) -> KResult<Self> {
+    pub fn from_slice(allocer: HeapRef, slice: &[T]) -> KResult<Self> {
         let mut out = Self::try_with_capacity(allocer, slice.len())?;
 
         for item in slice {

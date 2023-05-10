@@ -1,4 +1,4 @@
-use crate::alloc::AllocRef;
+use crate::alloc::HeapRef;
 use crate::container::{Vec, VecMap};
 use crate::prelude::*;
 
@@ -14,7 +14,7 @@ pub struct ZoneMap<T: VirtRange> {
 }
 
 impl<T: VirtRange + core::fmt::Debug> ZoneMap<T> {
-    pub fn new(allocator: AllocRef) -> Self {
+    pub fn new(allocator: HeapRef) -> Self {
         ZoneMap {
             data: VecMap::new(allocator),
             len: 0,

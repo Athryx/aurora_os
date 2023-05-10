@@ -4,7 +4,7 @@ use core::ptr::NonNull;
 use core::sync::atomic::{fence, AtomicUsize, Ordering};
 use core::alloc::Layout;
 
-use crate::alloc::AllocRef;
+use crate::alloc::HeapRef;
 use crate::prelude::*;
 
 const MAX_REFCOUNT: usize = isize::MAX as usize;
@@ -13,7 +13,7 @@ struct ArcInner<T: ?Sized> {
     strong: AtomicUsize,
     weak: AtomicUsize,
 
-    allocer: AllocRef,
+    allocer: HeapRef,
     layout: Option<Layout>,
 
     data: T,
@@ -45,7 +45,7 @@ impl<T: ?Sized> Arc<T> {
     }
 
     /// Returns the allocator this arc is using
-    pub fn alloc_ref(this: &Self) -> AllocRef {
+    pub fn alloc_ref(this: &Self) -> HeapRef {
         this.inner().allocer.clone()
     }
 
@@ -64,7 +64,7 @@ impl<T: ?Sized> Arc<T> {
 }
 
 impl<T> Arc<T> {
-    pub fn new(data: T, mut allocer: AllocRef) -> KResult<Self> {
+    pub fn new(data: T, mut allocer: HeapRef) -> KResult<Self> {
         let ptr = to_heap(
             ArcInner {
                 strong: AtomicUsize::new(1),
@@ -73,7 +73,7 @@ impl<T> Arc<T> {
                 layout: None,
                 data,
             },
-            allocer.allocator(),
+            &mut allocer,
         )?;
 
         // meed to calculate this here becaust T is unsized in the Drop implementation
@@ -154,7 +154,7 @@ impl<T: ?Sized> Weak<T> {
     }
 
     /// Returns the allocator this weak is using
-    pub fn alloc_ref(&self) -> AllocRef {
+    pub fn alloc_ref(&self) -> HeapRef {
         self.inner().allocer.clone()
     }
 
@@ -224,7 +224,7 @@ unsafe impl<#[may_dangle] T: ?Sized> Drop for Weak<T> {
         let layout = self.inner().layout.unwrap();
 
         unsafe {
-            allocer.allocator().dealloc(self.ptr.cast(), layout);
+            allocer.dealloc(self.ptr.cast(), layout);
         }
     }
 }
