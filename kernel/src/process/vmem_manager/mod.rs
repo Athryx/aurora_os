@@ -234,9 +234,7 @@ impl VirtAddrSpace {
         }
     }
 
-    /// Maps all the virtual memory ranges in the slice to point to the corresponding physical address
-    /// 
-    /// If any one of the memeory regions fails, none will be mapped
+    /// Maps the given virtual memory range to point to the given physical address
     /// 
     /// Will return InvlArgs if `flags` does not specify either read, write, or execute
     pub fn map_memory(&mut self, virt_range: AVirtRange, phys_addr: PhysAddr, flags: PageMappingFlags) -> KResult<()> {
@@ -253,6 +251,24 @@ impl VirtAddrSpace {
         }
 
         result
+    }
+
+    /// Maps all the virt ranges to the given physical address by repeatedly calling map_memory
+    pub fn map_many<T: Iterator<Item = (AVirtRange, PhysAddr)> + Clone>(&mut self, iter: T, flags: PageMappingFlags) -> KResult<()> {
+        let iter_copy = iter.clone();
+
+        for (i, (virt_range, phys_addr)) in iter.enumerate() {
+            let result = self.map_memory(virt_range, phys_addr, flags);
+
+            if result.is_err() {
+                for (virt_range, _) in iter_copy.take(i) {
+                    self.unmap_memory(virt_range).unwrap();
+                }
+                return result;
+            }
+        }
+
+        Ok(())
     }
 
     /// Same as [`map_memory`] but doesn't make the zones as in use

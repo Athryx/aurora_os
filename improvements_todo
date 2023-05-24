@@ -1,11 +1,11 @@
-Clean up the kernel allocator api,
-it is unnecassarily generic even though there will only be 1 allocator
-
 Also improve the kernel heap allocator, it is very bad
+
+improve memory mapping api to not require strong reference, not require cap to be in that same process
+maybe don't have 1 mapping restriction on resize in place
 
 add guard pages at the end of kernel stacks
 
-remove all unbound and fix linked list, remove as much unsafe as possible
+remove as much unsafe as possible
 
 change to use relative call instructions instead of absolute call with register
 this option is called code model

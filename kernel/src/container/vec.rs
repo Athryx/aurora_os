@@ -336,6 +336,7 @@ impl<T> Drop for Vec<T> {
     }
 }
 
+#[derive(Clone)]
 struct RawIter<T> {
     // inclusive
     start: usize,
@@ -397,6 +398,7 @@ impl<T> DoubleEndedIterator for RawIter<T> {
 impl<T> ExactSizeIterator for RawIter<T> {}
 impl<T> FusedIterator for RawIter<T> {}
 
+#[derive(Clone)]
 pub struct Iter<'a, T: 'a> {
     inner: RawIter<T>,
     marker: PhantomData<&'a T>,

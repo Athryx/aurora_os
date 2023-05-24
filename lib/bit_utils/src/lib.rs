@@ -131,21 +131,6 @@ pub const fn log2_up_const(n: usize) -> usize {
     }
 }
 
-// FIXME: these are very bad, try to remove them
-/// Changes the lifetime of `r`
-///
-/// VERY UNSAFE, DO NOT USE
-pub unsafe fn unbound<'a, 'b, T>(r: &'a T) -> &'b T {
-    unsafe { (r as *const T).as_ref().unwrap() }
-}
-
-/// Changes the lifetime of `r`
-///
-/// VERY UNSAFE, DO NOT USE
-pub unsafe fn unbound_mut<'a, 'b, T>(r: &'a mut T) -> &'b mut T {
-    unsafe { (r as *mut T).as_mut().unwrap() }
-}
-
 /// Returns true if `ptr` is aligned as necessary for the given type `T`, and if it is non null
 pub fn aligned_nonnull<T>(ptr: *const T) -> bool {
     core::mem::align_of::<T>() == align_of(ptr as usize) && !ptr.is_null()

@@ -36,7 +36,7 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<us
     let heap_allocator = HeapRef::from_arc(allocator);
 
     let memory = StrongCapability::new_flags(
-        Memory::new(page_allocator, pages)?,
+        Memory::new(page_allocator, heap_allocator.clone(), pages)?,
         mem_cap_flags,
         heap_allocator,
     )?;
@@ -106,7 +106,7 @@ pub fn memory_map(
 
 /// Unmaps memory mapped by [`memory_map`]
 /// 
-/// the cap id for `memory` is looked ip in the `process` argument, not the current process
+/// the cap id for `memory` is looked up in the `process` argument, not the current process
 /// 
 /// NOTE: weak_auto_destroy option does not currently apply to the memory capability
 ///
@@ -143,7 +143,7 @@ pub fn memory_unmap(
 /// 
 /// # Options
 /// bit 0 (mem_resize_in_place): allows the memory to be resived even if it is mapped in memory
-/// as long as the only capability for which it is mappe in memory is `memory`
+/// as long as the only capability for which it is mapped in memory is `memory`
 /// 
 /// # Required Capability Permissions
 /// `memory`: cap_prod

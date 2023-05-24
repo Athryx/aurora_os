@@ -306,16 +306,10 @@ impl Process {
 
         let mut memory_inner = memory.object().inner();
 
-        let mem_virt_range = AVirtRange::try_new_aligned(
-            addr,
-            memory_inner.size(),
-        ).ok_or(SysErr::InvlAlign)?;
-
         addr_space_data.mapped_memory_capabilities.insert(memory.id, addr)?;
 
-        let map_result = addr_space_data.addr_space.map_memory(
-            mem_virt_range,
-            memory_inner.phys_addr(),
+        let map_result = addr_space_data.addr_space.map_many(
+            memory_inner.iter_mapped_regions(addr),
             flags | PageMappingFlags::USER,
         );
 
@@ -344,14 +338,11 @@ impl Process {
         let mut memory_inner = memory.object().inner();
 
         if let Some(map_addr) = addr_space_data.mapped_memory_capabilities.get(&memory.id) {
-            let mem_virt_range = AVirtRange::try_new_aligned(
-                *map_addr,
-                memory_inner.size(),
-            ).ok_or(SysErr::InvlAlign)?;
-
-            // this should not fail because we ensore that memory was already mapped
-            addr_space_data.addr_space.unmap_memory(mem_virt_range)
-                .expect("failed to unmap memory that should have been mapped");
+            for (virt_range, _) in memory_inner.iter_mapped_regions(*map_addr) {
+                // this should not fail because we ensure that memory was already mapped
+                addr_space_data.addr_space.unmap_memory(virt_range)
+                    .expect("failed to unmap memory that should have been mapped");
+            }
 
             addr_space_data.mapped_memory_capabilities.remove(&memory.id);
 
@@ -381,12 +372,16 @@ impl Process {
         }
 
         if memory_inner.map_ref_count == 0 {
-            // Safety: map ref count is checked to be 0
+            // Safety: map ref count is checked to be 0, os this capability is not mapped in memory
             unsafe {
-                memory_inner.resize(new_page_size)
+                memory_inner.resize_end(new_page_size)
             }
         } else if resize_in_place && memory_inner.map_ref_count == 1 {
-            Err(SysErr::InvlOp)
+            let Some(map_addr) = addr_space_data.mapped_memory_capabilities.get(&memory.id) else {
+                return Err(SysErr::InvlOp);
+            };
+
+            todo!()
         } else {
             Err(SysErr::InvlOp)
         }
