@@ -28,12 +28,19 @@ pub enum ThreadStartMode {
     Suspended,
 }
 
+/// Represents where in the address space a capability was mapped
+#[derive(Debug)]
+struct AddrSpaceMapping {
+    addr: VirtAddr,
+    size_pages: usize,
+}
+
 /// Stores data related to the virtual address space of the process
 #[derive(Debug)]
 struct AddrSpaceData {
     addr_space: VirtAddrSpace,
     /// A map between Memory CapIds to the address at which they are mapped
-    mapped_memory_capabilities: HashMap<CapId, VirtAddr>,
+    mapped_memory_capabilities: HashMap<CapId, AddrSpaceMapping>,
 }
 
 impl Drop for AddrSpaceData {
@@ -306,10 +313,13 @@ impl Process {
 
         let mut memory_inner = memory.object().inner();
 
-        addr_space_data.mapped_memory_capabilities.insert(memory.id, addr)?;
+        addr_space_data.mapped_memory_capabilities.insert(memory.id, AddrSpaceMapping {
+            addr,
+            size_pages: memory_inner.size_pages(),
+        })?;
 
         let map_result = addr_space_data.addr_space.map_many(
-            memory_inner.iter_mapped_regions(addr),
+            memory_inner.iter_mapped_regions(addr, memory_inner.size_pages()),
             flags | PageMappingFlags::USER,
         );
 
@@ -337,22 +347,20 @@ impl Process {
         let mut addr_space_data = self.addr_space_data.lock();
         let mut memory_inner = memory.object().inner();
 
-        if let Some(map_addr) = addr_space_data.mapped_memory_capabilities.get(&memory.id) {
-            for (virt_range, _) in memory_inner.iter_mapped_regions(*map_addr) {
-                // this should not fail because we ensure that memory was already mapped
-                addr_space_data.addr_space.unmap_memory(virt_range)
-                    .expect("failed to unmap memory that should have been mapped");
-            }
-
-            addr_space_data.mapped_memory_capabilities.remove(&memory.id);
-
-            memory_inner.map_ref_count -= 1;
-
-            Ok(())
-        } else {
+        let Some(mapping) = addr_space_data.mapped_memory_capabilities.remove(&memory.id) else {
             // memory was not yet mapped
-            Err(SysErr::InvlOp)
+            return Err(SysErr::InvlOp);
+        };
+
+        for (virt_range, _) in memory_inner.iter_mapped_regions(mapping.addr, mapping.size_pages) {
+            // this should not fail because we ensure that memory was already mapped
+            addr_space_data.addr_space.unmap_memory(virt_range)
+                .expect("failed to unmap memory that should have been mapped");
         }
+
+        memory_inner.map_ref_count -= 1;
+
+        Ok(())
     }
 
     /// Resizes the specified memory capability specified by `memory` to be the size of `new_size_pages`
@@ -367,7 +375,9 @@ impl Process {
         let mut addr_space_data = self.addr_space_data.lock();
         let mut memory_inner = memory.object().inner();
 
-        if memory_inner.size_pages() == new_page_size {
+        let old_page_size = memory_inner.size_pages();
+
+        if old_page_size == new_page_size {
             return Ok(());
         }
 
@@ -377,9 +387,15 @@ impl Process {
                 memory_inner.resize_end(new_page_size)
             }
         } else if resize_in_place && memory_inner.map_ref_count == 1 {
-            let Some(map_addr) = addr_space_data.mapped_memory_capabilities.get(&memory.id) else {
+            let Some(mapping) = addr_space_data.mapped_memory_capabilities.get(&memory.id) else {
                 return Err(SysErr::InvlOp);
             };
+
+            if new_page_size > old_page_size {
+                // grow memory
+            } else {
+                // shrink memory
+            }
 
             todo!()
         } else {

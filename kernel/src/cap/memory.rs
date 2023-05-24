@@ -9,12 +9,8 @@ use super::{CapObject, CapType};
 #[derive(Debug)]
 pub struct MemoryInner {
     allocations: Vec<Allocation>,
-    /// Size of thie memory capability that will be mapped into memory
-    /// 
-    /// This is less than `total_size` in some scenerios
-    size: usize,
     /// Total size of all allocations
-    total_size: usize,
+    size: usize,
     page_allocator: PaRef,
     /// This is the number of locations the memory capability is currently mapped in
     pub map_ref_count: usize,
@@ -30,8 +26,11 @@ impl MemoryInner {
         self.size / PAGE_SIZE
     }
 
-    pub fn iter_mapped_regions<'a>(&'a self, mut base_addr: VirtAddr) -> impl Iterator<Item = (AVirtRange, PhysAddr)> + Clone + 'a {
-        let mut remaining_size = self.size;
+    /// Iterates over the regions that would need to be mapped for a virtual mapping at `base_addr` of size `mapping_page_size`
+    pub fn iter_mapped_regions<'a>(&'a self, mut base_addr: VirtAddr, mapping_page_size: usize) -> impl Iterator<Item = (AVirtRange, PhysAddr)> + Clone + 'a {
+        let mut remaining_size = mapping_page_size * PAGE_SIZE;
+
+        assert!(remaining_size <= self.size);
 
         self.allocations.iter()
             .map(move |allocation| {
@@ -92,7 +91,6 @@ impl Memory {
         let inner = MemoryInner {
             allocations,
             size: first_allocation.size(),
-            total_size: first_allocation.size(),
             page_allocator,
             map_ref_count: 0,
         };
