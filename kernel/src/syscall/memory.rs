@@ -4,7 +4,7 @@ use crate::cap::{CapFlags, CapId, memory::Memory};
 use crate::process::PageMappingFlags;
 use crate::{prelude::*, process};
 use crate::arch::x64::IntDisable;
-use super::options_weak_autodestroy;
+use super::{options_weak_autodestroy, is_option_set};
 
 /// Allocate a memory capability at least `pages` big
 /// 
@@ -44,6 +44,8 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<us
     Ok(current_process.cap_map().insert_memory(Capability::Strong(memory))?.into())
 }
 
+const MEM_MAX_SIZE: u32 = 1 << 3;
+
 /// maps a capability `mem` that can be mapped into memory into the memory of process `process` starting at address `addr`
 /// 
 /// the cap id of `mem` is looked up in the process that is having memory mapped into it
@@ -57,6 +59,7 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<us
 /// bit 0 (mem_read): the mapped memory region shold be readable (requires read permissions on memory capability)
 /// bit 1 (mem_write): the mapped memory region should be writable (requires write permissions on memory capability)
 /// bit 2 (mem_exec): the mapped memory region should be executable (requires read permissions on memory capability)
+/// bit 3 (mem_max_size): the mapped memory region will be no larger than `max_size` pages large, instead of being the size of the capability by default
 ///
 /// # Required Capability Permissions
 /// `process`: cap_write
@@ -76,11 +79,18 @@ pub fn memory_map(
     process_id: usize,
     memory_id: usize,
     addr: usize,
+    max_size: usize,
 ) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
     let addr = VirtAddr::try_new(addr).ok_or(SysErr::InvlVirtAddr)?;
 
     let map_flags = PageMappingFlags::from_bits_truncate((options & 0b111) as usize);
+
+    let max_size = if is_option_set(options, MEM_MAX_SIZE) {
+        Some(max_size)
+    } else {
+        None
+    };
 
     let mut required_cap_flags = CapFlags::empty();
     if map_flags.contains(PageMappingFlags::READ | PageMappingFlags::EXEC) {
@@ -101,7 +111,7 @@ pub fn memory_map(
     let memory = process.cap_map()
         .get_strong_memory_with_perms(memory_id, required_cap_flags)?;
 
-    process.map_memory(memory, addr, map_flags)
+    process.map_memory(memory, addr, max_size, map_flags)
 }
 
 /// Unmaps memory mapped by [`memory_map`]

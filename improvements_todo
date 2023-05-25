@@ -7,6 +7,11 @@ add guard pages at the end of kernel stacks
 
 remove as much unsafe as possible
 
+bitflags for all syscall options
+
+add support to memory mapping syscalls that allow mapping at some offset into the memory capability
+extend memory_update_mapping to support moving the base address and changing mapping flags
+
 change to use relative call instructions instead of absolute call with register
 this option is called code model
 should set vma to 0xffffffff80000000, and use mcmodel kernel

@@ -1,10 +1,11 @@
 use core::sync::atomic::{AtomicUsize, AtomicBool, Ordering};
+use core::cmp::min;
 use core::slice;
 
 use spin::Once;
 
 use crate::arch::x64::{asm_thread_init, IntDisable};
-use crate::cap::memory::Memory;
+use crate::cap::memory::{Memory, MemoryInner};
 use crate::container::{Arc, Weak, HashMap};
 use crate::int::IPI_PROCESS_EXIT;
 use crate::int::apic::{Ipi, IpiDest};
@@ -33,6 +34,7 @@ pub enum ThreadStartMode {
 struct AddrSpaceMapping {
     addr: VirtAddr,
     size_pages: usize,
+    flags: PageMappingFlags,
 }
 
 /// Stores data related to the virtual address space of the process
@@ -41,6 +43,67 @@ struct AddrSpaceData {
     addr_space: VirtAddrSpace,
     /// A map between Memory CapIds to the address at which they are mapped
     mapped_memory_capabilities: HashMap<CapId, AddrSpaceMapping>,
+}
+
+impl AddrSpaceData {
+    fn update_memory_mapping_inner(
+        &mut self,
+        memory_cap_id: CapId,
+        memory_inner: &mut MemoryInner,
+        max_size_pages: Option<usize>
+    ) -> KResult<usize> {
+        let Some(mapping) = self.mapped_memory_capabilities.get(&memory_cap_id) else {
+            // memory was not yet mapped
+            return Err(SysErr::InvlOp);
+        };
+
+        let old_size = mapping.size_pages;
+        let new_size = max_size_pages.unwrap_or(mapping.size_pages);
+        if new_size == 0 {
+            return Err(SysErr::InvlArgs);
+        }
+
+        if new_size > old_size {
+            let new_base_addr = mapping.addr + old_size;
+
+            let mapping_iter = memory_inner.iter_mapped_regions(new_base_addr, 0, new_size - old_size);
+
+            // must map new regions first before resizing old mapping
+            let flags = mapping.flags | PageMappingFlags::USER;
+            self.addr_space.map_many(
+                mapping_iter.clone().without_unaligned_start(),
+                flags,
+            )?;
+
+            let result = self.addr_space.resize_mapping(mapping_iter.get_entire_first_maping_range());
+
+            if let Err(error) = result {
+                for (virt_range, _) in mapping_iter {
+                    self.addr_space.unmap_memory(virt_range).unwrap();
+                }
+
+                Err(error)
+            } else {
+                Ok(new_size)
+            }
+        } else if new_size < old_size {
+            let unmap_base_addr = mapping.addr + new_size;
+
+            let mapping_iter = memory_inner.iter_mapped_regions(unmap_base_addr, 0, old_size - new_size);
+
+            // first resize the overlapping part
+            self.addr_space.resize_mapping(mapping_iter.get_first_mapping_exluded_range())?;
+
+            // now unmap everything else
+            for (virt_range, _) in mapping_iter.without_unaligned_start() {
+                self.addr_space.unmap_memory(virt_range).unwrap();
+            }
+
+            Ok(new_size)
+        } else {
+            Ok(old_size)
+        }
+    }
 }
 
 impl Drop for AddrSpaceData {
@@ -295,13 +358,21 @@ impl Process {
     /// 
     /// `memory` must reference a strong capability
     /// 
+    /// if `max_size_pages` is `Some(_)`, the mapped memory will take up no more than `max_size_pages` pages in the virtual address space
+    /// 
     /// `flags` specifies the read, write, and execute permissions, but the memory is always mapped as user
     /// Returns invalid args if not bits in falgs are set
     /// 
     /// # Locking
     /// 
     /// acquires `addr_space_data` lock
-    pub fn map_memory(&self, memory: StrongCapability<Memory>, addr: VirtAddr, flags: PageMappingFlags) -> KResult<usize> {
+    pub fn map_memory(
+        &self,
+        memory: StrongCapability<Memory>,
+        addr: VirtAddr,
+        max_size_pages: Option<usize>,
+        flags: PageMappingFlags
+    ) -> KResult<usize> {
         assert!(memory.references_strong());
 
         let mut addr_space_data = self.addr_space_data.lock();
@@ -313,13 +384,19 @@ impl Process {
 
         let mut memory_inner = memory.object().inner();
 
+        let size_pages = min(max_size_pages.unwrap_or(memory_inner.size_pages()), memory_inner.size_pages());
+        if size_pages == 0 {
+            return Err(SysErr::InvlArgs);
+        }
+
         addr_space_data.mapped_memory_capabilities.insert(memory.id, AddrSpaceMapping {
             addr,
-            size_pages: memory_inner.size_pages(),
+            size_pages,
+            flags,
         })?;
 
         let map_result = addr_space_data.addr_space.map_many(
-            memory_inner.iter_mapped_regions(addr, memory_inner.size_pages()),
+            memory_inner.iter_mapped_regions(addr, 0, size_pages),
             flags | PageMappingFlags::USER,
         );
 
@@ -331,7 +408,7 @@ impl Process {
         } else {
             memory_inner.map_ref_count += 1;
 
-            Ok(memory_inner.size_pages())
+            Ok(size_pages)
         }
     }
 
@@ -352,7 +429,7 @@ impl Process {
             return Err(SysErr::InvlOp);
         };
 
-        for (virt_range, _) in memory_inner.iter_mapped_regions(mapping.addr, mapping.size_pages) {
+        for (virt_range, _) in memory_inner.iter_mapped_regions(mapping.addr, 0, mapping.size_pages) {
             // this should not fail because we ensure that memory was already mapped
             addr_space_data.addr_space.unmap_memory(virt_range)
                 .expect("failed to unmap memory that should have been mapped");
@@ -361,6 +438,19 @@ impl Process {
         memory_inner.map_ref_count -= 1;
 
         Ok(())
+    }
+
+    pub fn update_memory_mapping(
+        &self,
+        memory: StrongCapability<Memory>,
+        max_size_pages: Option<usize>,
+    ) -> KResult<usize> {
+        assert!(memory.references_strong());
+
+        let mut addr_space_data = self.addr_space_data.lock();
+        let mut memory_inner = memory.object().inner();
+
+        addr_space_data.update_memory_mapping_inner(memory.id, &mut memory_inner, max_size_pages)
     }
 
     /// Resizes the specified memory capability specified by `memory` to be the size of `new_size_pages`

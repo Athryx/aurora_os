@@ -224,7 +224,7 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		THREAD_NEW => sysret_1!(syscall_7!(thread_new, vals), vals),
 		THREAD_YIELD => sysret_0!(thread_yield(), vals),
 		THREAD_SUSPEND => sysret_0!(syscall_1!(thread_suspend, vals), vals),
-		MEMORY_MAP => sysret_1!(syscall_3!(memory_map, vals), vals),
+		MEMORY_MAP => sysret_1!(syscall_4!(memory_map, vals), vals),
 		MEMORY_UNMAP => sysret_0!(syscall_2!(memory_unmap, vals), vals),
 		MEMORY_NEW => sysret_1!(syscall_2!(memory_new, vals), vals),
 		KEY_NEW => sysret_1!(syscall_1!(key_new, vals), vals),
@@ -235,9 +235,13 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
     }
 }
 
+fn is_option_set(options: u32, bit: u32) -> bool {
+	(options & bit) != 0
+}
+
 /// Checks if the weak autodestroy bit is set in the options
 fn options_weak_autodestroy(options: u32) -> bool {
-	options & (1 << 31) != 0
+	is_option_set(options, 1 << 31)
 }
 
 /// Initializes the syscall entry point and enables the syscall instruction

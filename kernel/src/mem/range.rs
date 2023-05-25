@@ -1,5 +1,5 @@
 use core::alloc::Layout;
-use core::cmp::min;
+use core::cmp::{min, max};
 use core::marker::PhantomData;
 use core::slice;
 
@@ -67,6 +67,18 @@ impl fmt::Display for RangeAlignError {
         fmt::Display::fmt("could not create an aligned range from an improperly aligned unaligned range type", f)
     }
 }*/
+
+pub enum IntersectionEdge<T> {
+    First(T),
+    Second(T),
+    None
+}
+
+pub struct IntersectionResult<T> {
+    pub start: IntersectionEdge<T>,
+    pub middle: Option<T>,
+    pub end: IntersectionEdge<T>,
+}
 
 // TODO: maybe test in constructors if end is invalid phys or virt address
 macro_rules! impl_addr_range {
@@ -451,6 +463,58 @@ macro_rules! impl_addr_range {
                 Self {
                     addr: $addr::new(0),
                     size: 0,
+                }
+            }
+
+            pub fn intersection(&self, other: Self) -> Option<Self> {
+                if self.contains_range(&other) {
+                    let start = max(self.addr, other.addr);
+                    let end = min(self.end_addr(), other.end_addr());
+                    Some(Self {
+                        addr: start,
+                        size: end - start,
+                    })
+                } else {
+                    None
+                }
+            }
+
+            // Fixme: put this in the range trait
+            pub fn detailed_intersection(&self, other: Self) -> IntersectionResult<Self> {
+                let start = if self.addr < other.addr {
+                    IntersectionEdge::First(Self {
+                        addr: self.addr,
+                        size: min(self.size, other.addr - self.addr),
+                    })
+                } else if other.addr < self.addr {
+                    IntersectionEdge::Second(Self {
+                        addr: other.addr,
+                        size: min(other.size, self.addr - other.addr)
+                    })
+                } else {
+                    IntersectionEdge::None
+                };
+
+                let end = if other.end_addr() < self.end_addr() {
+                    let addr = max(other.end_addr(), self.addr);
+                    IntersectionEdge::First(Self {
+                        addr,
+                        size: self.end_addr() - addr,
+                    })
+                } else if self.end_addr() < other.end_addr() {
+                    let addr = max(self.end_addr(), other.addr);
+                    IntersectionEdge::First(Self {
+                        addr,
+                        size: other.end_addr() - addr,
+                    })
+                } else {
+                    IntersectionEdge::None
+                };
+
+                IntersectionResult {
+                    start,
+                    middle: self.intersection(other),
+                    end,
                 }
             }
         }
