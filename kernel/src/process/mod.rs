@@ -3,6 +3,7 @@ use core::cmp::min;
 use core::slice;
 
 use spin::Once;
+use bitflags::bitflags;
 
 use crate::arch::x64::{asm_thread_init, IntDisable};
 use crate::cap::memory::{Memory, MemoryInner};
@@ -79,6 +80,7 @@ impl AddrSpaceData {
 
             if let Err(error) = result {
                 for (virt_range, _) in mapping_iter {
+                    // panic safety: this memory was just mapped so this is guarenteed to not fail
                     self.addr_space.unmap_memory(virt_range).unwrap();
                 }
 
@@ -96,6 +98,7 @@ impl AddrSpaceData {
 
             // now unmap everything else
             for (virt_range, _) in mapping_iter.without_unaligned_start() {
+                // panic safety: this memory should be mapped
                 self.addr_space.unmap_memory(virt_range).unwrap();
             }
 
@@ -315,7 +318,7 @@ impl Process {
     /// This will stop all running threads from this process, and drop the process eventually
     /// 
     /// This may trigger the current thread to die if it is exiting its own process,
-    /// so no locks or refcounted objects hould be held when calling this,
+    /// so no locks or refcounted objects should be held when calling this,
     /// unless it has already been checked that `this` is not the current process
     /// 
     /// # Locking
@@ -324,7 +327,7 @@ impl Process {
     pub fn exit(this: Arc<Process>) {
         if !this.is_alive.swap(false, Ordering::AcqRel) {
             // another thread is already terminating this process
-            return
+            return;
         }
 
         cpu_local_data().local_apic().send_ipi(Ipi::To(IpiDest::AllExcludeThis, IPI_PROCESS_EXIT));
@@ -452,42 +455,85 @@ impl Process {
 
         addr_space_data.update_memory_mapping_inner(memory.id, &mut memory_inner, max_size_pages)
     }
+}
+
+bitflags! {
+    pub struct ResizeMemoryFlags: u32 {
+        const IN_PLACE = 1;
+        const GROW_MAPPING = 1 << 1;
+    }
+}
+
+impl Process {
 
     /// Resizes the specified memory capability specified by `memory` to be the size of `new_size_pages`
     /// 
     /// If `resize_in_place` is true, the memory can be resized even if it is currently mapped
     /// 
+    /// # Returns
+    /// 
+    /// returns the new size of the memory in pages
+    /// 
     /// # Locking
     /// 
     /// acquires `addr_space_data` lock
     /// acquires the `inner` lock on the memory capability
-    pub fn resize_memory(&self, memory: StrongCapability<Memory>, new_page_size: usize, resize_in_place: bool) -> KResult<()> {
+    pub fn resize_memory(&self, memory: StrongCapability<Memory>, new_page_size: usize, flags: ResizeMemoryFlags) -> KResult<usize> {
         let mut addr_space_data = self.addr_space_data.lock();
         let mut memory_inner = memory.object().inner();
 
         let old_page_size = memory_inner.size_pages();
 
         if old_page_size == new_page_size {
-            return Ok(());
+            return Ok(old_page_size);
         }
 
         if memory_inner.map_ref_count == 0 {
             // Safety: map ref count is checked to be 0, os this capability is not mapped in memory
             unsafe {
-                memory_inner.resize_end(new_page_size)
+                memory_inner.resize_out_of_place(new_page_size)?;
             }
-        } else if resize_in_place && memory_inner.map_ref_count == 1 {
+
+            Ok(memory_inner.size_pages())
+        } else if flags.contains(ResizeMemoryFlags::IN_PLACE) && memory_inner.map_ref_count == 1 {
             let Some(mapping) = addr_space_data.mapped_memory_capabilities.get(&memory.id) else {
                 return Err(SysErr::InvlOp);
             };
 
             if new_page_size > old_page_size {
-                // grow memory
-            } else {
-                // shrink memory
-            }
+                unsafe {
+                    memory_inner.resize_in_place(new_page_size)?;
+                }
 
-            todo!()
+                let memory_size = memory_inner.size_pages();
+                if flags.contains(ResizeMemoryFlags::GROW_MAPPING) {
+                    addr_space_data.update_memory_mapping_inner(
+                        memory.id,
+                        &mut memory_inner,
+                        Some(memory_size)
+                    )?;
+                }
+
+                Ok(memory_size)
+            } else if new_page_size < old_page_size {
+                // shrink memory
+                if mapping.size_pages > new_page_size {
+                    addr_space_data.update_memory_mapping_inner(
+                        memory.id,
+                        &mut memory_inner,
+                        Some(new_page_size)
+                    )?;
+                }
+                
+                // panic safety: shrinking the allocated memory should never fail
+                unsafe {
+                    memory_inner.resize_in_place(new_page_size).unwrap();
+                }
+
+                Ok(memory_inner.size_pages())
+            } else {
+                Ok(memory_inner.size_pages())
+            }
         } else {
             Err(SysErr::InvlOp)
         }

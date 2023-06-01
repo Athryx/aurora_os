@@ -1,7 +1,9 @@
+use bitflags::bitflags;
+
 use crate::alloc::{PaRef, HeapRef};
 use crate::cap::{StrongCapability, Capability};
 use crate::cap::{CapFlags, CapId, memory::Memory};
-use crate::process::PageMappingFlags;
+use crate::process::{PageMappingFlags, ResizeMemoryFlags};
 use crate::{prelude::*, process};
 use crate::arch::x64::IntDisable;
 use super::{options_weak_autodestroy, is_option_set};
@@ -73,7 +75,7 @@ const MEM_MAX_SIZE: u32 = 1 << 3;
 /// InvlArgs: options has no bits set indicating read, write, or exec permissions
 /// 
 /// # Returns
-/// size: size of the memory that was mapped into address space (this will be the size of memory capability)
+/// size: size of the memory that was mapped into address space in pages (this will be the size of memory capability)
 pub fn memory_map(
     options: u32,
     process_id: usize,
@@ -154,6 +156,8 @@ pub fn memory_unmap(
 /// # Options
 /// bit 0 (mem_resize_in_place): allows the memory to be resived even if it is mapped in memory
 /// as long as the only capability for which it is mapped in memory is `memory`
+/// bit 1 (mem_resize_grow_mapping): if the memory is grown while mapped with the resize in place bit,
+/// the mapping is automatically grown to be the new size of the entire mapping
 /// 
 /// # Required Capability Permissions
 /// `memory`: cap_prod
@@ -161,13 +165,16 @@ pub fn memory_unmap(
 /// # Syserr Code
 /// InvlOp: `memory` is mapped into memory somewhere when it shouldn't be
 /// InvlArgs: `new_page_size` is 0
+/// 
+/// # Returns
+/// The new size of the memory capability in pages
 pub fn memory_resize(
     options: u32,
     memory_id: usize,
     new_page_size: usize,
-) -> KResult<()> {
+) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
-    let resize_in_place = get_bits(options as usize, 0..1) != 0;
+    let flags = ResizeMemoryFlags::from_bits_truncate(options);
     let memory_cap_id = CapId::try_from(memory_id).ok_or(SysErr::InvlId)?;
 
     if !memory_cap_id.flags().contains(CapFlags::PROD) {
@@ -181,5 +188,5 @@ pub fn memory_resize(
     let memory = current_process.cap_map()
         .get_memory_with_perms(memory_id, CapFlags::PROD, weak_auto_destroy)?;
 
-    current_process.resize_memory(memory, new_page_size, resize_in_place)
+    current_process.resize_memory(memory, new_page_size, flags)
 }

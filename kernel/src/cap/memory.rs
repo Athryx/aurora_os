@@ -6,7 +6,7 @@ use crate::mem::{Allocation, PageLayout};
 use crate::sync::{IMutex, IMutexGuard};
 use super::{CapObject, CapType};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 struct AllocationEntry {
     allocation: Allocation,
     /// Offset from the start of memory capabity of this entry in bytes
@@ -166,27 +166,170 @@ impl MemoryInner {
         }
     }
 
-    /// Resizes the memory to be `new_page_size` by reallocating the last allocation
+    /// Shrinks this memory capability to be the given size
+    /// 
+    /// # Panics
+    /// 
+    /// panics if new_page_size is greater than the size of the memory capability, or new_page_size is 0
     /// 
     /// # Safety
     /// 
-    /// Must check that memory is not mapped anywhere, because physical addressess of currently in use pages may be changed
-    pub unsafe fn resize_end(&mut self, new_page_size: usize) -> KResult<()> {
-        if new_page_size == 0 {
-            return Err(SysErr::InvlArgs);
+    /// the parts that are being shrunk must not be mapped in memory
+    unsafe fn shrink_memory(&mut self, new_page_size: usize) {
+        assert!(new_page_size <= self.size_pages());
+        assert!(new_page_size != 0);
+
+        let mut shrink_amount = (self.size_pages() - new_page_size) * PAGE_SIZE;
+
+        for i in (0..self.allocations.len()).rev() {
+            let allocation = self.allocations[i].allocation;
+
+            if allocation.size() >= shrink_amount {
+                self.allocations.pop();
+                shrink_amount -= allocation.size();
+                self.size -= allocation.size();
+
+                unsafe {
+                    self.page_allocator.dealloc(allocation);
+                }
+            } else {
+                let new_allocation_size = allocation.size() - shrink_amount;
+
+                // panic safety; realloc in place should never fail
+                let new_allocation = unsafe {
+                    self.page_allocator.realloc_in_place(allocation, PageLayout::new_rounded(new_allocation_size, PAGE_SIZE).unwrap())
+                }.unwrap();
+
+                self.allocations[i].allocation = new_allocation;
+
+                let size_change = allocation.size() - new_allocation.size();
+                self.size -= size_change;
+
+                break;
+            }
+
+            if shrink_amount == 0 {
+                break;
+            }
         }
+    }
 
-        let layout = PageLayout::from_size_align(new_page_size * PAGE_SIZE, PAGE_SIZE)
-            .expect("failed to make page layout");
-        
-        let end_index = self.allocations.len() - 1;
+    /// Attempts to grow the memory in this capability without moving any already allocated memory
+    fn grow_in_place(&mut self, new_page_size: usize) -> KResult<()> {
+        assert!(new_page_size >= self.size_pages());
 
-        self.allocations[end_index].allocation = unsafe {
-            self.page_allocator.realloc(self.allocations[end_index].allocation, layout)
-                .ok_or(SysErr::OutOfMem)?
+        let grow_amount = (new_page_size - self.size_pages()) * PAGE_SIZE;
+
+        // panic safety: there should always be at least 1 allocation
+        let last_entry = self.allocations.last().unwrap();
+        let last_allocation = last_entry.allocation;
+
+        // TODO: maybe add support to realloc in place as large as possibel so even in event of realloc
+        // failure, the last allocation would be grown by at least something
+        let result = unsafe {
+            self.page_allocator.realloc_in_place(
+                last_allocation,
+                PageLayout::new_rounded(last_allocation.size() + grow_amount, PAGE_SIZE).unwrap(),
+            )
         };
 
+        if let Some(new_allocation) = result {
+            let size_change = new_allocation.size() - last_allocation.size();
+            self.size += size_change;
+
+            self.allocations.last_mut().unwrap().allocation = new_allocation;
+
+            Ok(())
+        } else {
+            // add new allocation because reallocating end failed
+            let Some(new_allocation) = self.page_allocator
+                .alloc(PageLayout::new_rounded(grow_amount, PAGE_SIZE).unwrap()) else {
+                return Err(SysErr::OutOfMem);
+            };
+
+            if let Err(error) = self.allocations.push(AllocationEntry {
+                allocation: new_allocation,
+                offset: last_entry.offset + last_allocation.size(),
+            }) {
+                // could not append allocation entry, deallocate new allocation
+                // safety: the new allocation is not used anywhere
+                unsafe {
+                    self.page_allocator.dealloc(new_allocation);
+                }
+
+                Err(error)
+            } else {
+                self.size += new_allocation.size();
+
+                Ok(())
+            }   
+        }
+    }
+
+    /// Grows the memory on this capability, but does not necesarily grow it in place, so it is unsafe to have this memory mapped if grow is called
+    unsafe fn grow(&mut self, new_page_size: usize) -> KResult<()> {
+        assert!(new_page_size >= self.size_pages());
+
+        let grow_amount = (new_page_size - self.size_pages()) * PAGE_SIZE;
+
+        // panic safety: there should always be at least 1 allocation
+        let last_allocation = self.allocations.last().unwrap().allocation;
+
+        let new_allocation = unsafe {
+            self.page_allocator.realloc(
+                last_allocation,
+                PageLayout::new_rounded(last_allocation.size() + grow_amount, PAGE_SIZE).unwrap(),
+            ).ok_or(SysErr::OutOfMem)?
+        };
+
+        self.allocations.last_mut().unwrap().allocation = new_allocation;
+        
+        let size_change = new_allocation.size() - last_allocation.size();
+        self.size += size_change;
+
         Ok(())
+    }
+
+    /// Resizes the memory to the given size in pages
+    /// 
+    /// The in place version of resize ensures that all pointers to memory areas inside this memory
+    /// that point to an offset less than the new size will remain valid
+    /// 
+    /// # Safety
+    /// 
+    /// This memory capability must not have any part past the end pf the new size mapped in memory
+    pub unsafe fn resize_in_place(&mut self, new_page_size: usize) -> KResult<()> {
+        if new_page_size > self.size_pages() {
+            self.grow_in_place(new_page_size)
+        } else {
+            unsafe {
+                self.shrink_memory(new_page_size)
+            }
+
+            Ok(())
+        }
+    }
+
+    /// Resizes the memory to the given size in pages
+    /// 
+    /// The out of place version of resize does not ensure that all pointers to memory areas inside this memory
+    /// that point to an offset less than the new size will remain valid
+    /// 
+    /// # Safety
+    /// 
+    /// This memory capability must not be mapped
+    pub unsafe fn resize_out_of_place(&mut self, new_page_size: usize) -> KResult<()> {
+        if new_page_size > self.size_pages() {
+            unsafe {
+                self.grow(new_page_size)
+            }
+        } else {
+            unsafe {
+                self.shrink_memory(new_page_size)
+            }
+
+            Ok(())
+        }
     }
 }
 

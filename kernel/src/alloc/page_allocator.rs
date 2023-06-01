@@ -4,9 +4,9 @@ use crate::mem::{Allocation, PageLayout};
 use crate::container::Arc;
 use crate::prelude::*;
 
-use super::cap_allocator::{CapAllocatorWrapper};
+use super::cap_allocator::CapAllocatorWrapper;
 use super::fixed_page_allocator::{FixedPageAllocator};
-use super::pmem_manager::{PmemManager};
+use super::pmem_manager::PmemManager;
 use super::{zm, CapAllocator};
 
 /// A trait that represents an object that can allocate physical memory pages
@@ -26,6 +26,10 @@ pub unsafe trait PageAllocator: Send + Sync {
             self.dealloc(allocation);
         }
         Some(out)
+    }
+
+    unsafe fn realloc_in_place(&self, _allocation: Allocation, _layout: PageLayout) -> Option<Allocation> {
+        None
     }
 }
 
@@ -82,6 +86,16 @@ impl PaRef {
                 PaRefInner::PmemManager(pmem_manager) => pmem_manager.realloc(allocation, layout),
                 PaRefInner::InitAllocator(init_allocator) => (*init_allocator).realloc(allocation, layout),
                 PaRefInner::CapAllocator(ref mut cap_allocator) => cap_allocator.page_realloc(allocation, layout),
+            }
+        }
+    }
+
+    pub unsafe fn realloc_in_place(&mut self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
+        unsafe {
+            match self.0 {
+                PaRefInner::PmemManager(pmem_manager) => pmem_manager.realloc_in_place(allocation, layout),
+                PaRefInner::InitAllocator(init_allocator) => (*init_allocator).realloc_in_place(allocation, layout),
+                PaRefInner::CapAllocator(ref mut cap_allocator) => cap_allocator.page_realloc_in_place(allocation, layout),
             }
         }
     }

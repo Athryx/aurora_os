@@ -8,6 +8,8 @@ add guard pages at the end of kernel stacks
 remove as much unsafe as possible
 
 bitflags for all syscall options
+maybe look into enumflags2
+remove all NONE members from bitflags and just use empty method
 
 add support to memory mapping syscalls that allow mapping at some offset into the memory capability
 extend memory_update_mapping to support moving the base address and changing mapping flags

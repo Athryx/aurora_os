@@ -196,7 +196,7 @@ impl CapAllocatorWrapper {
         }
     }
 
-    pub unsafe fn page_realloc(&mut self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
+    unsafe fn page_realloc_inner(&mut self, allocation: Allocation, layout: PageLayout, in_place: bool) -> Option<Allocation> {
         let old_size = allocation.size();
         let new_size = PmemManager::get_allocation_size_for_layout(layout);
         if old_size == new_size {
@@ -211,7 +211,11 @@ impl CapAllocatorWrapper {
         }
 
         let new_allocation = unsafe {
-            zm().realloc(allocation, layout)
+            if in_place {
+                zm().realloc_in_place(allocation, layout)
+            } else {
+                zm().realloc(allocation, layout)
+            }
         };
 
         if new_allocation.is_none() {
@@ -224,6 +228,18 @@ impl CapAllocatorWrapper {
                 self.dealloc_bytes(old_size - new_size);
             }
             new_allocation
+        }
+    }
+
+    pub unsafe fn page_realloc(&mut self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
+        unsafe {
+            self.page_realloc_inner(allocation, layout, false)
+        }
+    }
+
+    pub unsafe fn page_realloc_in_place(&mut self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
+        unsafe {
+            self.page_realloc_inner(allocation, layout, true)
         }
     }
 

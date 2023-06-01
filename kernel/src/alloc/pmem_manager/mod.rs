@@ -14,7 +14,7 @@ use super::fixed_page_allocator::FixedPageAllocator;
 use super::linked_list_allocator::LinkedListAllocator;
 use super::{HeapRef, PaRef, PageAllocator};
 use crate::mb2::{MemoryMap, MemoryRegionType};
-use crate::mem::{Allocation, PageLayout};
+use crate::mem::{Allocation, PageLayout, allocation};
 use crate::prelude::*;
 
 /// Iterates over all the sections of size aligned pages in an AVirtRange
@@ -270,6 +270,18 @@ unsafe impl PageAllocator for PmemManager {
     unsafe fn realloc(&self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
         unsafe {
             self.realloc_inner(self.get_allocator_for_allocation(allocation), allocation, layout)
+        }
+    }
+
+
+    unsafe fn realloc_in_place(&self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
+        assert!(
+            layout.align() <= align_of(layout.size()),
+            "PmemManager does not support allocations with a greater alignamant than size"
+        );
+
+        unsafe {
+            self.get_allocator_for_allocation(allocation).realloc_in_place(allocation, layout.size())
         }
     }
 }
