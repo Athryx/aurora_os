@@ -153,6 +153,8 @@ pub fn memory_unmap(
 /// 
 /// `memory` must not be mapped anywhere in memory, unless `mem_resize_in_place` is set
 /// 
+/// NOTE: weak auto destroy does not apply to the `mem` capability
+/// 
 /// # Options
 /// bit 0 (mem_resize_in_place): allows the memory to be resived even if it is mapped in memory
 /// as long as the only capability for which it is mapped in memory is `memory`
@@ -170,6 +172,7 @@ pub fn memory_unmap(
 /// The new size of the memory capability in pages
 pub fn memory_resize(
     options: u32,
+    process_id: usize,
     memory_id: usize,
     new_page_size: usize,
 ) -> KResult<usize> {
@@ -183,10 +186,14 @@ pub fn memory_resize(
 
     let _int_disable = IntDisable::new();
 
-    let current_process = cpu_local_data().current_process();
+    let process = cpu_local_data()
+        .current_process()
+        .cap_map()
+        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?
+        .into_inner();
 
-    let memory = current_process.cap_map()
-        .get_memory_with_perms(memory_id, CapFlags::PROD, weak_auto_destroy)?;
+    let memory = process.cap_map()
+        .get_strong_memory_with_perms(memory_id, CapFlags::PROD)?;
 
-    current_process.resize_memory(memory, new_page_size, flags)
+    process.resize_memory(memory, new_page_size, flags)
 }

@@ -227,7 +227,7 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		MEMORY_MAP => sysret_1!(syscall_4!(memory_map, vals), vals),
 		MEMORY_UNMAP => sysret_0!(syscall_2!(memory_unmap, vals), vals),
 		MEMORY_NEW => sysret_1!(syscall_2!(memory_new, vals), vals),
-		MEMORY_RESIZE => sysret_1!(syscall_2!(memory_resize, vals), vals),
+		MEMORY_RESIZE => sysret_1!(syscall_3!(memory_resize, vals), vals),
 		KEY_NEW => sysret_1!(syscall_1!(key_new, vals), vals),
 		KEY_ID => sysret_1!(syscall_1!(key_id, vals), vals),
 		SPAWNER_NEW => sysret_1!(syscall_2!(spawner_new, vals), vals),

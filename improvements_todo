@@ -1,22 +1,27 @@
-Also improve the kernel heap allocator, it is very bad
+improve the kernel heap allocator, it is very bad
+
 
 improve memory mapping api to not require strong reference, not require cap to be in that same process
 maybe don't have 1 mapping restriction on resize in place
 
+add support to memory mapping syscalls that allow mapping at some offset into the memory capability
+extend memory_update_mapping to support moving the base address and changing mapping flags
+maybe merge memory_resize and memory_update_mapping syscalls
+
+
 add guard pages at the end of kernel stacks
 
-remove as much unsafe as possible
 
 bitflags for all syscall options
 maybe look into enumflags2
 remove all NONE members from bitflags and just use empty method
 
-add support to memory mapping syscalls that allow mapping at some offset into the memory capability
-extend memory_update_mapping to support moving the base address and changing mapping flags
 
 change to use relative call instructions instead of absolute call with register
 this option is called code model
 should set vma to 0xffffffff80000000, and use mcmodel kernel
 
+
+remove as much unsafe as possible
 document old code
 run auto formatter

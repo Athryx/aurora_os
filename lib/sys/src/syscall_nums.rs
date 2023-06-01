@@ -10,6 +10,7 @@ pub const THREAD_SUSPEND: u32 = 6;
 
 pub const MEMORY_MAP: u32 = 11;
 pub const MEMORY_UNMAP: u32 = 12;
+pub const MEMORY_UPDATE_MAPPING: u32 = 13;
 pub const MEMORY_NEW: u32 = 14;
 pub const MEMORY_RESIZE: u32 = 15;
 
