@@ -443,6 +443,16 @@ impl Process {
         Ok(())
     }
 
+    /// Updates the mapping for the given memory capability
+    /// 
+    /// # Returns
+    /// 
+    /// Returns the size of the new mapping in pages
+    /// 
+    /// # Locking
+    /// 
+    /// acquires `addr_apce_data` lock
+    /// acquires the `inner` lock on the moemry capability
     pub fn update_memory_mapping(
         &self,
         memory: StrongCapability<Memory>,

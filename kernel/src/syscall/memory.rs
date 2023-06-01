@@ -149,6 +149,56 @@ pub fn memory_unmap(
     process.unmap_memory(memory)
 }
 
+bitflags! {
+    struct MemoryUpdateMappingFlags: u32 {
+        const UPDATE_SIZE = 1;
+    }
+}
+
+/// Updates memory mappings created by [`memory_map`]
+/// 
+/// the cap id for `memory` is looked up in the `process` argument, not the current process
+/// 
+/// NOTE: weak_auto_destroy option does not currently apply to the memory capability
+/// 
+/// # Options
+/// bit 0 (memory_update_size): change the mappings size to `new_page_size`, otherwise leave it unchanged
+///
+/// # Required Capability Permissions
+/// `process`: cap_write
+///
+/// # Syserr Code
+/// InvlOp: `mem` is not mapped into `process` address space
+/// InvlWeak: `mem` is a weak capability
+pub fn memory_update_mapping(
+    options: u32,
+    process_id: usize,
+    memory_id: usize,
+    new_page_size: usize,
+) -> KResult<usize> {
+    let weak_auto_destroy = options_weak_autodestroy(options);
+    let flags = MemoryUpdateMappingFlags::from_bits_truncate(options);
+
+    let max_size_pages = if flags.contains(MemoryUpdateMappingFlags::UPDATE_SIZE) {
+        Some(new_page_size)
+    } else {
+        None
+    };
+
+    let _int_disable = IntDisable::new();
+
+    let process = cpu_local_data()
+        .current_process()
+        .cap_map()
+        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?
+        .into_inner();
+
+    let memory = process.cap_map()
+        .get_strong_memory_with_perms(memory_id, CapFlags::empty())?;
+
+    process.update_memory_mapping(memory, max_size_pages)
+}
+
 /// Resizes the memory capability referenced by `memory`
 /// 
 /// `memory` must not be mapped anywhere in memory, unless `mem_resize_in_place` is set
