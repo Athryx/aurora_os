@@ -65,13 +65,13 @@ impl<T> Deref for Box<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        &*self.data
+        &self.data
     }
 }
 
 impl<T> DerefMut for Box<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut *self.data
+        &mut self.data
     }
 }
 

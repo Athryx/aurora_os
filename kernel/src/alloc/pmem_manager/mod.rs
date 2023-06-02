@@ -183,7 +183,7 @@ impl PmemManager {
         let allocator_slice =
             unsafe { slice::from_raw_parts_mut(allocator_slice.as_mut_ptr() as *mut PmemAllocator, i) };
 
-        allocator_slice.sort_unstable_by(|a, b| a.start_addr().cmp(&b.start_addr()));
+        allocator_slice.sort_unstable_by_key(|a| a.start_addr());
 
         (
             PmemManager {

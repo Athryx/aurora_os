@@ -89,7 +89,7 @@ impl<T: ListNode> LinkedList<T> {
 
     pub fn insert(&mut self, index: usize, value: MemOwner<T>) -> Option<&mut T> {
         if index > self.len {
-            return None;
+            None
         } else {
             Some(self.cursor_at_mut(index).insert_next(value))
         }

@@ -140,7 +140,7 @@ impl MemoryRegionType {
         }
     }
 
-    fn new<'a>(region: &'a Mb2MemoryRegion, initrd_range: UPhysRange) -> impl Iterator<Item = Self> + 'a {
+    fn new(region: &Mb2MemoryRegion, initrd_range: UPhysRange) -> impl Iterator<Item = Self> + '_ {
         let convert_to_memory_region = |prange| match region.typ {
             USABLE => Self::Usable(prange),
             ACPI => Self::Acpi(prange),

@@ -13,7 +13,7 @@ pub trait HwaTag {
 
     // returns the size of the element, including the tag
     fn size(&self) -> usize;
-    fn elem<'a>(&'a self) -> Self::Elem<'a>;
+    fn elem(&self) -> Self::Elem<'_>;
 
     // convinience function to get internal data
     unsafe fn raw_data<T>(&self) -> &T {

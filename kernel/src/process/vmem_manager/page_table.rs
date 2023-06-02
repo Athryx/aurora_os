@@ -176,8 +176,9 @@ impl PageTable {
 				}
 
                 unsafe {
-                    pointer.as_mut_ptr().as_mut()
-                        .map(|page_table| page_table.dealloc_recurse(allocer, level-1));
+					if let Some(page_table) = pointer.as_mut_ptr().as_mut() {
+						page_table.dealloc_recurse(allocer, level-1);
+					}
                 }
 			}
 		}

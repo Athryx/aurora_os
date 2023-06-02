@@ -385,16 +385,15 @@ impl LocalApic {
     /// 
 	/// Returns false if the period is too long
 	pub fn init_timer(&mut self, period: Duration) -> bool {
-		let nsec_per = self.nanosec_per_timer_tick();
-		let nsec_period: u32 = match period.as_nanos().try_into() {
-			Ok(nsec) => nsec,
-			Err(_) => return false,
+		let Ok(nsec_per_tick) = u32::try_from(self.nanosec_per_timer_tick()) else {
+			return false;
 		};
 
-		self.timer_reset_count = match (nsec_period / nsec_per as u32).try_into() {
-			Ok(count) => count,
-			Err(_) => return false,
+		let Ok(nsec_period) = u32::try_from(period.as_nanos()) else {
+			return false;
 		};
+
+		self.timer_reset_count = nsec_period / nsec_per_tick;
 
 		self.set_lvt(LvtType::Timer(LvtEntry::new_timer(IRQ_APIC_TIMER)));
 		self.write_reg_32(Self::TIMER_INIT_COUNT, self.timer_reset_count);
@@ -418,7 +417,9 @@ impl LocalApic {
 			PIT.one_shot(TIMER_CALIBRATE_TIME, || CALIBRATE_FIRED.store(true, Ordering::Release));
 		}
 
-		while !CALIBRATE_FIRED.load(Ordering::Acquire) {}
+		while !CALIBRATE_FIRED.load(Ordering::Acquire) {
+			core::hint::spin_loop();
+		}
 
 		cli();
 		EOI_ENABLED.store(true, Ordering::Release);

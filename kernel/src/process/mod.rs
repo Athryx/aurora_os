@@ -147,7 +147,7 @@ impl Process {
         let strong_cap = StrongCapability::new_flags(
             Process {
                 name,
-                page_allocator: page_allocator,
+                page_allocator,
                 heap_allocator: allocer.clone(),
                 is_alive: AtomicBool::new(true),
                 num_threads_running: AtomicUsize::new(0),
@@ -558,7 +558,7 @@ static KERNEL_PROCESS: Once<Arc<Process>> = Once::new();
 
 /// Initializes the kernel process
 pub fn init_kernel_process() {
-    const FAIL_MESSAGE: &'static str = "could not initialize kernel process";
+    const FAIL_MESSAGE: &str = "could not initialize kernel process";
 
     KERNEL_PROCESS.call_once(|| {
         Process::new(

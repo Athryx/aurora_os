@@ -41,7 +41,7 @@ impl<K: Ord, V> TreeNode<K, V> {
     }
 
     fn is_child_node(&self) -> bool {
-        self.children.len() == 0
+        self.children.is_empty()
     }
 
     fn is_full(&self) -> bool {

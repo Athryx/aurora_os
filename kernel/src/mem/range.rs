@@ -163,7 +163,7 @@ macro_rules! impl_addr_range {
                 unsafe { slice::from_raw_parts(self.as_usize() as *const u8, self.size()) }
             }
 
-            unsafe fn as_slice_mut(&self) -> &mut [u8] {
+            unsafe fn as_slice_mut(&mut self) -> &mut [u8] {
                 unsafe { slice::from_raw_parts_mut(self.as_usize() as *mut u8, self.size()) }
             }
 

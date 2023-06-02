@@ -142,7 +142,7 @@ impl VirtAddrSpace {
     /// 
     /// This is only sets up the mapping once, then the page table pointer is cached for future use
     fn initialize_kernel_mapping(&mut self) {
-        const FAIL_MESSAGE: &'static str = "Failed to initialize kernel memory page tables";
+        const FAIL_MESSAGE: &str = "Failed to initialize kernel memory page tables";
 
         if let Some(page_table_pointer) = KERNEL_MEMORY_PAGE_POINTER.get() {
             // safety: cr3 is not referenced anywhere else because we have a mutable reference to self

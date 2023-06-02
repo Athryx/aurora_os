@@ -81,30 +81,27 @@ pub unsafe fn init_io_apic(madt: &Madt) -> KResult<Vec<u8>> {
 
     // run second pass for IoAPicSrcOverride once we know the io apic is initialized
     for madt_entry in madt.iter() {
-        match madt_entry {
-            MadtElem::IoApicSrcOverride(override_info) => {
-                let polarity = match get_bits(override_info.flags as usize, 0..2) {
-					0 => PinPolarity::default(),
-					1 => PinPolarity::ActiveHigh,
-					2 => panic!("invalid pin polarity flag in acpi tables"),
-					3 => PinPolarity::ActiveLow,
-					_ => unreachable!(),
-				};
+        if let MadtElem::IoApicSrcOverride(override_info) = madt_entry {
+            let polarity = match get_bits(override_info.flags as usize, 0..2) {
+                0 => PinPolarity::default(),
+                1 => PinPolarity::ActiveHigh,
+                2 => panic!("invalid pin polarity flag in acpi tables"),
+                3 => PinPolarity::ActiveLow,
+                _ => unreachable!(),
+            };
 
-				let trigger_mode = match get_bits(override_info.flags as usize, 2..4) {
-					0 => TriggerMode::default(),
-					1 => TriggerMode::Edge,
-					2 => panic!("invalid trigger mode flag in acpi tables"),
-					3 => TriggerMode::Level,
-					_ => unreachable!(),
-				};
+            let trigger_mode = match get_bits(override_info.flags as usize, 2..4) {
+                0 => TriggerMode::default(),
+                1 => TriggerMode::Edge,
+                2 => panic!("invalid trigger mode flag in acpi tables"),
+                3 => TriggerMode::Level,
+                _ => unreachable!(),
+            };
 
-                let irq = override_info.irq_src + IRQ_BASE;
-                let irq_entry = IrqEntry::from(irq, IoApicDest::To(startup_core_apic_id), polarity, trigger_mode);
+            let irq = override_info.irq_src + IRQ_BASE;
+            let irq_entry = IrqEntry::from(irq, IoApicDest::To(startup_core_apic_id), polarity, trigger_mode);
 
-                io_apic().lock().set_irq_entry(override_info.global_sysint as u8, irq_entry);
-            },
-            _ => (),
+            io_apic().lock().set_irq_entry(override_info.global_sysint as u8, irq_entry);
         }
     }
 
@@ -151,7 +148,7 @@ pub fn smp_init(ap_apic_ids: &[u8]) -> KResult<()> {
     config::set_cpu_count(num_aps + 1);
 
     let ap_code_src_virt_range = consts::AP_CODE_SRC_RANGE.to_virt();
-    let ap_code_dest_virt_range = consts::AP_CODE_DEST_RANGE.to_virt();
+    let mut ap_code_dest_virt_range = consts::AP_CODE_DEST_RANGE.to_virt();
 
     // copy ap code to the trampoline location
     unsafe {
