@@ -1,9 +1,10 @@
 use bitflags::bitflags;
+use sys::{MemoryResizeFlags, MemoryMapFlags, MemoryUpdateMappingFlags};
 
 use crate::alloc::{PaRef, HeapRef};
 use crate::cap::{StrongCapability, Capability};
 use crate::cap::{CapFlags, CapId, memory::Memory};
-use crate::process::{PageMappingFlags, ResizeMemoryFlags};
+use crate::process::PageMappingFlags;
 use crate::{prelude::*, process};
 use crate::arch::x64::IntDisable;
 use super::{options_weak_autodestroy, is_option_set};
@@ -84,11 +85,12 @@ pub fn memory_map(
     max_size: usize,
 ) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
-    let addr = VirtAddr::try_new(addr).ok_or(SysErr::InvlVirtAddr)?;
+    let addr = VirtAddr::try_new_aligned(addr)?;
 
     let map_flags = PageMappingFlags::from_bits_truncate((options & 0b111) as usize);
+    let other_flags = MemoryMapFlags::from_bits_truncate(options);
 
-    let max_size = if is_option_set(options, MEM_MAX_SIZE) {
+    let max_size = if other_flags.contains(MemoryMapFlags::MAX_SIZE) {
         Some(max_size)
     } else {
         None
@@ -149,12 +151,6 @@ pub fn memory_unmap(
     process.unmap_memory(memory)
 }
 
-bitflags! {
-    struct MemoryUpdateMappingFlags: u32 {
-        const UPDATE_SIZE = 1;
-    }
-}
-
 /// Updates memory mappings created by [`memory_map`]
 /// 
 /// the cap id for `memory` is looked up in the `process` argument, not the current process
@@ -170,6 +166,9 @@ bitflags! {
 /// # Syserr Code
 /// InvlOp: `mem` is not mapped into `process` address space
 /// InvlWeak: `mem` is a weak capability
+/// 
+/// # Returns
+/// Returns the size of the new mapping in pages
 pub fn memory_update_mapping(
     options: u32,
     process_id: usize,
@@ -227,7 +226,7 @@ pub fn memory_resize(
     new_page_size: usize,
 ) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
-    let flags = ResizeMemoryFlags::from_bits_truncate(options);
+    let flags = MemoryResizeFlags::from_bits_truncate(options);
     let memory_cap_id = CapId::try_from(memory_id).ok_or(SysErr::InvlId)?;
 
     if !memory_cap_id.flags().contains(CapFlags::PROD) {

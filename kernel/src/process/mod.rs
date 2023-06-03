@@ -4,6 +4,7 @@ use core::slice;
 
 use spin::Once;
 use bitflags::bitflags;
+use sys::MemoryResizeFlags;
 
 use crate::arch::x64::{asm_thread_init, IntDisable};
 use crate::cap::memory::{Memory, MemoryInner};
@@ -465,16 +466,6 @@ impl Process {
 
         addr_space_data.update_memory_mapping_inner(memory.id, &mut memory_inner, max_size_pages)
     }
-}
-
-bitflags! {
-    pub struct ResizeMemoryFlags: u32 {
-        const IN_PLACE = 1;
-        const GROW_MAPPING = 1 << 1;
-    }
-}
-
-impl Process {
 
     /// Resizes the specified memory capability specified by `memory` to be the size of `new_size_pages`
     /// 
@@ -488,7 +479,7 @@ impl Process {
     /// 
     /// acquires `addr_space_data` lock
     /// acquires the `inner` lock on the memory capability
-    pub fn resize_memory(&self, memory: StrongCapability<Memory>, new_page_size: usize, flags: ResizeMemoryFlags) -> KResult<usize> {
+    pub fn resize_memory(&self, memory: StrongCapability<Memory>, new_page_size: usize, flags: MemoryResizeFlags) -> KResult<usize> {
         let mut addr_space_data = self.addr_space_data.lock();
         let mut memory_inner = memory.object().inner();
 
@@ -505,7 +496,7 @@ impl Process {
             }
 
             Ok(memory_inner.size_pages())
-        } else if flags.contains(ResizeMemoryFlags::IN_PLACE) && memory_inner.map_ref_count == 1 {
+        } else if flags.contains(MemoryResizeFlags::IN_PLACE) && memory_inner.map_ref_count == 1 {
             let Some(mapping) = addr_space_data.mapped_memory_capabilities.get(&memory.id) else {
                 return Err(SysErr::InvlOp);
             };
@@ -516,7 +507,7 @@ impl Process {
                 }
 
                 let memory_size = memory_inner.size_pages();
-                if flags.contains(ResizeMemoryFlags::GROW_MAPPING) {
+                if flags.contains(MemoryResizeFlags::GROW_MAPPING) {
                     addr_space_data.update_memory_mapping_inner(
                         memory.id,
                         &mut memory_inner,

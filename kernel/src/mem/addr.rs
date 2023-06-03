@@ -74,6 +74,15 @@ impl VirtAddr {
         }
     }
 
+    /// Helper function which creates a new virt addr only if `addr` is page aligned
+    pub fn try_new_aligned(addr: usize) -> KResult<Self> {
+        if !page_aligned(addr) {
+            Err(SysErr::InvlAlign)
+        } else {
+            Self::try_new(addr).ok_or(SysErr::InvlVirtAddr)
+        }
+    }
+
     pub fn new_truncate(addr: usize) -> Self {
         match get_bits(addr, 47..48) {
             0 => VirtAddr(addr & Self::MASK),

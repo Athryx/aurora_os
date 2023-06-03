@@ -5,6 +5,8 @@ pub mod syscall_nums;
 
 mod cap;
 pub use cap::*;
+mod flags;
+pub use flags::*;
 mod syscalls;
 pub use syscalls::*;
 mod syserr;

@@ -1,7 +1,7 @@
 use core::arch::asm;
 use core::cmp::min;
 
-use crate::{syscall_nums::*, CapId, CapType, CapFlags, SysErr, KResult, Tid};
+use crate::{syscall_nums::*, CapId, CapType, CapFlags, SysErr, KResult, Tid, MemoryResizeFlags, MemoryMappingFlags, MemoryMapFlags, MemoryUpdateMappingFlags};
 
 // need to use rcx because rbx is reserved by llvm
 // FIXME: ugly
@@ -261,7 +261,7 @@ macro_rules! make_cap_struct {
     };
 }
 
-const WEAK_AUTO_DESTROY: usize = 1 << 31;
+const WEAK_AUTO_DESTROY: u32 = 1 << 31;
 
 /// Prints up to 80 bytes from the input array to the kernel debug log
 pub fn print_debug(data: &[u8]) {
@@ -333,7 +333,7 @@ impl Process {
         unsafe {
             sysret_1!(syscall!(
                 PROCESS_NEW,
-                flags.bits() | WEAK_AUTO_DESTROY,
+                flags.bits() as u32 | WEAK_AUTO_DESTROY,
                 allocator.as_usize(),
                 spawner.as_usize()
             )).map(|num| Process(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
@@ -354,7 +354,7 @@ impl Process {
         unsafe {
             sysret_1!(syscall!(
                 THREAD_NEW,
-                autostart_thread as usize | WEAK_AUTO_DESTROY,
+                autostart_thread as u32 | WEAK_AUTO_DESTROY,
                 self.as_usize(),
                 rip,
                 rsp,
@@ -366,14 +366,20 @@ impl Process {
         }
     }
 
-    pub fn map_memory(&self, memory: Memory, address: usize) -> KResult<()> {
+    pub fn map_memory(&self, memory: Memory, address: usize, max_size_pages: Option<usize>, flags: MemoryMappingFlags) -> KResult<usize> {
+        let mut flags = flags.bits() | WEAK_AUTO_DESTROY;
+        if max_size_pages.is_some() {
+            flags |= MemoryMapFlags::MAX_SIZE.bits()
+        }
+
         unsafe {
-            sysret_0!(syscall!(
+            sysret_1!(syscall!(
                 MEMORY_MAP,
-                WEAK_AUTO_DESTROY,
+                flags,
                 self.as_usize(),
                 memory.as_usize(),
-                address
+                address,
+                max_size_pages.unwrap_or(0)
             ))
         }
     }
@@ -388,6 +394,35 @@ impl Process {
             ))
         }
     }
+
+    pub fn update_memory_mapping(&self, memory: Memory, new_map_size_pages: Option<usize>) -> KResult<usize> {
+        let mut flags = MemoryUpdateMappingFlags::empty();
+        if new_map_size_pages.is_some() {
+            flags |= MemoryUpdateMappingFlags::UPDATE_SIZE;
+        }
+
+        unsafe {
+            sysret_1!(syscall!(
+                MEMORY_UPDATE_MAPPING,
+                flags.bits() | WEAK_AUTO_DESTROY,
+                self.as_usize(),
+                memory.as_usize(),
+                new_map_size_pages.unwrap_or(0)
+            ))
+        }
+    }
+
+    pub fn resize_memory(&self, memory: Memory, new_size_pages: usize, flags: MemoryResizeFlags) -> KResult<usize> {
+        unsafe {
+            sysret_1!(syscall!(
+                MEMORY_RESIZE,
+                flags.bits(),
+                self.as_usize(),
+                memory.as_usize(),
+                new_size_pages
+            ))
+        }
+    }
 }
 
 make_cap_struct!(Memory, CapType::Memory);
@@ -397,7 +432,7 @@ impl Memory {
         unsafe {
             sysret_1!(syscall!(
                 MEMORY_NEW,
-                flags.bits() | WEAK_AUTO_DESTROY,
+                flags.bits() as u32 | WEAK_AUTO_DESTROY,
                 allocator.as_usize(),
                 pages
             )).map(|num| Memory(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
@@ -412,7 +447,7 @@ impl Key {
         unsafe {
             sysret_1!(syscall!(
                 KEY_NEW,
-                flags.bits() | WEAK_AUTO_DESTROY,
+                flags.bits() as u32 | WEAK_AUTO_DESTROY,
                 allocator.as_usize()
             )).map(|num| Key(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
         }
@@ -436,7 +471,7 @@ impl Spawner {
         unsafe {
             sysret_1!(syscall!(
                 SPAWNER_NEW,
-                flags.bits() | WEAK_AUTO_DESTROY,
+                flags.bits() as u32 | WEAK_AUTO_DESTROY,
                 allocator.as_usize(),
                 spawn_key.as_usize()
             )).map(|num| Spawner(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
