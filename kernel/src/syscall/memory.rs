@@ -24,7 +24,8 @@ use super::{options_weak_autodestroy, is_option_set};
 ///
 /// # Returns
 /// mem: cid of memory
-pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<usize> {
+/// size: size of the new memory capability in pages
+pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<(usize, usize)> {
     let weak_auto_destroy = options_weak_autodestroy(options);
     let mem_cap_flags = CapFlags::from_bits_truncate(get_bits(options as usize, 0..4));
 
@@ -44,10 +45,34 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<us
         heap_allocator,
     )?;
 
-    Ok(current_process.cap_map().insert_memory(Capability::Strong(memory))?.into())
+    let size = memory.inner().inner().size_pages();
+
+    Ok((current_process.cap_map().insert_memory(Capability::Strong(memory))?.into(), size))
 }
 
-const MEM_MAX_SIZE: u32 = 1 << 3;
+/// Get the size of the memory capability in pages
+/// 
+/// # Required Capability Permissions
+/// `memory`: cap_read
+/// 
+/// # Returns
+/// size: size of memory capid in pages
+pub fn memory_get_size(options: u32, memory_id: usize) -> KResult<usize> {
+    let weak_auto_destroy = options_weak_autodestroy(options);
+
+    let _int_disable = IntDisable::new();
+
+    let memory = cpu_local_data()
+        .current_process()
+        .cap_map()
+        .get_memory_with_perms(memory_id, CapFlags::READ, weak_auto_destroy)?;
+    
+    let inner1 = memory.inner();
+
+    let out = Ok(inner1.inner().size_pages());
+
+    out
+}
 
 /// maps a capability `mem` that can be mapped into memory into the memory of process `process` starting at address `addr`
 /// 

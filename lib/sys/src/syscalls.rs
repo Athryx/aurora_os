@@ -1,6 +1,8 @@
 use core::arch::asm;
 use core::cmp::min;
 
+use bit_utils::PAGE_SIZE;
+
 use crate::{syscall_nums::*, CapId, CapType, CapFlags, SysErr, KResult, Tid, MemoryResizeFlags, MemoryMappingFlags, MemoryMapFlags, MemoryUpdateMappingFlags};
 
 // need to use rcx because rbx is reserved by llvm
@@ -425,17 +427,87 @@ impl Process {
     }
 }
 
-make_cap_struct!(Memory, CapType::Memory);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Memory {
+    id: CapId,
+    /// Size of memory in pages
+    size: usize,
+}
+
+impl Memory {
+    /// Updates the size field using `memory_get_size` syscall
+    /// 
+    /// # Returns
+    /// 
+    /// The new size of the memory in pages
+    pub fn refresh_size(&mut self) -> KResult<usize> {
+        self.size = unsafe {
+            sysret_1!(syscall!(
+                MEMORY_GET_SIZE,
+                WEAK_AUTO_DESTROY,
+                self.as_usize()
+            ))?
+        };
+
+        Ok(self.size)
+    }
+
+    /// Create a new capability struct wrapping an existing CapId
+    /// 
+    /// Returns None if the cap_type of `cap_id` is not the right type
+    pub fn try_from(cap_id: CapId) -> Option<Self> {
+        if cap_id.cap_type() == CapType::Memory {
+            let mut out = Self {
+                id: cap_id,
+                size: 0,
+            };
+
+            out.refresh_size().ok()?;
+
+            Some(out)
+        } else {
+            None
+        }
+    }
+
+    pub fn size_pages(&self) -> usize {
+        self.size
+    }
+
+    pub fn size_bytes(&self) -> usize {
+        self.size * PAGE_SIZE
+    }
+
+    /// Returns the CapId of this capability struct
+    pub fn cap_id(&self) -> CapId {
+        self.id
+    }
+
+    pub fn as_usize(&self) -> usize {
+        self.id.into()
+    }
+}
+
+impl From<Memory> for usize {
+    fn from(cap: Memory) -> usize {
+        cap.id.into()
+    }
+}
 
 impl Memory {
     pub fn new(flags: CapFlags, allocator: Allocator, pages: usize) -> KResult<Self> {
         unsafe {
-            sysret_1!(syscall!(
+            sysret_2!(syscall!(
                 MEMORY_NEW,
                 flags.bits() as u32 | WEAK_AUTO_DESTROY,
                 allocator.as_usize(),
-                pages
-            )).map(|num| Memory(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
+                pages,
+                // FIXME: hack to make syscall macro return right amount of values
+                0 as usize
+            )).map(|(cap_id, size)| Memory {
+                id: CapId::try_from(cap_id).expect(INVALID_CAPID_MESSAGE),
+                size,
+            })
         }
     }
 }
