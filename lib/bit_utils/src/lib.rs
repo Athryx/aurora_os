@@ -1,9 +1,17 @@
 //! A collection of miscallaneous utility functions
 #![no_std]
 
+#![feature(const_try)]
+#![feature(const_option)]
+#![feature(const_trait_impl)]
+#![feature(const_convert)]
+
 use core::arch::asm;
 use core::ops::Range;
 use core::str::Utf8Error;
+
+mod size;
+pub use size::Size;
 
 pub const PAGE_SIZE: usize = 4096;
 

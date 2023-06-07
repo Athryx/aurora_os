@@ -1,7 +1,7 @@
 use core::arch::asm;
 use core::cmp::min;
 
-use bit_utils::PAGE_SIZE;
+use bit_utils::{PAGE_SIZE, Size};
 
 use crate::{syscall_nums::*, CapId, CapType, CapFlags, SysErr, KResult, Tid, MemoryResizeFlags, MemoryMappingFlags, MemoryMapFlags, MemoryUpdateMappingFlags};
 
@@ -368,9 +368,9 @@ impl Process {
         }
     }
 
-    pub fn map_memory(&self, memory: Memory, address: usize, max_size_pages: Option<usize>, flags: MemoryMappingFlags) -> KResult<usize> {
+    pub fn map_memory(&self, memory: Memory, address: usize, max_size: Option<Size>, flags: MemoryMappingFlags) -> KResult<usize> {
         let mut flags = flags.bits() | WEAK_AUTO_DESTROY;
-        if max_size_pages.is_some() {
+        if max_size.is_some() {
             flags |= MemoryMapFlags::MAX_SIZE.bits()
         }
 
@@ -381,7 +381,7 @@ impl Process {
                 self.as_usize(),
                 memory.as_usize(),
                 address,
-                max_size_pages.unwrap_or(0)
+                max_size.unwrap_or_default().pages_rounded()
             ))
         }
     }
@@ -397,9 +397,9 @@ impl Process {
         }
     }
 
-    pub fn update_memory_mapping(&self, memory: Memory, new_map_size_pages: Option<usize>) -> KResult<usize> {
+    pub fn update_memory_mapping(&self, memory: Memory, new_map_size: Option<Size>) -> KResult<usize> {
         let mut flags = MemoryUpdateMappingFlags::empty();
-        if new_map_size_pages.is_some() {
+        if new_map_size.is_some() {
             flags |= MemoryUpdateMappingFlags::UPDATE_SIZE;
         }
 
@@ -409,29 +409,34 @@ impl Process {
                 flags.bits() | WEAK_AUTO_DESTROY,
                 self.as_usize(),
                 memory.as_usize(),
-                new_map_size_pages.unwrap_or(0)
+                new_map_size.unwrap_or_default().pages_rounded()
             ))
         }
     }
 
-    pub fn resize_memory(&self, memory: Memory, new_size_pages: usize, flags: MemoryResizeFlags) -> KResult<usize> {
-        unsafe {
+    pub fn resize_memory(&self, memory: &mut Memory, new_size: Size, flags: MemoryResizeFlags) -> KResult<usize> {
+        let new_size = unsafe {
             sysret_1!(syscall!(
                 MEMORY_RESIZE,
                 flags.bits(),
                 self.as_usize(),
                 memory.as_usize(),
-                new_size_pages
+                new_size.pages_rounded()
             ))
-        }
+        }?;
+
+        // panic safety: from_pages can panic, but syscall should not return invalid number of pages
+        memory.size = Size::from_pages(new_size);
+
+        Ok(new_size)
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Memory {
     id: CapId,
-    /// Size of memory in pages
-    size: usize,
+    /// Size of memory
+    size: Size,
 }
 
 impl Memory {
@@ -440,13 +445,14 @@ impl Memory {
     /// # Returns
     /// 
     /// The new size of the memory in pages
-    pub fn refresh_size(&mut self) -> KResult<usize> {
+    pub fn refresh_size(&mut self) -> KResult<Size> {
+        // panic safety: from_pages can panic, but syscall should not return invalid number of pages
         self.size = unsafe {
-            sysret_1!(syscall!(
+            Size::from_pages(sysret_1!(syscall!(
                 MEMORY_GET_SIZE,
                 WEAK_AUTO_DESTROY,
                 self.as_usize()
-            ))?
+            ))?)
         };
 
         Ok(self.size)
@@ -459,7 +465,7 @@ impl Memory {
         if cap_id.cap_type() == CapType::Memory {
             let mut out = Self {
                 id: cap_id,
-                size: 0,
+                size: Size::default(),
             };
 
             out.refresh_size().ok()?;
@@ -470,12 +476,8 @@ impl Memory {
         }
     }
 
-    pub fn size_pages(&self) -> usize {
+    pub fn size(&self) -> Size {
         self.size
-    }
-
-    pub fn size_bytes(&self) -> usize {
-        self.size * PAGE_SIZE
     }
 
     /// Returns the CapId of this capability struct
@@ -495,18 +497,18 @@ impl From<Memory> for usize {
 }
 
 impl Memory {
-    pub fn new(flags: CapFlags, allocator: Allocator, pages: usize) -> KResult<Self> {
+    pub fn new(flags: CapFlags, allocator: Allocator, size: Size) -> KResult<Self> {
         unsafe {
             sysret_2!(syscall!(
                 MEMORY_NEW,
                 flags.bits() as u32 | WEAK_AUTO_DESTROY,
                 allocator.as_usize(),
-                pages,
+                size.pages_rounded(),
                 // FIXME: hack to make syscall macro return right amount of values
                 0 as usize
             )).map(|(cap_id, size)| Memory {
                 id: CapId::try_from(cap_id).expect(INVALID_CAPID_MESSAGE),
-                size,
+                size: Size::from_pages(size),
             })
         }
     }

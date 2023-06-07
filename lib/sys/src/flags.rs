@@ -11,6 +11,12 @@ bitflags! {
     }
 }
 
+impl Default for MemoryMappingFlags {
+    fn default() -> Self {
+        Self::READ | Self::WRITE
+    }
+}
+
 
 bitflags! {
     /// The first three bits of flags are the same as MemoryMappingFlags, additonal options are here
