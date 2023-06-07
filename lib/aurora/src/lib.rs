@@ -2,24 +2,25 @@
 
 #![feature(try_blocks)]
 
-use sys::{Process, Allocator};
-
-use sync::Once;
+use addr_space_manager::AddrSpaceManager;
+use context::Context;
+use sync::{Once, Mutex, MutexGuard};
 
 mod addr_space_manager;
 mod alloc;
+mod context;
 mod sync;
 
-static THIS_PROCESS: Once<Process> = Once::new();
+static THIS_CONTEXT: Once<Context> = Once::new();
 
-fn this_process() -> &'static Process {
-    THIS_PROCESS.get().unwrap()
+pub fn this_context() -> &'static Context {
+    THIS_CONTEXT.get().unwrap()
 }
 
-static ALLOCATOR: Once<Allocator> = Once::new();
+static ADDR_SPACE: Once<Mutex<AddrSpaceManager>> = Once::new();
 
-fn allocator() -> &'static Allocator {
-    ALLOCATOR.get().unwrap()
+pub fn addr_space() -> MutexGuard<'static, AddrSpaceManager> {
+    ADDR_SPACE.get().unwrap().lock()
 }
 
 pub fn init() {}

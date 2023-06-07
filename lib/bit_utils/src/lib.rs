@@ -15,6 +15,12 @@ pub use size::Size;
 
 pub const PAGE_SIZE: usize = 4096;
 
+pub const LOWER_HALF_END: usize = 0x7fffffffffff + 1;
+pub const HIGHER_HALF_START: usize = 0xffff800000000000;
+
+/// Start of the memory region that is reserved by kernel, continues to end of address space
+pub const KERNEL_RESERVED_START: usize = 0xffffff8000000000;
+
 /// Aligns `addr` up to the power 2 alignment `align`
 /// `align` must be a power of 2
 pub const fn align_up(addr: usize, align: usize) -> usize {

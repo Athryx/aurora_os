@@ -1,12 +1,12 @@
 use core::{ptr::NonNull, ptr, ops::Deref};
 
-use rand_core::RngCore;
+use rand_core::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use thiserror_no_std::Error;
-use bit_utils::{Size, PAGE_SIZE};
+use bit_utils::{Size, PAGE_SIZE, LOWER_HALF_END, KERNEL_RESERVED_START, HIGHER_HALF_START};
 use sys::{Memory, MemoryMappingFlags, CapFlags, SysErr, MemoryResizeFlags};
 
-use crate::{allocator, this_process};
+use crate::this_context;
 
 /// This is the first address that is not allowed to be mapped by address space manager
 /// 
@@ -17,7 +17,7 @@ use crate::{allocator, this_process};
 /// 
 /// AddrSpaceManager does use the upper half for its internal list of memory capabilities,
 /// but nothing else is mapped there
-const MAX_MAP_ADDR: usize = 0x1000000000000;
+const MAX_MAP_ADDR: usize = LOWER_HALF_END;
 
 #[derive(Debug, Error)]
 pub enum AddrSpaceError {
@@ -42,13 +42,13 @@ pub enum AddrSpaceError {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
-struct RegionPadding {
+pub struct RegionPadding {
     start: Size,
     end: Size,
 }
 
 #[derive(Debug, Clone, Copy)]
-struct MappedRegion {
+pub struct MappedRegion {
     memory_cap: Option<Memory>,
     address: usize,
     size: Size,
@@ -80,8 +80,8 @@ impl MappedRegion {
 /// Maximum possible size of region list in pages
 const REGION_LIST_MAX_SIZE: Size = Size::from_pages(4096);
 
-/// Behaves similar to a Vec<MappedRegion>, except instead of using the allocator, it uses memory mapping syscalls
-struct RegionList {
+/// Manages memory that is mapped into address space
+pub struct AddrSpaceManager {
     /// Memory capability that stores the region list
     memory_cap: Memory,
     /// Pointer to region list
@@ -90,12 +90,43 @@ struct RegionList {
     len: usize,
     /// Total number of elements that the region list has capacity to store
     cap: usize,
-    /// This is the total size of the address space that is still free to be mapped
-    total_available_vmem: Size,
     aslr_rng: ChaCha20Rng,
 }
 
-impl RegionList {
+impl AddrSpaceManager {
+    pub fn new(aslr_seed: [u8; 32]) -> Result<Self, AddrSpaceError> {
+        let mut aslr_rng = ChaCha20Rng::from_seed(aslr_seed);
+
+        // randomly place region list in higher half memory
+        let higher_half_size = KERNEL_RESERVED_START - HIGHER_HALF_START;
+        let available_map_positons = 1 + (higher_half_size - REGION_LIST_MAX_SIZE.bytes()) / PAGE_SIZE;
+
+        let map_position = (aslr_rng.next_u64() as usize) % available_map_positons;
+        let map_address = HIGHER_HALF_START + map_position * PAGE_SIZE;
+
+        let memory_cap = Memory::new(
+            CapFlags::READ | CapFlags::PROD | CapFlags::WRITE,
+            this_context().allocator,
+            Size::from_pages(1),
+        ).or(Err(AddrSpaceError::RegionListOom))?;
+
+        this_context().process
+            .map_memory(
+                memory_cap,
+                map_address,
+                None,
+                MemoryMappingFlags::READ | MemoryMappingFlags::WRITE,
+            ).or(Err(AddrSpaceError::RegionListOom))?;
+
+        Ok(AddrSpaceManager {
+            memory_cap,
+            data: NonNull::new(map_address as *mut MappedRegion).unwrap(),
+            len: 0,
+            cap: memory_cap.size().bytes() / core::mem::size_of::<MappedRegion>(),
+            aslr_rng,
+        })
+    }
+
     /// Doubles the size of the region list to allow space for more entries
     fn try_grow(&mut self) -> Result<(), AddrSpaceError> {
         // because of max region size, this should not overflow
@@ -105,14 +136,14 @@ impl RegionList {
             return Err(AddrSpaceError::RegionListMaxSizeExceeded);
         }
 
-        this_process()
+        this_context().process
             .resize_memory(
                 &mut self.memory_cap,
                 new_size,
                 MemoryResizeFlags::IN_PLACE | MemoryResizeFlags::GROW_MAPPING
             ).or(Err(AddrSpaceError::RegionListOom))?;
 
-        self.cap = new_size.bytes_aligned() / core::mem::size_of::<MappedRegion>();
+        self.cap = new_size.bytes() / core::mem::size_of::<MappedRegion>();
 
         Ok(())
     }
@@ -293,11 +324,11 @@ impl RegionList {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MapMemoryArgs {
     /// Memory capability to map, or the flags for an ananamous mapping
-    memory: Option<Memory>,
+    pub memory: Option<Memory>,
     /// Flags to map memory with
-    flags: MemoryMappingFlags,
+    pub flags: MemoryMappingFlags,
     /// Address to map at, or None to find a suitable address
-    address: Option<usize>,
+    pub address: Option<usize>,
     /// Size of memory to map in pages, or None to map the whole thing
     /// 
     /// If `size` and `memory` are None, no memory will be mapped
@@ -306,9 +337,9 @@ pub struct MapMemoryArgs {
     /// 
     /// A size of 0 is not allowed
     // TODO: have way to specify at least size mappings, not just exact size mappings
-    size: Option<Size>,
+    pub size: Option<Size>,
     /// Padding that will be reserved before and 
-    padding: RegionPadding,
+    pub padding: RegionPadding,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -317,7 +348,7 @@ pub struct MapMemoryResult {
     pub size: Size,
 }
 
-impl RegionList {
+impl AddrSpaceManager {
     /// Maps memory into the address space, see [`MapMemoryArgs`] for more details
     // FIXME: check if padding goes below zero or above max userspace address, or non canonical address
     pub fn map_memory(&mut self, args: MapMemoryArgs) -> Result<MapMemoryResult, AddrSpaceError> {
@@ -329,7 +360,7 @@ impl RegionList {
                 if let Some(size) = args.size {
                     (Some(Memory::new(
                         CapFlags::READ | CapFlags::WRITE | CapFlags::PROD,
-                        *allocator(),
+                        this_context().allocator,
                         size,
                     ).or(Err(AddrSpaceError::AnanamousMappingOom))?), size)
                 } else {
@@ -371,7 +402,7 @@ impl RegionList {
 
         if let Some(memory) = memory {
             // TODO: have a way to not specify max size pages
-            let result = this_process()
+            let result = this_context().process
                 .map_memory(memory, address, Some(size), args.flags)
                 .map_err(|err| AddrSpaceError::MemorySyscallError(err));
 
@@ -398,7 +429,7 @@ impl RegionList {
         let region = self.remove_region(address)?;
 
         if let Some(memory) = region.memory_cap {
-            this_process().unmap_memory(memory)
+            this_context().process.unmap_memory(memory)
                 .expect("failed to unmap previously mapped memory");
 
             // FIXME: drop memory capability
@@ -409,7 +440,7 @@ impl RegionList {
     }
 }
 
-impl Deref for RegionList {
+impl Deref for AddrSpaceManager {
     type Target = [MappedRegion];
 
     fn deref(&self) -> &Self::Target {
@@ -419,6 +450,4 @@ impl Deref for RegionList {
     }
 }
 
-pub struct AddrSpaceManager {
-    region_list: RegionList,
-}
+unsafe impl Send for AddrSpaceManager {}
