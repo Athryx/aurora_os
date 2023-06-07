@@ -1,12 +1,21 @@
+//! Provides memory allocation for userspace and rust alloc crate
+// FIXME: this memory allocator is shit
+// for now it is a copy paste of old kernel allocator, which is bad and splits up heap into lots of zones,
+// which is not good for userspace trying to minimize amount of syscalls made
+
 use core::cell::Cell;
 use core::cmp::max;
-use core::ptr::NonNull;
+use core::ptr::{NonNull, null_mut};
+use core::mem::size_of;
+use core::alloc::Layout;
+use alloc::alloc::GlobalAlloc;
 
-use super::{HeapAllocator, PaRef, PageAllocator};
-use crate::container::{LinkedList, ListNode, ListNodeData, CursorMut};
-use crate::mem::{Allocation, Layout, MemOwner, PageLayout};
-use crate::prelude::*;
-use crate::sync::IMutex;
+use bit_utils::{PAGE_SIZE, log2_up_const, align_up, align_down, align_of, Size, MemOwner};
+use bit_utils::container::{LinkedList, ListNode, ListNodeData, CursorMut};
+
+use crate::addr_space;
+use crate::addr_space_manager::MapMemoryArgs;
+use crate::sync::Mutex;
 
 const HEAP_ZONE_SIZE: usize = PAGE_SIZE * 8;
 const CHUNK_SIZE: usize = 1 << log2_up_const(size_of::<Node>());
@@ -89,27 +98,32 @@ impl ListNode for Node {
 
 struct HeapZone {
     list_node_data: ListNodeData<Self>,
-    mem: Allocation,
+    // total size of this heapzone
+    size: usize,
     free_space: Cell<usize>,
     list: LinkedList<Node>,
 }
 
 impl HeapZone {
     // size is aligned up to page size
-    unsafe fn new(size: usize, allocator: &mut PaRef) -> Option<MemOwner<Self>> {
-        let layout = PageLayout::new_rounded(size, PAGE_SIZE).unwrap();
-        let mem = allocator.alloc(layout)?;
-        let size = mem.size();
-        let ptr = mem.as_usize() as *mut HeapZone;
+    unsafe fn new(size: usize) -> Option<MemOwner<Self>> {
+        let map_result = addr_space()
+            .map_memory(MapMemoryArgs {
+                size: Some(Size::from_bytes(HEAP_ZONE_SIZE)),
+                ..Default::default()
+            }).ok()?;
+
+        let size = map_result.size.bytes();
+        let ptr = map_result.address as *mut HeapZone;
 
         let mut out = HeapZone {
             list_node_data: ListNodeData::default(),
-            mem,
+            size,
             free_space: Cell::new(size - INITIAL_CHUNK_SIZE),
             list: LinkedList::new(),
         };
 
-        let node = unsafe { Node::new(mem.as_usize() + INITIAL_CHUNK_SIZE, size - INITIAL_CHUNK_SIZE) };
+        let node = unsafe { Node::new(map_result.address + INITIAL_CHUNK_SIZE, size - INITIAL_CHUNK_SIZE) };
         out.list.push(node);
 
         unsafe {
@@ -127,7 +141,7 @@ impl HeapZone {
     }
 
     fn contains(&self, addr: usize, size: usize) -> bool {
-        (addr >= self.addr() + CHUNK_SIZE) && (addr + size <= self.addr() + CHUNK_SIZE + self.mem.size())
+        (addr >= self.addr() + CHUNK_SIZE) && (addr + size <= self.addr() + CHUNK_SIZE + self.size)
     }
 
     unsafe fn alloc(&mut self, layout: Layout) -> Option<NonNull<[u8]>> {
@@ -225,10 +239,11 @@ impl HeapZone {
 
     // TODO: add reporting of memory that is still allocated
     // safety: cannot use this heap zone after calling this method
-    unsafe fn dealloc_all(&mut self, allocator: &mut PaRef) {
+    unsafe fn dealloc_all(&mut self) {
         //assert_eq!(self.free_space.get(), self.mem.size());
         unsafe {
-            allocator.dealloc(self.mem);
+            addr_space().unmap_memory(self as *mut _ as usize)
+                .expect("failed to dealloc heap zone");
         }
     }
 }
@@ -246,14 +261,12 @@ impl ListNode for HeapZone {
 // TODO: add drop implementation that frees all page allocations
 struct LinkedListAllocatorInner {
     list: LinkedList<HeapZone>,
-    page_allocator: PaRef,
 }
 
 impl LinkedListAllocatorInner {
-    pub fn new(page_allocator: PaRef) -> Self {
+    pub const fn new() -> Self {
         LinkedListAllocatorInner {
             list: LinkedList::new(),
-            page_allocator,
         }
     }
 
@@ -271,7 +284,7 @@ impl LinkedListAllocatorInner {
 
         // allocate new heapzone because there was no space in any others
         let size_inc = max(HEAP_ZONE_SIZE, size + max(align, CHUNK_SIZE) + INITIAL_CHUNK_SIZE);
-        let zone = match unsafe { HeapZone::new(size_inc, &mut self.page_allocator) } {
+        let zone = match unsafe { HeapZone::new(size_inc) } {
             Some(n) => n,
             None => return None,
         };
@@ -307,20 +320,20 @@ impl LinkedListAllocatorInner {
         for zone in self.list.iter_mut() {
             // safety: these zones can never be referenced after this point
             unsafe {
-                zone.dealloc_all(&mut self.page_allocator.clone());
+                zone.dealloc_all();
             }
         }
     }
 }
 
 pub struct LinkedListAllocator {
-    inner: IMutex<LinkedListAllocatorInner>,
+    inner: Mutex<LinkedListAllocatorInner>,
 }
 
 impl LinkedListAllocator {
-    pub fn new(page_allocator: PaRef) -> Self {
+    pub const fn new() -> Self {
         LinkedListAllocator {
-            inner: IMutex::new(LinkedListAllocatorInner::new(page_allocator)),
+            inner: Mutex::new(LinkedListAllocatorInner::new()),
         }
     }
 
@@ -337,13 +350,18 @@ impl LinkedListAllocator {
 }
 
 // TODO: add specialized realloc method
-unsafe impl HeapAllocator for LinkedListAllocator {
-    fn alloc(&self, layout: Layout) -> Option<NonNull<[u8]>> {
-        self.inner.lock().alloc(layout)
+unsafe impl GlobalAlloc for LinkedListAllocator {
+    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
+        match self.inner.lock().alloc(layout) {
+            Some(ptr) => ptr.as_ptr().as_mut_ptr(),
+            None => null_mut(),
+        }
     }
 
-    unsafe fn dealloc(&self, allocation: NonNull<u8>, layout: Layout) {
-        unsafe { self.inner.lock().dealloc(allocation, layout) }
+    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        let ptr = NonNull::new(ptr).expect("null pointer passed to allocator");
+
+        unsafe { self.inner.lock().dealloc(ptr, layout) }
     }
 }
 
@@ -354,3 +372,6 @@ impl Drop for LinkedListAllocator {
         }
     }
 }
+
+#[global_allocator]
+static ALLOCATOR: LinkedListAllocator = LinkedListAllocator::new();

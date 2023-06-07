@@ -1,4 +1,4 @@
-use core::{ptr::NonNull, ptr, ops::Deref};
+use core::{ptr::NonNull, ptr, ops::Deref, mem::size_of};
 
 use rand_core::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
@@ -122,7 +122,7 @@ impl AddrSpaceManager {
             memory_cap,
             data: NonNull::new(map_address as *mut MappedRegion).unwrap(),
             len: 0,
-            cap: memory_cap.size().bytes() / core::mem::size_of::<MappedRegion>(),
+            cap: memory_cap.size().bytes() / size_of::<MappedRegion>(),
             aslr_rng,
         })
     }
@@ -143,7 +143,7 @@ impl AddrSpaceManager {
                 MemoryResizeFlags::IN_PLACE | MemoryResizeFlags::GROW_MAPPING
             ).or(Err(AddrSpaceError::RegionListOom))?;
 
-        self.cap = new_size.bytes() / core::mem::size_of::<MappedRegion>();
+        self.cap = new_size.bytes() / size_of::<MappedRegion>();
 
         Ok(())
     }
@@ -425,7 +425,7 @@ impl AddrSpaceManager {
     }
 
     /// Unmaps the given memory and drops the memory capability
-    pub fn unmap_memory(&mut self, address: usize) -> Result<(), AddrSpaceError> {
+    pub unsafe fn unmap_memory(&mut self, address: usize) -> Result<(), AddrSpaceError> {
         let region = self.remove_region(address)?;
 
         if let Some(memory) = region.memory_cap {

@@ -1,13 +1,18 @@
 #![no_std]
 
 #![feature(try_blocks)]
+#![feature(let_chains)]
+#![feature(nonnull_slice_from_raw_parts)]
+#![feature(slice_ptr_get)]
+
+extern crate alloc;
 
 use addr_space_manager::AddrSpaceManager;
 use context::Context;
 use sync::{Once, Mutex, MutexGuard};
 
 mod addr_space_manager;
-mod alloc;
+mod allocator;
 mod context;
 mod sync;
 

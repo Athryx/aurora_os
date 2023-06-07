@@ -10,6 +10,9 @@ use core::arch::asm;
 use core::ops::Range;
 use core::str::Utf8Error;
 
+pub mod container;
+mod mem_owner;
+pub use mem_owner::MemOwner;
 mod size;
 pub use size::Size;
 
