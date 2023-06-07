@@ -309,7 +309,8 @@ impl AddrSpaceManager {
                 let available_positions = size.pages_rounded() + 1;
 
                 if map_position < available_positions {
-                    return Ok(address + map_position * PAGE_SIZE);
+                    let base_address = address + map_position * PAGE_SIZE;
+                    return Ok(base_address + padding.start.bytes_aligned());
                 }
 
                 map_position -= available_positions;
@@ -409,6 +410,12 @@ impl AddrSpaceManager {
             if let Err(err) = result {
                 // panic safety: region was added earlier
                 self.remove_region(address).unwrap();
+
+                if args.memory.is_none() {
+                    // FIXME: drop memory capability
+                    todo!();
+                }
+
                 return Err(err);
             }
         }
