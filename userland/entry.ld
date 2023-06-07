@@ -1,1 +1,1 @@
-ENTRY(main)
+ENTRY(_aurora_startup)
