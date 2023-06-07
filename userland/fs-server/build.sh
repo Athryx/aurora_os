@@ -1,6 +1,8 @@
 #!/bin/sh
 
-OUT_BIN=fs-server.bin
+NAME=$(dirname $0)
+
+OUT_BIN=$NAME.bin
 
 cd $(dirname $0)
 [[ $1 = clean ]] && { cargo clean; rm -rf .cargo; exit 0; }
@@ -17,8 +19,8 @@ else
   cargo build $RFLAG || exit 1
 
   # Change these to x86_64-os-kernel for kernel
-  IMG=target/x86_64-os-userland/debug/kernel
-  [[ $1 = release ]] && IMG=target/x86_64-os-userland/release/kernel
+  IMG=target/x86_64-os-userland/debug/$NAME
+  [[ $1 = release ]] && IMG=target/x86_64-os-userland/release/$NAME
 fi
 
 echo $IMG

@@ -12,5 +12,10 @@ extern "C" fn rust_begin_panic(info: &PanicInfo) -> !
 {
 	//println! ("{}", info);
 	//eprintln! ("{}", info);
-	loop {}
+	loop { core::hint::spin_loop(); }
 }
+
+/*#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    loop { core::hint::spin_loop(); }
+}*/

@@ -53,7 +53,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "early-init"
+name = "fs-server"
 version = "0.1.0"
 dependencies = [
  "std",

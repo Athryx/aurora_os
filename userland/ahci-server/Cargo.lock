@@ -3,6 +3,13 @@
 version = 3
 
 [[package]]
+name = "ahci-server"
+version = "0.1.0"
+dependencies = [
+ "std",
+]
+
+[[package]]
 name = "aurora"
 version = "0.1.0"
 dependencies = [
@@ -50,13 +57,6 @@ dependencies = [
  "quote",
  "rustc_version",
  "syn",
-]
-
-[[package]]
-name = "early-init"
-version = "0.1.0"
-dependencies = [
- "std",
 ]
 
 [[package]]
