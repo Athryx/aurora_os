@@ -1,7 +1,7 @@
 use core::sync::atomic::{AtomicUsize, AtomicPtr, Ordering};
 
 use crate::container::Arc;
-use crate::mem::MemOwner;
+use crate::mem::{MemOwner, MemOwnerKernelExt};
 use super::kernel_stack::KernelStack;
 use crate::container::{ListNode, ListNodeData, Weak};
 use crate::process::Process;

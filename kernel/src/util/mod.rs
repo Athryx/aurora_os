@@ -1,7 +1,7 @@
 //! A collection of miscallaneous utility functions
 
 use crate::alloc::HeapRef;
-use crate::mem::MemOwner;
+use crate::mem::{MemOwner, MemOwnerKernelExt};
 use crate::prelude::*;
 
 mod hwa_iter;
