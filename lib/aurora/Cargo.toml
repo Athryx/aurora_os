@@ -13,3 +13,5 @@ spin = { version = "0.9.2", features = ["mutex", "spin_mutex", "once"] }
 thiserror-no-std = "2.0.2"
 rand_core = { version = "0.6.4", default-features = false }
 rand_chacha = { version = "0.3.1", default-features = false }
+serde = { version = "1.0.163", default-features = false, features = ["alloc", "derive"] }
+num_enum = { version = "0.6.1", default-features = false }

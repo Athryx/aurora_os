@@ -4,6 +4,7 @@
 #![feature(let_chains)]
 #![feature(nonnull_slice_from_raw_parts)]
 #![feature(slice_ptr_get)]
+#![feature(slice_take)]
 
 extern crate alloc;
 
@@ -12,8 +13,10 @@ use context::Context;
 use sync::{Once, Mutex, MutexGuard};
 
 mod addr_space_manager;
+mod aser;
 mod allocator;
 mod context;
+mod prelude;
 mod sync;
 
 static THIS_CONTEXT: Once<Context> = Once::new();
