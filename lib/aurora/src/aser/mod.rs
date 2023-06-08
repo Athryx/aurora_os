@@ -7,12 +7,20 @@ use num_enum::{TryFromPrimitive, IntoPrimitive};
 
 use crate::prelude::*;
 
+mod capability_counter;
+pub use capability_counter::count_capabilties;
+mod capability_serializer;
 mod ser;
-pub use ser::{Serializer, to_bytes};
+pub use ser::{Serializer, to_bytes, to_bytes_count_cap};
 mod de;
 pub use de::{Deserializer, from_bytes};
 
 pub type Result<T> = core::result::Result<T, AserError>;
+
+/// Any newtype struct with this name will be treated as a capability
+/// 
+/// This name is reserved for other structs
+pub const CAPABILTY_NEWTYPE_NAME: &str = "__aser_cap";
 
 #[derive(Debug, Error)]
 pub enum AserError {
@@ -25,6 +33,8 @@ pub enum AserError {
     TooManyCapabilities,
     #[error("Expected a capability id")]
     ExpectedCapablity,
+    #[error("Found multiple capabilties in one capability newtype")]
+    MultipleCapabilties,
 
     #[error("Undexpected end of input")]
     EndOfInput,
