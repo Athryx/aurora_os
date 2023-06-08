@@ -8,11 +8,8 @@
 
 extern crate alloc;
 
-use core::mem::size_of;
-
 use bit_utils::Size;
 use sys::{CapId, Process, Allocator, Spawner, Memory};
-use serde::{Serialize, Deserialize};
 use thiserror_no_std::Error;
 
 use addr_space_manager::{AddrSpaceManager, AddrSpaceError, RegionPadding, MappedRegion};
@@ -20,7 +17,6 @@ use context::Context;
 use sync::{Once, Mutex, MutexGuard};
 
 mod addr_space_manager;
-mod aser;
 mod allocator;
 mod context;
 mod prelude;

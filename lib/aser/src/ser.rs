@@ -1,11 +1,12 @@
-use alloc::vec::Vec;
+use core::fmt::Write;
 
 use serde::{ser, Serialize};
 
-use super::{AserError, DataType, CAPABILTY_NEWTYPE_NAME, capability_serializer::CapabilitySerializer, count_capabilties};
-use crate::prelude::*;
+use crate::ByteBuf;
 
-pub fn to_bytes<T: Serialize>(data: &T, num_capabilities: usize) -> Result<Vec<u8>, AserError> {
+use super::{AserError, DataType, CAPABILTY_NEWTYPE_NAME, capability_serializer::CapabilitySerializer, count_capabilties};
+
+pub fn to_bytes<T: Serialize, B: ByteBuf>(data: &T, num_capabilities: usize) -> Result<B, AserError> {
     let mut serializer = Serializer::new(num_capabilities);
     data.serialize(&mut serializer)?;
 
@@ -17,22 +18,22 @@ pub fn to_bytes<T: Serialize>(data: &T, num_capabilities: usize) -> Result<Vec<u
     Ok(buf)
 }
 
-pub fn to_bytes_count_cap<T: Serialize>(data: &T) -> Result<Vec<u8>, AserError> {
+pub fn to_bytes_count_cap<T: Serialize, B: ByteBuf>(data: &T) -> Result<B, AserError> {
     let num_capabilities = count_capabilties(data)?;
     to_bytes(data, num_capabilities)
 }
 
-pub struct Serializer {
+pub struct Serializer<B: ByteBuf> {
     /// The index where the next capability should be inserted
     capability_index: usize,
     /// Offset from start of array to data, beginning of array contains capabilities, and first 8 byte cap count
     data_offset: usize,
-    buf: Vec<u8>,
+    buf: B,
 }
 
-impl Serializer {
+impl<B: ByteBuf> Serializer<B> {
     pub fn new(num_capabilties: usize) -> Self {
-        let mut buf = Vec::new();
+        let mut buf = B::default();
 
         buf.extend_from_slice(&num_capabilties.to_be_bytes());
         for _ in 0..num_capabilties * 8 {
@@ -47,19 +48,19 @@ impl Serializer {
     }
 
     fn push_u16(&mut self, val: u16) {
-        self.buf.extend(&val.to_be_bytes());
+        self.buf.extend_from_slice(&val.to_be_bytes());
     }
 
     fn push_u32(&mut self, val: u32) {
-        self.buf.extend(&val.to_be_bytes());
+        self.buf.extend_from_slice(&val.to_be_bytes());
     }
 
     fn push_u64(&mut self, val: u64) {
-        self.buf.extend(&val.to_be_bytes());
+        self.buf.extend_from_slice(&val.to_be_bytes());
     }
 
     fn push_u128(&mut self, val: u128) {
-        self.buf.extend(&val.to_be_bytes());
+        self.buf.extend_from_slice(&val.to_be_bytes());
     }
 
     fn push_type(&mut self, data_type: DataType) {
@@ -71,7 +72,7 @@ impl Serializer {
             return Err(AserError::TooManyCapabilities);
         }
 
-        let dest_slice = &mut self.buf[self.capability_index..self.capability_index + 8];
+        let dest_slice = &mut self.buf.as_slice()[self.capability_index..self.capability_index + 8];
         dest_slice.copy_from_slice(&cap_id.to_be_bytes());
 
         self.capability_index += 8;
@@ -98,7 +99,7 @@ macro_rules! push_correct_size_type {
     };
 }
 
-impl<'a> ser::Serializer for &'a mut Serializer {
+impl<'a, B: ByteBuf> ser::Serializer for &'a mut Serializer<B> {
     type Ok = ();
     type Error = AserError;
 
@@ -228,7 +229,6 @@ impl<'a> ser::Serializer for &'a mut Serializer {
             DataType::String64
         );
 
-        // TODO: this might be a bit slower than memcpy, make faster
         self.buf.extend_from_slice(data);
 
         Ok(())
@@ -373,9 +373,42 @@ impl<'a> ser::Serializer for &'a mut Serializer {
 
         self.serialize_map(Some(len))
     }
+
+    fn collect_str<T: ?Sized>(self, value: &T) -> Result<Self::Ok, Self::Error>
+    where
+        T: core::fmt::Display {
+        // since we don't know the size of the string yet, use 64 byte size to write it
+        self.push_type(DataType::String64);
+        
+        let size_index = self.buf.len();
+        // for now specify size of 0
+        self.push_u64(0);
+
+        let start_write_index = self.buf.len();
+        write!(self, "{}", value).or(Err(AserError::FormattingError))?;
+        let end_write_index = self.buf.len();
+
+        let write_size = end_write_index - start_write_index;
+
+        // update write size after we know how much was written
+        self.buf.as_slice()[size_index..start_write_index]
+            .copy_from_slice(&write_size.to_le_bytes());
+
+        Ok(())
+    }
 }
 
-impl<'a> ser::SerializeSeq for &'a mut Serializer {
+impl<'a, B: ByteBuf> Write for Serializer<B> {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        let data = s.as_bytes();
+
+        self.buf.extend_from_slice(data);
+
+        Ok(())
+    }
+}
+
+impl<'a, B: ByteBuf> ser::SerializeSeq for &'a mut Serializer<B> {
     type Ok = ();
     type Error = AserError;
 
@@ -393,7 +426,7 @@ impl<'a> ser::SerializeSeq for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeTuple for &'a mut Serializer {
+impl<'a, B: ByteBuf> ser::SerializeTuple for &'a mut Serializer<B> {
     type Ok = ();
     type Error = AserError;
 
@@ -411,7 +444,7 @@ impl<'a> ser::SerializeTuple for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
+impl<'a, B: ByteBuf> ser::SerializeTupleStruct for &'a mut Serializer<B> {
     type Ok = ();
     type Error = AserError;
 
@@ -429,7 +462,7 @@ impl<'a> ser::SerializeTupleStruct for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
+impl<'a, B: ByteBuf> ser::SerializeTupleVariant for &'a mut Serializer<B> {
     type Ok = ();
     type Error = AserError;
 
@@ -447,7 +480,7 @@ impl<'a> ser::SerializeTupleVariant for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeMap for &'a mut Serializer {
+impl<'a, B: ByteBuf> ser::SerializeMap for &'a mut Serializer<B> {
     type Ok = ();
     type Error = AserError;
 
@@ -471,7 +504,7 @@ impl<'a> ser::SerializeMap for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeStruct for &'a mut Serializer {
+impl<'a, B: ByteBuf> ser::SerializeStruct for &'a mut Serializer<B> {
     type Ok = ();
     type Error = AserError;
 
@@ -494,7 +527,7 @@ impl<'a> ser::SerializeStruct for &'a mut Serializer {
     }
 }
 
-impl<'a> ser::SerializeStructVariant for &'a mut Serializer {
+impl<'a, B: ByteBuf> ser::SerializeStructVariant for &'a mut Serializer<B> {
     type Ok = ();
     type Error = AserError;
 

@@ -10,9 +10,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "aser"
+version = "0.1.0"
+dependencies = [
+ "num_enum",
+ "serde",
+ "thiserror-no-std",
+]
+
+[[package]]
 name = "aurora"
 version = "0.1.0"
 dependencies = [
+ "aser",
  "bit_utils",
  "num_enum",
  "rand_chacha",

@@ -1,12 +1,20 @@
 //! Implements the aurora serialization format for message passing between processess
+#![no_std]
 
-use core::fmt::Display;
+#![feature(slice_take)]
+
+#[cfg(feature = "alloc")]
+extern crate alloc;
+
+use core::fmt::{Display, self};
+#[cfg(feature = "alloc")]
+use alloc::string::{String, ToString};
 
 use thiserror_no_std::Error;
 use num_enum::{TryFromPrimitive, IntoPrimitive};
 
-use crate::prelude::*;
-
+mod byte_buf;
+pub use byte_buf::ByteBuf;
 mod capability_counter;
 pub use capability_counter::count_capabilties;
 mod capability_serializer;
@@ -24,10 +32,23 @@ pub const CAPABILTY_NEWTYPE_NAME: &str = "__aser_cap";
 
 #[derive(Debug, Error)]
 pub enum AserError {
+    #[cfg(feature = "alloc")]
     #[error("Serialize failed: {0}")]
     SerializeMessage(String),
+    #[cfg(feature = "alloc")]
     #[error("Deserialize failed: {0}")]
     DeserializeMessage(String),
+
+    // TODO: find a better way to make this cleaner
+    // this is kind of bad to modify enum variants with feature and have a subtractive feature,
+    // because features are unioned across build graph, but since the only time we don't use alloc
+    // feature is in kernel, which won't match on these variants, it is ok
+    #[cfg(not(feature = "alloc"))]
+    #[error("Serialize implementation failed")]
+    SerializeMessage,
+    #[cfg(not(feature = "alloc"))]
+    #[error("Deserialize implementation failed")]
+    DeserializeMessage,
 
     #[error("Tried to serialize more capabilties than the serializer was set up for")]
     TooManyCapabilities,
@@ -35,6 +56,8 @@ pub enum AserError {
     ExpectedCapablity,
     #[error("Found multiple capabilties in one capability newtype")]
     MultipleCapabilties,
+    #[error("Formatting display object as string failed")]
+    FormattingError,
 
     #[error("Undexpected end of input")]
     EndOfInput,
@@ -52,15 +75,31 @@ pub enum AserError {
     TrailingInput,
 }
 
+#[cfg(feature = "alloc")]
 impl serde::ser::Error for AserError {
     fn custom<T: Display>(msg: T) -> Self {
         Self::SerializeMessage(msg.to_string())
     }
 }
 
+#[cfg(feature = "alloc")]
 impl serde::de::Error for AserError {
     fn custom<T: Display>(msg: T) -> Self {
         Self::DeserializeMessage(msg.to_string())
+    }
+}
+
+#[cfg(not(feature = "alloc"))]
+impl serde::ser::Error for AserError {
+    fn custom<T: Display>(msg: T) -> Self {
+        Self::SerializeMessage
+    }
+}
+
+#[cfg(not(feature = "alloc"))]
+impl serde::de::Error for AserError {
+    fn custom<T: Display>(msg: T) -> Self {
+        Self::DeserializeMessage
     }
 }
 

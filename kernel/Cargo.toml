@@ -19,6 +19,7 @@ siphasher = "0.3.10"
 arrayvec = { version = "0.7.2", default-features = false }
 sys = { path = "../lib/sys/" }
 bit_utils = { path = "../lib/bit_utils" }
+aser = { path = "../lib/aser", default-features = false }
 
 # FIXME: this is a hack to get autocomplete working in the aurora library
 #aurora = { path = "../lib/aurora/" }
