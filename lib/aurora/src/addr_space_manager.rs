@@ -43,16 +43,16 @@ pub enum AddrSpaceError {
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RegionPadding {
-    start: Size,
-    end: Size,
+    pub start: Size,
+    pub end: Size,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct MappedRegion {
-    memory_cap: Option<Memory>,
-    address: usize,
-    size: Size,
-    padding: RegionPadding,
+    pub(crate) memory_cap: Option<Memory>,
+    pub(crate) address: usize,
+    pub(crate) size: Size,
+    pub(crate) padding: RegionPadding,
 }
 
 impl MappedRegion {
@@ -118,13 +118,27 @@ impl AddrSpaceManager {
                 MemoryMappingFlags::READ | MemoryMappingFlags::WRITE,
             ).or(Err(AddrSpaceError::RegionListOom))?;
 
-        Ok(AddrSpaceManager {
+        let mut out = AddrSpaceManager {
             memory_cap,
             data: NonNull::new(map_address as *mut MappedRegion).unwrap(),
             len: 0,
             cap: memory_cap.size().bytes() / size_of::<MappedRegion>(),
             aslr_rng,
-        })
+        };
+
+        // marks the 0th page as reserved so null address is never mapped
+        out.map_memory(MapMemoryArgs {
+            memory: None,
+            size: None,
+            address: Some(0),
+            padding: RegionPadding {
+                start: Size::default(),
+                end: Size::from_pages(1)
+            },
+            ..Default::default()
+        })?;
+
+        Ok(out)
     }
 
     /// Doubles the size of the region list to allow space for more entries
@@ -186,7 +200,7 @@ impl AddrSpaceManager {
     /// panics if the regions start address is the same as another regions address
     /// 
     /// this does not check for any other type of overlap though, this is assumed to be already checked
-    fn insert_region(&mut self, region: MappedRegion) -> Result<(), AddrSpaceError> {
+    pub(crate) fn insert_region(&mut self, region: MappedRegion) -> Result<(), AddrSpaceError> {
         let index = self.binary_search_address(region.address).unwrap_err();
 
         self.insert(index, region)

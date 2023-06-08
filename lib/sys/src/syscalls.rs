@@ -2,6 +2,7 @@ use core::arch::asm;
 use core::cmp::min;
 
 use bit_utils::{PAGE_SIZE, Size};
+use serde::{Serialize, Deserialize};
 
 use crate::{syscall_nums::*, CapId, CapType, CapFlags, SysErr, KResult, Tid, MemoryResizeFlags, MemoryMappingFlags, MemoryMapFlags, MemoryUpdateMappingFlags};
 
@@ -230,7 +231,7 @@ macro_rules! sysret_2 {
 
 macro_rules! make_cap_struct {
     ($name:ident, $type:expr) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
         pub struct $name(CapId);
 
         impl $name {
@@ -432,7 +433,7 @@ impl Process {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Memory {
     id: CapId,
     /// Size of memory

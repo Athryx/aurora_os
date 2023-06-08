@@ -1,5 +1,6 @@
 use bitflags::bitflags;
 use bit_utils::get_bits;
+use serde::{Serialize, Deserialize, de::{Visitor, Error}};
 
 bitflags! {
     pub struct CapFlags: usize {
@@ -103,5 +104,39 @@ impl CapId {
 impl From<CapId> for usize {
     fn from(cap_id: CapId) -> Self {
         cap_id.0
+    }
+}
+
+impl Serialize for CapId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer {
+        serializer.serialize_newtype_struct("__aser_cap", &self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for CapId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de> {
+        deserializer.deserialize_newtype_struct("__aser_cap", CapIdVisitor)
+    }
+}
+
+struct CapIdVisitor;
+
+impl<'de> Visitor<'de> for CapIdVisitor {
+    type Value = CapId;
+
+    fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+        formatter.write_str("a valid 64 bit capability id")
+    }
+
+    fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+    where
+        D: serde::Deserializer<'de>, {
+        let id = u64::deserialize(deserializer)? as usize;
+
+        CapId::try_from(id).ok_or(D::Error::custom("invalid capid"))
     }
 }

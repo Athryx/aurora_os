@@ -8,3 +8,4 @@ edition = "2021"
 
 [dependencies]
 derive_more = "0.99.17"
+serde = { version = "1.0.163", default-features = false, features = ["derive"] }

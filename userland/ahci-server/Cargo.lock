@@ -34,6 +34,7 @@ name = "bit_utils"
 version = "0.1.0"
 dependencies = [
  "derive_more",
+ "serde",
 ]
 
 [[package]]
@@ -232,6 +233,7 @@ dependencies = [
  "bit_utils",
  "bitflags",
  "lazy_static",
+ "serde",
 ]
 
 [[package]]
