@@ -14,7 +14,7 @@ const EARLY_INIT_ENTRY_TYPE: u64 = 1;
 
 // hardcode these addressess to things which won't conflict
 const STACK_ADDRESS: usize = 0x100000000;
-const STACK_SIZE: usize = PAGE_SIZE * 8;
+const STACK_SIZE: usize = PAGE_SIZE * 16;
 const STARTUP_DATA_ADDRESS: usize = 0x200000000;
 const INITRD_MAPPING_ADDRESS: usize = 0x300000000;
 

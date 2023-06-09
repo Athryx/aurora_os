@@ -282,12 +282,15 @@ impl<T> Vec<T> {
     }
 
     pub fn into_iter(self) -> IntoIter<T> {
-        let slice = self.as_slice();
-        // to get around borrow checker
+        let raw_iter = RawIter::new(self.as_slice());
+
+        // read raw vec and forget mem to take ownership of memory without dropping any elements
+        // the remaining elements will be dropped by into iter
         let buffer = unsafe { ptr::read(&self.inner) };
+        core::mem::forget(self);
 
         IntoIter {
-            inner: RawIter::new(slice),
+            inner: raw_iter,
             _buffer: buffer,
         }
     }
@@ -424,6 +427,7 @@ impl<T> Iterator for RawIter<T> {
             None
         } else {
             let out = self.start as *mut T;
+            // TODO: check if ok for zero size type
             self.start += Self::elem_size();
             Some(out)
         }
@@ -527,3 +531,10 @@ impl<T> DoubleEndedIterator for IntoIter<T> {
 
 impl<T> ExactSizeIterator for IntoIter<T> {}
 impl<T> FusedIterator for IntoIter<T> {}
+
+impl<T> Drop for IntoIter<T> {
+    fn drop(&mut self) {
+        // drop remaining elements
+        while let Some(_) = self.next() {}
+    }
+}

@@ -1,5 +1,5 @@
 use core::ptr::null_mut;
-use core::sync::atomic::{AtomicUsize, Ordering, AtomicU64, AtomicPtr};
+use core::sync::atomic::{AtomicUsize, Ordering, AtomicU64, AtomicPtr, AtomicBool};
 
 use spin::Once;
 
