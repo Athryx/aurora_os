@@ -61,12 +61,6 @@ asm_switch_thread:
     ret
 
 asm_thread_init:
-    ; load registers specified on stack
-    pop rbx
-    pop rdx
-    pop rsi
-    pop rdi
-
     ; load instruction pointer into rcx
     pop rcx
 

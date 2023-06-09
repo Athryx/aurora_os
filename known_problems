@@ -1,4 +1,6 @@
 kernel will sometimes deadlock on booting
+this is caused by the calibration pic never firing
+(or at least never leaving the loop that waits for it to fire)
 
 things to check:
 make a version of Once and Lazy that disables interrupts and only use that

@@ -1,5 +1,6 @@
 use crate::alloc::HeapRef;
 use crate::prelude::*;
+use crate::container::Arc;
 use crate::cap::{CapFlags, StrongCapability, Capability};
 use crate::arch::x64::IntDisable;
 use crate::process::{Spawner, Process};
@@ -47,10 +48,12 @@ pub fn spawner_new(
     }
 
     let spawner = StrongCapability::new_flags(
-        Spawner::new(alloc_ref.clone()),
+        Arc::new(
+            Spawner::new(alloc_ref.clone()),
+            alloc_ref,
+        )?,
         spawner_cap_flags,
-        alloc_ref,
-    )?;
+    );
 
     Ok(current_process.cap_map().insert_spawner(Capability::Strong(spawner))?.into())
 }

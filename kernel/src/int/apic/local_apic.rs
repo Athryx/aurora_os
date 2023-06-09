@@ -417,6 +417,7 @@ impl LocalApic {
 			PIT.one_shot(TIMER_CALIBRATE_TIME, || CALIBRATE_FIRED.store(true, Ordering::Release));
 		}
 
+		// FIXME: sometimes this gets stuck in an infinite loop
 		while !CALIBRATE_FIRED.load(Ordering::Acquire) {
 			core::hint::spin_loop();
 		}

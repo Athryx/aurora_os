@@ -17,6 +17,8 @@ modular-bitfield = "0.11.2"
 lazy_static = { version = "1.0", features = ["spin_no_std"] }
 siphasher = "0.3.10"
 arrayvec = { version = "0.7.2", default-features = false }
+bytemuck = { version = "1.13.1", features = ["derive"] }
+elf = { version = "0.7.2", default-features = false }
 sys = { path = "../lib/sys/" }
 bit_utils = { path = "../lib/bit_utils" }
 aser = { path = "../lib/aser", default-features = false }

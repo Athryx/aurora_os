@@ -2,6 +2,7 @@ use crate::cap::{StrongCapability, Capability};
 use crate::prelude::*;
 use crate::cap::{CapFlags, key::Key};
 use crate::{arch::x64::IntDisable, alloc::HeapRef};
+use crate::container::Arc;
 use super::options_weak_autodestroy;
 
 /// Ceates a new key object
@@ -31,10 +32,9 @@ pub fn key_new(options: u32, allocator_id: usize) -> KResult<usize> {
     let alloc_ref = HeapRef::from_arc(allocator);
 
     let key = StrongCapability::new_flags(
-        Key::new(),
+        Arc::new(Key::new(), alloc_ref)?,
         key_cap_flags,
-        alloc_ref,
-    )?;
+    );
 
     Ok(current_process.cap_map().insert_key(Capability::Strong(key))?.into())
 }

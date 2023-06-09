@@ -20,15 +20,15 @@ pub struct StrongCapability<T: CapObject> {
 }
 
 impl<T: CapObject> StrongCapability<T> {
-    pub fn new(object: T, id: CapId, allocer: HeapRef) -> KResult<Self> {
-        Ok(StrongCapability {
-            object: Arc::new(object, allocer)?,
+    pub fn new(object: Arc<T>, id: CapId) -> Self {
+        StrongCapability {
+            object,
             id,
-        })
+        }
     }
 
-    pub fn new_flags(object: T, flags: CapFlags, allocer: HeapRef) -> KResult<Self> {
-        Self::new(object, CapId::null_flags(flags, false), allocer)
+    pub fn new_flags(object: Arc<T>, flags: CapFlags) -> Self {
+        Self::new(object, CapId::null_flags(flags, false))
     }
 
     pub fn inner(&self) -> &Arc<T> {

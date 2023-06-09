@@ -7,6 +7,8 @@ mod cap;
 pub use cap::*;
 mod flags;
 pub use flags::*;
+mod init_info;
+pub use init_info::*;
 mod syscalls;
 pub use syscalls::*;
 mod syserr;

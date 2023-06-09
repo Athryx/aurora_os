@@ -1,6 +1,7 @@
 use bitflags::bitflags;
 use bit_utils::get_bits;
 use serde::{Serialize, Deserialize, de::{Visitor, Error}};
+use aser::CAPABILTY_NEWTYPE_NAME;
 
 bitflags! {
     pub struct CapFlags: usize {
@@ -119,7 +120,7 @@ impl<'de> Deserialize<'de> for CapId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de> {
-        deserializer.deserialize_newtype_struct("__aser_cap", CapIdVisitor)
+        deserializer.deserialize_newtype_struct(CAPABILTY_NEWTYPE_NAME, CapIdVisitor)
     }
 }
 

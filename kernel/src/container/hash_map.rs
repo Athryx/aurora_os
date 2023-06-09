@@ -78,6 +78,10 @@ impl<K: Hash + Eq, V> HashMap<K, V> {
             for (key, value) in old_map.into_iter() {
                 self.insert(key, value)?;
             }
+        } else if self.data.len() == 0 {
+            // make a size 1 map otherwise things break
+            let new_map = Self::try_with_capacity(self.data.alloc_ref(), 1)?;
+            let _ = core::mem::replace(self, new_map);
         }
 
         Ok(())
@@ -97,6 +101,7 @@ impl<K: Hash + Eq, V> HashMap<K, V> {
         loop {
             if self.data[i].is_free() {
                 self.data[i] = HashMapCell::Occupied(key, value);
+                self.len += 1;
                 return Ok(None);
             }
             if let HashMapCell::Occupied(ref old_key, _) = self.data[i] && old_key == &key {
@@ -114,7 +119,13 @@ impl<K: Hash + Eq, V> HashMap<K, V> {
 
     // gets the index in the data array
     fn get_index_of_key(&self, key: &K) -> Option<usize> {
+        // prevent divide by 0 in get_key_start_index
+        if self.data.len() == 0 {
+            return None;
+        }
+
         let mut i = self.get_key_start_index(key);
+        let start_i = i;
         loop {
             if matches!(self.data[i], HashMapCell::Empty) {
                 return None;
@@ -123,6 +134,11 @@ impl<K: Hash + Eq, V> HashMap<K, V> {
                 return Some(i);
             }
             i = (i + 1) % self.data.len();
+
+            // at lower sizes hashmap will be completely full, so this avoids infinite loop
+            if i == start_i {
+                return None;
+            }
         }
     }
 

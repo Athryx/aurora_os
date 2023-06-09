@@ -110,10 +110,6 @@ pub fn thread_new(
     process_id: usize,
     rip: usize,
     rsp: usize,
-    r1: usize,
-    r2: usize,
-    r3: usize,
-    r4: usize,
 ) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
 
@@ -138,7 +134,6 @@ pub fn thread_new(
         thread_start_mode,
         rip,
         rsp,
-        (r1, r2, r3, r4),
     )?.into())
 }
 

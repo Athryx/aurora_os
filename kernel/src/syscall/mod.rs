@@ -207,6 +207,7 @@ macro_rules! sysret_5 {
 /// This function is called by the assembly syscall entry point
 #[no_mangle]
 extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
+	eprintln!("recieved syscall num: {}", syscall_num);
     match syscall_num {
 		PRINT_DEBUG => sysret_0!(print_debug(
 			vals.options,
@@ -221,7 +222,7 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		), vals),
 		PROCESS_NEW => sysret_1!(syscall_2!(process_new, vals), vals),
 		PROCESS_EXIT => sysret_0!(syscall_1!(process_exit, vals), vals),
-		THREAD_NEW => sysret_1!(syscall_7!(thread_new, vals), vals),
+		THREAD_NEW => sysret_1!(syscall_3!(thread_new, vals), vals),
 		THREAD_YIELD => sysret_0!(thread_yield(), vals),
 		THREAD_SUSPEND => sysret_0!(syscall_1!(thread_suspend, vals), vals),
 		MEMORY_MAP => sysret_1!(syscall_4!(memory_map, vals), vals),

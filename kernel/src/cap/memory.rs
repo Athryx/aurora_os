@@ -120,6 +120,10 @@ impl MemoryInner {
         self.size / PAGE_SIZE
     }
 
+    pub fn get_allocation_mut(&mut self, index: usize) -> Option<Allocation> {
+        Some(self.allocations.get(index)?.allocation)
+    }
+
     /// Finds the index into the allocations array that the given offset from the start of the memory capability would be contained in
     fn allocation_index_of_offset(&self, offset: usize) -> Option<usize> {
         if offset >= self.size {

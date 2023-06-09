@@ -5,8 +5,11 @@ use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::ptr::NonNull;
 use core::slice::SliceIndex;
+use core::cmp::max;
 
-use crate::alloc::HeapRef;
+use aser::ByteBuf;
+
+use crate::alloc::{HeapRef, root_alloc_ref};
 use crate::prelude::*;
 
 struct RawVec<T> {
@@ -52,23 +55,34 @@ impl<T> RawVec<T> {
     }
 
     // returns out of mem on failure
-    fn try_grow(&mut self) -> KResult<()> {
+    fn try_grow(&mut self, required_cap: Option<usize>) -> KResult<()> {
         // since we set the capacity to usize::MAX when T has size 0,
         // getting to here necessarily means the Vec is overfull.
         assert!(size_of::<T>() != 0, "capacity overflow");
 
-        let (new_cap, new_layout) = if self.cap == 0 {
-            (1, Layout::array::<T>(1).unwrap())
+        let mut new_cap = if self.cap == 0 {
+            1
         } else {
             // This can't overflow because we ensure self.cap <= isize::MAX.
-            let new_cap = 2 * self.cap;
-
-            // `Layout::array` checks that the number of bytes is <= usize::MAX,
-            // but this is redundant since old_layout.size() <= isize::MAX,
-            // so the `unwrap` should never fail.
-            let new_layout = Layout::array::<T>(new_cap).unwrap();
-            (new_cap, new_layout)
+            2 * self.cap
         };
+
+        // use required cap if it is larger than the 2 * current capacity
+        if let Some(required_cap) = required_cap {
+            assert!(required_cap <= isize::MAX as usize, "Allocation too large");
+
+            // if required cap is less than current capacity, there is no need to grow
+            if required_cap <= self.cap {
+                return Ok(())
+            }
+
+            new_cap = max(new_cap, required_cap);
+        }
+
+        // `Layout::array` checks that the number of bytes is <= usize::MAX,
+        // but this is redundant since old_layout.size() <= isize::MAX,
+        // so the `unwrap` should never fail.
+        let new_layout = Layout::array::<T>(new_cap).unwrap();
 
         // Ensure that the new allocation doesn't exceed `isize::MAX` bytes.
         assert!(new_layout.size() <= isize::MAX as usize, "Allocation too large");
@@ -179,7 +193,7 @@ impl<T> Vec<T> {
 
     pub fn push(&mut self, object: T) -> KResult<()> {
         if self.len == self.capacity() {
-            self.inner.try_grow()?;
+            self.inner.try_grow(None)?;
         }
 
         unsafe {
@@ -205,7 +219,7 @@ impl<T> Vec<T> {
         assert!(index <= self.len, "index out of bounds");
 
         if self.len == self.capacity() {
-            self.inner.try_grow()?;
+            self.inner.try_grow(None)?;
         }
 
         let ncpy = self.len - index;
@@ -280,6 +294,19 @@ impl<T> Vec<T> {
 }
 
 impl<T: Clone> Vec<T> {
+    pub fn extend_from_slice(&mut self, slice: &[T]) -> KResult<()> {
+        self.inner.try_grow(Some(self.len + slice.len()))?;
+
+        for item in slice {
+            // panic safety: we have already reserved enough space so this should not fail
+            self.push(item.clone()).unwrap();
+        }
+
+        Ok(())
+    }
+}
+
+impl<T: Clone> Vec<T> {
     pub fn from_slice(allocer: HeapRef, slice: &[T]) -> KResult<Self> {
         let mut out = Self::try_with_capacity(allocer, slice.len())?;
 
@@ -322,6 +349,35 @@ impl<T, I: SliceIndex<[T]>> IndexMut<I> for Vec<T> {
 impl<T: fmt::Debug> fmt::Debug for Vec<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Debug::fmt(self.as_slice(), f)
+    }
+}
+
+/// Creates a new vec from the root allocator
+/// 
+/// This is mostly just used for bytebuf implementation
+impl<T> Default for Vec<T> {
+    fn default() -> Self {
+        Vec::new(root_alloc_ref())
+    }
+}
+
+impl ByteBuf for Vec<u8> {
+    fn push(&mut self, byte: u8) {
+        self.push(byte)
+            .expect("failed to push byte to byte buffer");
+    }
+
+    fn extend_from_slice(&mut self, slice: &[u8]) {
+        self.extend_from_slice(slice)
+            .expect("failed to extend bytebuf from slice");
+    }
+
+    fn as_slice(&mut self) -> &mut [u8] {
+        &mut self[..]
+    }
+
+    fn len(&self) -> usize {
+        self.len()
     }
 }
 

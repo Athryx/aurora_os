@@ -7,6 +7,7 @@ use crate::cap::{CapFlags, CapId, memory::Memory};
 use crate::process::PageMappingFlags;
 use crate::{prelude::*, process};
 use crate::arch::x64::IntDisable;
+use crate::container::Arc;
 use super::{options_weak_autodestroy, is_option_set};
 
 /// Allocate a memory capability at least `pages` big
@@ -40,10 +41,12 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<(u
     let heap_allocator = HeapRef::from_arc(allocator);
 
     let memory = StrongCapability::new_flags(
-        Memory::new(page_allocator, heap_allocator.clone(), pages)?,
+        Arc::new(
+            Memory::new(page_allocator, heap_allocator.clone(), pages)?,
+            heap_allocator,
+        )?,
         mem_cap_flags,
-        heap_allocator,
-    )?;
+    );
 
     let size = memory.inner().inner().size_pages();
 

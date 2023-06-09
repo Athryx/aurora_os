@@ -146,7 +146,7 @@ impl Process {
         let addr_space = VirtAddrSpace::new(page_allocator.clone(), allocer.clone())?;
 
         let strong_cap = StrongCapability::new_flags(
-            Process {
+            Arc::new(Process {
                 name,
                 page_allocator,
                 heap_allocator: allocer.clone(),
@@ -162,10 +162,9 @@ impl Process {
                     mapped_memory_capabilities: HashMap::new(allocer.clone()),
                 }),
                 cap_map: CapabilityMap::new(allocer.clone()),
-            },
+            }, allocer)?,
             CapFlags::READ | CapFlags::PROD | CapFlags::WRITE,
-            allocer,
-        )?;
+        );
 
         *strong_cap.object().strong_reference.lock() = Some(strong_cap.inner().clone());
         strong_cap.object().self_weak.call_once(|| Arc::downgrade(strong_cap.inner()));
@@ -190,6 +189,10 @@ impl Process {
     /// This is the pointer to the top lavel paging table for the process
     pub fn get_cr3(&self) -> usize {
         self.cr3_addr.as_usize()
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
     /// Returns a reference to the capability map of this process
@@ -238,6 +241,8 @@ impl Process {
         )?;
 
         self.insert_thread(thread.clone())?;
+        // idle thread should be currently running
+        self.num_threads_running.fetch_add(1, Ordering::AcqRel);
 
         Ok((thread, thread_handle))
     }
@@ -253,7 +258,6 @@ impl Process {
         start_mode: ThreadStartMode,
         rip: usize,
         rsp: usize,
-        regs: (usize, usize, usize, usize)
     ) -> KResult<Tid> {
         let kernel_stack = KernelStack::new(self.page_allocator())?;
 
@@ -275,10 +279,6 @@ impl Process {
         // load the specified registers and jump to userspace code
         push(rsp);
         push(rip);
-        push(regs.3);
-        push(regs.2);
-        push(regs.1);
-        push(regs.0);
         push(asm_thread_init as usize);
         push(0);
         push(0);

@@ -30,8 +30,10 @@ mod cap;
 mod container;
 mod int;
 mod mem;
+mod process;
 mod sched;
 mod sync;
+mod syscall;
 mod util;
 
 mod consts;
@@ -41,8 +43,7 @@ mod gs_data;
 mod io;
 mod mb2;
 mod prelude;
-mod process;
-mod syscall;
+mod start_userspace;
 
 use core::panic::PanicInfo;
 
@@ -111,12 +112,7 @@ fn init(boot_info_addr: usize) -> KResult<()> {
 
     apic::smp_init(&ap_apic_ids)?;
 
-    Ok(())
-}
-
-/// Parses the initrd and creates the early init process, which is the first userspace process
-fn start_early_init_process() -> KResult<()> {
-    Ok(())
+    start_userspace::start_early_init_process(boot_info.initrd)
 }
 
 /// Rust entry point of the kernel on the startup core
@@ -129,8 +125,6 @@ pub extern "C" fn _start(boot_info_addr: usize) -> ! {
     init(boot_info_addr).expect("kernel init failed");
 
     println!("aurora v0.0.1");
-
-    start_early_init_process().expect("failed to start early init process");
 
     sti();
 
