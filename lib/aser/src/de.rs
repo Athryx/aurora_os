@@ -194,6 +194,8 @@ impl<'a, 'de> SeqAccess<'de> for SequenceDeserializer<'a, 'de> {
         let next_type = self.0.peek_data_type()?;
 
         if next_type == DataType::SequenceEnd {
+            // take end byte
+            self.0.take_data_type().unwrap();
             return Ok(None);
         }
 
@@ -212,6 +214,8 @@ impl<'a, 'de> MapAccess<'de> for MapDeserializer<'a, 'de> {
         let next_type = self.0.peek_data_type()?;
 
         if next_type == DataType::MapEnd {
+            // take end byte
+            self.0.take_data_type().unwrap();
             return Ok(None);
         }
 
