@@ -64,9 +64,9 @@ fn find_early_init_data(initrd: &[u8]) -> &[u8] {
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 struct MappedRegion {
+    memory_id: u64,
     address: u64,
     size: u64,
-    memory_id: u64,
     padding_start: u64,
     padding_end: u64,
 }

@@ -8,6 +8,8 @@ edition = "2021"
 
 [dependencies]
 aurora = { path = "../../lib/aurora" }
+aser = { path = "../../lib/aser" }
+sys = { path = "../../lib/sys" }
 
 [panic.dev]
 panic = "abort"

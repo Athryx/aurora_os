@@ -8,6 +8,8 @@ use core::panic::PanicInfo;
 use core::slice;
 
 use aurora::dprintln;
+use aser::from_bytes;
+use sys::InitInfo;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -47,6 +49,12 @@ pub extern "C" fn _rust_startup(
     let startup_data = unsafe {
         slice::from_raw_parts(startup_data, startup_data_size)
     };
+
+    let init_info: InitInfo = from_bytes(startup_data)
+        .expect("failed to deserialize startup data");
+
+    dprintln!("Hello, Userspace!");
+    dprintln!("{:x?}", init_info);
 
     loop { core::hint::spin_loop(); }
 }

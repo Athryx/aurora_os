@@ -69,7 +69,9 @@ dependencies = [
 name = "early-init"
 version = "0.1.0"
 dependencies = [
+ "aser",
  "aurora",
+ "sys",
 ]
 
 [[package]]
