@@ -19,6 +19,7 @@ use sync::{Once, Mutex, MutexGuard};
 mod addr_space_manager;
 mod allocator;
 mod context;
+pub mod debug_print;
 mod prelude;
 mod sync;
 

@@ -7,8 +7,12 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 use core::slice;
 
+use aurora::dprintln;
+
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
+    dprintln!("{}", info);
+
     loop { core::hint::spin_loop(); }
 }
 
@@ -38,7 +42,7 @@ pub extern "C" fn _rust_startup(
         slice::from_raw_parts(process_data, process_data_size / core::mem::size_of::<usize>())
     };
 
-    aurora::init_allocation(process_data).expect("failed to initialize aurora lib allocaror");
+    aurora::init_allocation(process_data).expect("failed to initialize aurora lib allocator");
 
     let startup_data = unsafe {
         slice::from_raw_parts(startup_data, startup_data_size)

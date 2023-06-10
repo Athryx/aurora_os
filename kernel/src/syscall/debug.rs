@@ -22,8 +22,7 @@ pub fn print_debug(
     a7: usize,
     a8: usize,
 ) -> KResult<()> {
-    fn print_bytes(bytes: usize, mut n: usize) -> usize
-	{
+    fn print_bytes(bytes: usize, mut n: usize) -> usize {
 		let mut i = 0;
 		while i < core::mem::size_of::<usize>() && n > 0 {
 			unsafe {

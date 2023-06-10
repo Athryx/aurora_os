@@ -266,8 +266,8 @@ macro_rules! make_cap_struct {
 
 const WEAK_AUTO_DESTROY: u32 = 1 << 31;
 
-/// Prints up to 80 bytes from the input array to the kernel debug log
-pub fn print_debug(data: &[u8]) {
+/// Prints up to 64 bytes from the input array to the kernel debug log
+fn print_debug_inner(data: &[u8]) {
     let num_chars = min(64, data.len());
 
     let get_char = |n| *data.get(n).unwrap_or(&0) as usize;
@@ -275,7 +275,7 @@ pub fn print_debug(data: &[u8]) {
     let get_arg = |arg: usize| {
         let base = arg * 8;
 
-        get_char(0)
+        get_char(base)
             | get_char(base + 1) << 8
             | get_char(base + 2) << 16
             | get_char(base + 3) << 24
@@ -298,6 +298,13 @@ pub fn print_debug(data: &[u8]) {
             get_arg(6),
             get_arg(7)
         );
+    }
+}
+
+/// Prints `data` to the kernel debug log
+pub fn debug_print(data: &[u8]) {
+    for chunk in data.chunks(64) {
+        print_debug_inner(chunk);
     }
 }
 
