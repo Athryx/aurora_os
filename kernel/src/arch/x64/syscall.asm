@@ -59,8 +59,6 @@ syscall_entry:
 	pop rdx
 	pop rsi
 	pop rdi
-	pop r8
-	pop r9
 	pop r12
 	pop r13
 	pop r14
