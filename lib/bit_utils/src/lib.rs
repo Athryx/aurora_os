@@ -4,7 +4,6 @@
 #![feature(const_try)]
 #![feature(const_option)]
 #![feature(const_trait_impl)]
-#![feature(const_convert)]
 
 use core::arch::asm;
 use core::ops::Range;

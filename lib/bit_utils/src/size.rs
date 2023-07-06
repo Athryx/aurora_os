@@ -1,5 +1,3 @@
-use core::ops::Mul;
-
 use derive_more::{Add, Sub, Mul, Div};
 use serde::{Serialize, Deserialize};
 
@@ -24,7 +22,12 @@ impl Size {
     }
 
     pub const fn try_from_pages(pages: usize) -> Option<Self> {
-        Some(Size(pages.checked_mul(PAGE_SIZE)?))
+        // try is not allowed in const
+        if let Some(bytes) = pages.checked_mul(PAGE_SIZE) {
+            Some(Size(bytes))
+        } else {
+            None
+        }
     }
 
     pub const fn bytes(&self) -> usize {

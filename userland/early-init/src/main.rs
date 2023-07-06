@@ -53,5 +53,7 @@ pub extern "C" fn _rust_startup(
     let init_info: InitInfo = from_bytes(startup_data)
         .expect("failed to deserialize startup data");
 
+    dprintln!("early-init started");
+
     loop { core::hint::spin_loop(); }
 }
