@@ -28,3 +28,5 @@ type that represents size in bytes vs size in pages
 remove as much unsafe as possible
 document old code
 run auto formatter
+add tests
+logging
