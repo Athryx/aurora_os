@@ -16,7 +16,6 @@ pub const NUM_ENTRIES: usize = PAGE_SIZE / 8;
 bitflags! {
     /// Bitmask of all the flags in a page table that the cpu uses
 	pub struct PageTableFlags: usize {
-		const NONE = 		0;
 		const PRESENT = 	1;
 		const WRITABLE = 	1 << 1;
 		const USER = 		1 << 2;
@@ -41,7 +40,7 @@ impl PageTableFlags {
 
 impl From<PageMappingFlags> for PageTableFlags {
     fn from(flags: PageMappingFlags) -> Self {
-		let mut out = PageTableFlags::NONE;
+		let mut out = PageTableFlags::empty();
 		if flags.contains(PageMappingFlags::WRITE) {
 			out |= PageTableFlags::WRITABLE;
 		}

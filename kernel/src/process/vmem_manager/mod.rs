@@ -28,7 +28,6 @@ static KERNEL_MEMORY_PAGE_POINTER: Once<PageTablePointer> = Once::new();
 bitflags! {
     /// Flags that represent properties of the memory we want to map
 	pub struct PageMappingFlags: usize {
-		const NONE =		0;
 		const READ =		1;
 		const WRITE =		1 << 1;
 		const EXEC =		1 << 2;
@@ -119,7 +118,7 @@ pub struct VirtAddrSpace {
 
 impl VirtAddrSpace {
     pub fn new(mut page_allocator: PaRef, alloc_ref: HeapRef) -> KResult<Self> {
-        let pml4_table = PageTable::new(&mut page_allocator, PageTableFlags::NONE)
+        let pml4_table = PageTable::new(&mut page_allocator, PageTableFlags::empty())
             .ok_or(SysErr::OutOfMem)?;
 
         let mut out = VirtAddrSpace {
@@ -612,7 +611,7 @@ impl VirtAddrSpace {
         global: bool
     ) -> KResult<()> {
         let huge_flag = match virt_frame {
-            VirtFrame::K4(_) => PageTableFlags::NONE,
+            VirtFrame::K4(_) => PageTableFlags::empty(),
             VirtFrame::M2(_) => PageTableFlags::HUGE,
             VirtFrame::G1(_) => PageTableFlags::HUGE,
         };
@@ -620,7 +619,7 @@ impl VirtAddrSpace {
         let global_flag = if global {
             PageTableFlags::GLOBAL
         } else {
-            PageTableFlags::NONE
+            PageTableFlags::empty()
         };
 
         let flags = PageTableFlags::PRESENT | huge_flag | global_flag | flags.into();

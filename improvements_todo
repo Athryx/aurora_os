@@ -14,7 +14,6 @@ add guard pages at the end of kernel stacks
 
 bitflags for all syscall options
 maybe look into enumflags2
-remove all NONE members from bitflags and just use empty method
 
 
 change to use relative call instructions instead of absolute call with register
