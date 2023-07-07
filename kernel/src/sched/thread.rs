@@ -97,12 +97,13 @@ pub struct ThreadRef {
 }
 
 impl ThreadRef {
-    pub fn get_thread(&self) -> Option<Arc<Thread>> {
+    /// Gets the thread and sets its status to Ready if it is alive adn the correct generation
+    pub fn get_thread_as_ready(&self) -> Option<Arc<Thread>> {
         let thread = self.thread.upgrade()?;
 
         match thread.status.compare_exchange(
             self.generation,
-            self.generation + GENERATION_STEP_SIZE,
+            ThreadState::Ready.to_status(self.generation) + GENERATION_STEP_SIZE,
             Ordering::AcqRel,
             Ordering::Acquire,
         ) {

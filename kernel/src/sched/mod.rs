@@ -93,13 +93,14 @@ extern "C" fn post_switch_handler(old_rsp: usize) {
     } = core::mem::replace(&mut *post_switch_data, None)
         .expect("post switch data was none after switching threads");
 
-    let num_threads_running = old_process.num_threads_running.fetch_sub(1, Ordering::AcqRel) - 1;
+    let _ = old_process.num_threads_running.fetch_sub(1, Ordering::AcqRel) - 1;
     old_thread.rsp.store(old_rsp, Ordering::Release);
 
     match post_switch_action {
         PostSwitchAction::None => (),
+       // FIXME: don't panic on out of memory here 
         PostSwitchAction::InsertReadyQueue => thread_map()
-            .insert_ready_thread(old_thread)
+            .insert_ready_thread(Arc::downgrade(&old_thread))
             .expect("failed to add thread to ready queue"),
     }
 

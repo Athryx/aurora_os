@@ -287,7 +287,7 @@ impl Process {
             ThreadStartMode::Ready => {
                 thread.set_state(ThreadState::Ready);
                 let tid = thread.tid;
-                if let Err(error) = thread_map().insert_ready_thread(thread) {
+                if let Err(error) = thread_map().insert_ready_thread(Arc::downgrade(&thread)) {
                     threads.remove(&tid);
                     return Err(error);
                 }
