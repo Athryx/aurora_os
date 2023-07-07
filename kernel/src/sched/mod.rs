@@ -42,11 +42,13 @@ pub fn timer_handler() {
 
 /// Called when an ipi_exit ipi occurs, and potentialy exits the current thread
 pub fn exit_handler() {
-    switch_current_thread_to(
-        ThreadState::Dead { try_destroy_process: false },
-        IntDisable::new(),
-        PostSwitchAction::SendEoi,
-    ).expect("thread terminated and there were no more threads to run");
+    if cpu_local_data().current_process().is_alive.load(Ordering::Acquire) {
+        switch_current_thread_to(
+            ThreadState::Dead { try_destroy_process: false },
+            IntDisable::new(),
+            PostSwitchAction::SendEoi,
+        ).expect("thread terminated and there were no more threads to run");
+    }
 }
 
 /// All data used by the post switch handler

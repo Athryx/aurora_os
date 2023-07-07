@@ -18,9 +18,6 @@ pub struct Thread {
     pub process: Weak<Process>,
     // this has to be atomic usize because it is written to in assembly
     pub rsp: AtomicUsize,
-    // if this is non zero, the scheduler will exchange this field with 0 when switching away from a suspend state,
-    // if waiting_capid is already 0, the scheduler knows some other code is already switching the task to ready
-    pub waiting_capid: AtomicUsize,
     kernel_stack: KernelStack,
 }
 
@@ -43,7 +40,6 @@ impl Thread {
             handle: AtomicPtr::new(null_mut()),
             process,
             rsp: AtomicUsize::new(rsp),
-            waiting_capid: AtomicUsize::new(0),
             kernel_stack,
         }, allocer)?;
 
