@@ -3,7 +3,6 @@ use core::cmp::min;
 use core::slice;
 
 use spin::Once;
-use bitflags::bitflags;
 use sys::MemoryResizeFlags;
 
 use crate::arch::x64::{asm_thread_init, IntDisable};
@@ -335,7 +334,9 @@ impl Process {
 
         if this.is_current_process() {
             // wait for all other threads except this one to exit
-            while this.num_threads_running.load(Ordering::Acquire) != 1 {}
+            while this.num_threads_running.load(Ordering::Acquire) != 1 {
+                core::hint::spin_loop();
+            }
 
             drop(this);
 
@@ -347,7 +348,9 @@ impl Process {
             ).unwrap();
         } else {
             // wait for all other threads to exit
-            while this.num_threads_running.load(Ordering::Acquire) != 0 {}
+            while this.num_threads_running.load(Ordering::Acquire) != 0 {
+                core::hint::spin_loop();
+            }
 
             // safety: no other threads from this process are running
             unsafe {

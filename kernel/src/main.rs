@@ -28,6 +28,7 @@ mod alloc;
 mod arch;
 mod cap;
 mod container;
+mod event;
 mod int;
 mod mem;
 mod process;

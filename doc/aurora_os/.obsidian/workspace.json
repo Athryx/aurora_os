@@ -8,43 +8,7 @@
         "type": "tabs",
         "children": [
           {
-            "id": "3f1ee2ea67295b3b",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "Kernel Thread Switching Design.md",
-                "mode": "source",
-                "source": false
-              }
-            }
-          },
-          {
-            "id": "678e90853404ce37",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "General Design.md",
-                "mode": "source",
-                "source": false
-              }
-            }
-          },
-          {
-            "id": "6d071d5497ea26f9",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "Server APIs.md",
-                "mode": "source",
-                "source": false
-              }
-            }
-          },
-          {
-            "id": "610be148ed9b66e1",
+            "id": "6cad73db2c3a0fc5",
             "type": "leaf",
             "state": {
               "type": "markdown",
@@ -55,8 +19,7 @@
               }
             }
           }
-        ],
-        "currentTab": 3
+        ]
       }
     ],
     "direction": "vertical"
@@ -191,13 +154,13 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "610be148ed9b66e1",
+  "active": "1bf4b80db3ea2c8c",
   "lastOpenFiles": [
-    "Kernel Structures.md",
-    "General Design.md",
-    "Untitled.md",
-    "Kernel Bytecode Interpreter.md",
+    "Kernel Events.md",
+    "Kernel Thread Switching Design.md",
     "Server APIs.md",
-    "Kernel Thread Switching Design.md"
+    "General Design.md",
+    "Kernel Structures.md",
+    "Kernel Bytecode Interpreter.md"
   ]
 }

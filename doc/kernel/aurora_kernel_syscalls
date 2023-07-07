@@ -549,13 +549,13 @@ waits on the lock until another thread unlocks the lock
 
 options:
 bit 0 (lock_wait_timeout): waits on the lock until {timeout} seconds after boot,
-then the thread will unblock and return OkUnreach
+then the thread will unblock and return OkTimeout
 
 required capability permissions:
 {lock}: cap_prod
 
 syserr code:
-OkUnreach: {timeout} has been exceeded
+OkTimeout: {timeout} has been exceeded
 
 
 26: fn lock_unlock(lock: Cap<Lock>, | num_threads: usize) -> SysErr
