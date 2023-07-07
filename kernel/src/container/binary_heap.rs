@@ -4,6 +4,7 @@ use crate::prelude::*;
 use crate::alloc::HeapRef;
 
 /// A max heap binary heap
+#[derive(Debug)]
 pub struct BinaryHeap<T: Ord> {
     data: Vec<T>,
 }

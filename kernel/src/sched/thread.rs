@@ -97,6 +97,25 @@ pub struct ThreadRef {
 }
 
 impl ThreadRef {
+    /// This should only be used in the post switch handler for a thread that is suspended
+    /// 
+    /// # Panics
+    /// 
+    /// panics if the given thread is not suspended
+    pub(super) fn new(thread: &Arc<Thread>) -> Self {
+        let generation = thread.status.load(Ordering::Acquire);
+
+        assert!(
+            matches!(ThreadState::from_usize(generation), ThreadState::Suspended),
+            "tried to make a thread ref for a thread which was not suspended",
+        );
+
+        ThreadRef {
+            thread: Arc::downgrade(thread),
+            generation,
+        }
+    }
+
     /// Gets the thread and sets its status to Ready if it is alive adn the correct generation
     pub fn get_thread_as_ready(&self) -> Option<Arc<Thread>> {
         let thread = self.thread.upgrade()?;

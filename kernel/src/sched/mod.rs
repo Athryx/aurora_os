@@ -2,24 +2,32 @@ use core::sync::atomic::Ordering;
 
 use spin::Once;
 
-pub use thread::{ThreadState, Thread, Tid};
+pub use thread::{ThreadState, Thread, ThreadRef, Tid};
 use thread_map::ThreadMap;
 use crate::alloc::root_alloc_ref;
 use crate::arch::x64::{IntDisable, set_cr3};
 use crate::config::SCHED_TIME;
 use crate::prelude::*;
+use crate::sync::IMutex;
 use crate::arch::x64::asm_switch_thread;
 use crate::container::Arc;
 use crate::process::{Process, get_kernel_process};
+use timeout_queue::TimeoutQueue;
 
 pub mod kernel_stack;
 mod thread;
 mod thread_map;
+mod timeout_queue;
 
 static THREAD_MAP: Once<ThreadMap> = Once::new();
+static TIMEOUT_QUEUE: Once<IMutex<TimeoutQueue>> = Once::new();
 
 pub fn thread_map() -> &'static ThreadMap {
     THREAD_MAP.get().unwrap()
+}
+
+pub fn timeout_queue() -> &'static IMutex<TimeoutQueue> {
+    TIMEOUT_QUEUE.get().unwrap()
 }
 
 /// This stores a reference to the current thread and process for easy retrieval
@@ -35,6 +43,8 @@ pub struct SchedState {
 pub fn timer_handler() {
     let current_nsec = cpu_local_data().local_apic().nsec();
     let last_switch_nsec = cpu_local_data().last_thread_switch_nsec.load(Ordering::Acquire);
+
+    timeout_queue().lock().wake_threads(current_nsec);
 
     if current_nsec - last_switch_nsec > SCHED_TIME.as_nanos() as u64 {
         let _ = switch_current_thread_to(
@@ -79,6 +89,8 @@ pub enum PostSwitchAction {
     None,
     /// Inserts the thread into the ready queue to be run again
     InsertReadyQueue,
+    /// Inserts the thread into the timeout queue to wake up at the given nanosecond
+    SetTimeout(u64),
 }
 
 /// This is the function that runs after thread switch
@@ -98,10 +110,15 @@ extern "C" fn post_switch_handler(old_rsp: usize) {
 
     match post_switch_action {
         PostSwitchAction::None => (),
-       // FIXME: don't panic on out of memory here 
+       // FIXME: don't panic on out of memory here
         PostSwitchAction::InsertReadyQueue => thread_map()
             .insert_ready_thread(Arc::downgrade(&old_thread))
             .expect("failed to add thread to ready queue"),
+        // FIXME: don't panic on out of memory here
+        PostSwitchAction::SetTimeout(timeout_nsec) => timeout_queue()
+            .lock()
+            .insert_thread(ThreadRef::new(&old_thread), timeout_nsec)
+            .expect("failed to add thread to timeout queue")
     }
 
     if send_eoi {
@@ -188,12 +205,13 @@ pub fn switch_current_thread_to(state: ThreadState, _int_disable: IntDisable, po
     Ok(())
 }
 
-pub fn init_thread_map() {
+pub fn init() {
     THREAD_MAP.call_once(|| ThreadMap::new(root_alloc_ref()));
+    TIMEOUT_QUEUE.call_once(|| IMutex::new(TimeoutQueue::new(root_alloc_ref())));
 }
 
 /// Creates an idle thread and sets up scheduler from the currently executing thread and its stack
-pub fn init(stack: AVirtRange) -> KResult<()> {
+pub fn init_cpu_local(stack: AVirtRange) -> KResult<()> {
     let kernel_process = get_kernel_process();
 
     let thread = kernel_process.create_idle_thread(

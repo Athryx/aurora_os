@@ -161,15 +161,12 @@ pub fn thread_suspend(options: u32, timeout_nsec: usize) -> KResult<()> {
     let int_disable = IntDisable::new();
 
     if get_bits(options as usize, 0..1) == 1 {
-        todo!("timeout")
-        /*switch_current_thread_to(
-            ThreadState::SuspendTimeout {
-                for_event: false,
-                until_nanosecond: timeout_nsec as u64,
-            },
+        switch_current_thread_to(
+            ThreadState::Suspended,
             int_disable,
-            PostSwitchAction::None,
-        ).expect("could not find idle thread to switch to");*/
+            PostSwitchAction::SetTimeout(timeout_nsec as u64),
+            false,
+        ).expect("could not find idle thread to switch to");
     } else {
         switch_current_thread_to(
             ThreadState::Suspended,

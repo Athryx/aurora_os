@@ -101,8 +101,8 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     set_cr3(get_kernel_process().get_cr3());
 
     // initislise the scheduler
-    sched::init_thread_map();
-    sched::init(*INIT_STACK)?;
+    sched::init();
+    sched::init_cpu_local(*INIT_STACK)?;
 
     let acpi_madt = unsafe { boot_info.rsdt.get_table(SdtType::Madt).unwrap() };
     let madt = acpi_madt.assume_madt().unwrap();
@@ -160,7 +160,7 @@ fn ap_init(id: usize, stack_addr: usize) -> KResult<()> {
         VirtAddr::new(stack_addr + 8 - KernelStack::DEFAULT_SIZE),
         KernelStack::DEFAULT_SIZE,
     );
-    sched::init(stack_range)?;
+    sched::init_cpu_local(stack_range)?;
 
     unsafe {
         apic::init_local_apic();
