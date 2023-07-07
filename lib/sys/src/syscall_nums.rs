@@ -6,7 +6,9 @@ pub const PROCESS_NEW: u32 = 1;
 pub const PROCESS_EXIT: u32 = 2;
 pub const THREAD_NEW: u32 = 3;
 pub const THREAD_YIELD: u32 = 4;
+pub const THREAD_DESTROY: u32 = 5;
 pub const THREAD_SUSPEND: u32 = 6;
+pub const THREAD_RESUME: u32 = 7;
 
 pub const MEMORY_MAP: u32 = 11;
 pub const MEMORY_UNMAP: u32 = 12;

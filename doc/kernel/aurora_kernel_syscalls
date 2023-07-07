@@ -252,7 +252,7 @@ required capability permissions:
 {process}: cap_write
 
 syserr code:
-InvlArgs: thread_destroy_other was set and the other thread was not suspended
+InvlOp: thread_destroy_other was set and the other thread was not suspended
 
 
 6: fn thread_suspend(| timeout_nsec: usize) -> SysErr

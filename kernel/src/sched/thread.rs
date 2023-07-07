@@ -14,7 +14,7 @@ const GENERATION_STEP_SIZE: usize = 0b100;
 const THREAD_STATE_MASK: usize = 0b11;
 
 #[repr(u8)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThreadState {
     Running = 0,
     Ready = 1,
@@ -87,6 +87,23 @@ impl Thread {
                 Some(state.to_status(old_status) + GENERATION_STEP_SIZE)
             },
         ).unwrap();
+    }
+
+    /// Sets this threads state and incraments the generation, only if the old state is `old_state`
+    /// 
+    /// Returns true if the state was chenged
+    pub fn transition_state(&self, old_state: ThreadState, new_state: ThreadState) -> bool {
+        self.status.fetch_update(
+            Ordering::AcqRel,
+            Ordering::Acquire,
+            |old_status| {
+                if old_state != ThreadState::from_usize(old_status) {
+                    None
+                } else {
+                    Some(new_state.to_status(old_status) + GENERATION_STEP_SIZE)
+                }
+            },
+        ).is_ok()
     }
 }
 

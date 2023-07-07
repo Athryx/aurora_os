@@ -211,6 +211,10 @@ impl Process {
     /// Crates a new idle thread structure for the currently running thread
     /// 
     /// `stack` should be a virt range referencing the whole stack of the current thread
+    /// 
+    /// # Locking
+    /// 
+    /// acquires the `threads` lock
     pub fn create_idle_thread(&self, name: String, stack: AVirtRange) -> KResult<Arc<Thread>> {
         let thread = Thread::new(
             self.next_tid(),
@@ -233,6 +237,10 @@ impl Process {
     /// The thread will return to userspace code at rip upon starting
     /// 
     /// Rsp will be initialized, as well as 4 general purpose registers
+    /// 
+    /// # Locking
+    /// 
+    /// acquires the `threads` lock
     pub fn create_thread(
         &self,
         name: String,
@@ -298,6 +306,43 @@ impl Process {
         }
 
         Ok(tid)
+    }
+
+    /// Resumes a thread with the given thread id if it was suspended
+    /// 
+    /// # Locking
+    /// 
+    /// acquires the `threads` lock
+    pub fn resume_suspended_thread(&self, thread_id: Tid) -> KResult<()> {
+        let threads = self.threads.lock();
+        let thread = threads.get(&thread_id).ok_or(SysErr::InvlId)?;
+
+        if thread.transition_state(ThreadState::Suspended, ThreadState::Ready) {
+            // FIXME: don't panic on oom
+            thread_map().insert_ready_thread(Arc::downgrade(thread))
+                .expect("could not resume suepended thread");
+
+            Ok(())
+        } else {
+            Err(SysErr::InvlOp)
+        }
+    }
+
+    /// Destroys a thread with the given thread id if it was suspended
+    /// 
+    /// # Locking
+    /// 
+    /// acquires the `threads` lock
+    pub fn destroy_suspended_thread(&self, thread_id: Tid) -> KResult<()> {
+        let mut threads = self.threads.lock();
+        let thread = threads.get(&thread_id).ok_or(SysErr::InvlId)?;
+
+        if thread.transition_state(ThreadState::Suspended, ThreadState::Dead) {
+            threads.remove(&thread_id);
+            Ok(())
+        } else {
+            Err(SysErr::InvlOp)
+        }
     }
 
     pub fn is_current_process(&self) -> bool {

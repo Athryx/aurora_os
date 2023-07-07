@@ -15,6 +15,9 @@ add guard pages at the end of kernel stacks
 update orderings on all atomics to use minimum needed ordering
 
 
+fix oom panics that could happen in scheduler
+
+
 bitflags for all syscall options
 maybe look into enumflags2
 

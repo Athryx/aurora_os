@@ -1,4 +1,4 @@
-use sys::CapId;
+use sys::{CapId, ThreadDestroyFlags, Tid};
 
 use crate::{prelude::*,
     cap::{CapFlags, Capability},
@@ -153,6 +153,45 @@ pub fn thread_yield() -> KResult<()> {
     Ok(())
 }
 
+/// destroys the specified thread or destroys the currently running thread
+/// if thread_destroy_other is set, the specified thread must be suspended to ba able to be destroyed
+/// 
+/// # Options
+/// bit 0 (thread_destroy_other): will destroy a thread with {thread_id} in {process}
+/// if not set, will destroy the calling thread
+/// 
+/// # Required Capability Permissions
+/// `process`: cap_write
+/// 
+/// # Syserr code
+/// InvlOp: thread_destroy_other was set and the other thread was not suspended
+pub fn thread_destroy(options: u32, process_id: usize, thread_id: usize) -> KResult<()> {
+    let weak_auto_destroy = options_weak_autodestroy(options);
+    let flags = ThreadDestroyFlags::from_bits_truncate(options);
+    let thread_id = Tid::from(thread_id);
+
+    let int_disable = IntDisable::new();
+
+    if flags.contains(ThreadDestroyFlags::DESTROY_OTHER) {
+        let process = cpu_local_data()
+            .current_process()
+            .cap_map()
+            .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?
+            .into_inner();
+
+        process.destroy_suspended_thread(thread_id)
+    } else {
+        switch_current_thread_to(
+            ThreadState::Dead,
+            int_disable,
+            PostSwitchAction::None,
+            false,
+        ).unwrap();
+
+        Ok(())
+    }
+}
+
 /// suspends the currently running thread and waits for the thread to be resumed by another thread
 ///
 /// # Options
@@ -177,4 +216,26 @@ pub fn thread_suspend(options: u32, timeout_nsec: usize) -> KResult<()> {
     }
 
     Ok(())
+}
+
+/// resumes a thread that was previously suspended
+/// 
+/// # Required Capability Permissions
+/// `process`: cap_write
+/// 
+/// # Syserr Code
+/// InvlOp: the specified thread is not currently suspended
+pub fn thread_resume(options: u32, process_id: usize, thread_id: usize) -> KResult<()> {
+    let weak_auto_destroy = options_weak_autodestroy(options);
+    let thread_id = Tid::from(thread_id);
+
+    let _int_disable = IntDisable::new();
+
+    let process = cpu_local_data()
+        .current_process()
+        .cap_map()
+        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?
+        .into_inner();
+
+    process.resume_suspended_thread(thread_id)
 }

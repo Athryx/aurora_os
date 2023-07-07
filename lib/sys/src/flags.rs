@@ -19,6 +19,12 @@ impl Default for MemoryMappingFlags {
 
 
 bitflags! {
+    pub struct ThreadDestroyFlags: u32 {
+        const DESTROY_OTHER = 1;
+    }
+}
+
+bitflags! {
     /// The first three bits of flags are the same as MemoryMappingFlags, additonal options are here
     pub struct MemoryMapFlags: u32 {
         const MAX_SIZE = 1 << 3;
