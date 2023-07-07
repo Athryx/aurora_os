@@ -1,5 +1,4 @@
-use core::ptr::null_mut;
-use core::sync::atomic::{AtomicUsize, Ordering, AtomicU64, AtomicPtr, AtomicBool};
+use core::sync::atomic::{AtomicUsize, Ordering, AtomicU64};
 
 use spin::Once;
 
@@ -10,7 +9,7 @@ use crate::gdt::{Gdt, Tss};
 use crate::int::apic::LocalApic;
 use crate::int::idt::Idt;
 use crate::sync::{IMutex, IMutexGuard};
-use crate::sched::{ThreadHandle, SchedState, PostSwitchData};
+use crate::sched::{SchedState, PostSwitchData};
 use crate::process::Process;
 
 crate::make_id_type!(Prid);
@@ -44,7 +43,6 @@ pub struct GsData {
 
     /// The last time a thread switch occured
     pub last_thread_switch_nsec: AtomicU64,
-    pub current_thread_handle: AtomicPtr<ThreadHandle>,
     /// Stores the current process and thread
     pub sched_state: Once<IMutex<SchedState>>,
     /// Stores the post switch action to be completed after switching threads
@@ -96,7 +94,6 @@ pub fn init(prid: Prid) {
         tss: IMutex::new(Tss::new()),
         local_apic: Once::new(),
         last_thread_switch_nsec: AtomicU64::new(0),
-        current_thread_handle: AtomicPtr::new(null_mut()),
         sched_state: Once::new(),
         post_switch_data: IMutex::new(None),
         current_process_addr: AtomicUsize::new(0),

@@ -215,6 +215,14 @@ impl<T> Vec<T> {
         }
     }
 
+    pub fn push_front(&mut self, object: T) -> KResult<()> {
+        self.insert(0, object)
+    }
+
+    pub fn pop_front(&mut self) -> Option<T> {
+        self.try_remove(0)
+    }
+
     pub fn insert(&mut self, index: usize, object: T) -> KResult<()> {
         assert!(index <= self.len, "index out of bounds");
 

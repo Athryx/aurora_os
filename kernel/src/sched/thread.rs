@@ -1,20 +1,49 @@
-use core::sync::atomic::{AtomicUsize, AtomicPtr, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::container::Arc;
-use crate::mem::{MemOwner, MemOwnerKernelExt};
 use super::kernel_stack::KernelStack;
-use crate::container::{ListNode, ListNodeData, Weak};
+use crate::container::Weak;
 use crate::process::Process;
 use crate::prelude::*;
 
 pub use sys::Tid;
 
+/// Amount status must be incramented to change generation without changing ThreadState
+const GENERATION_STEP_SIZE: usize = 0b100;
+
+const THREAD_STATE_MASK: usize = 0b11;
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy)]
+pub enum ThreadState {
+    Running = 0,
+    Ready = 1,
+    Suspended = 2,
+    Dead = 3,
+}
+
+impl ThreadState {
+    pub fn from_usize(n: usize) -> Self {
+        match n & THREAD_STATE_MASK {
+            0 => ThreadState::Running,
+            1 => ThreadState::Ready,
+            2 => ThreadState::Suspended,
+            3 => ThreadState::Dead,
+            _ => unreachable!(),
+        }
+    }
+
+    // Converts the thread state to a thread status, preserves the generation number of old status
+    pub fn to_status(&self, old_status: usize) -> usize {
+        (old_status & !THREAD_STATE_MASK) | *self as usize
+    }
+}
+
 #[derive(Debug)]
 pub struct Thread {
     pub tid: Tid,
     name: String,
-    // FIXME: maybe handle setting this to null when thread handle dropped (see if it is an issue)
-    handle: AtomicPtr<ThreadHandle>,
+    status: AtomicUsize,
     pub process: Weak<Process>,
     // this has to be atomic usize because it is written to in assembly
     pub rsp: AtomicUsize,
@@ -31,102 +60,54 @@ impl Thread {
         process: Weak<Process>,
         kernel_stack: KernelStack,
         rsp: usize
-    ) -> KResult<(Arc<Thread>, MemOwner<ThreadHandle>)> {
+    ) -> KResult<Arc<Thread>> {
         let allocer = process.alloc_ref();
 
-        let thread = Arc::new(Thread {
+        Arc::new(Thread {
             tid,
             name,
-            handle: AtomicPtr::new(null_mut()),
+            status: AtomicUsize::new(ThreadState::Suspended.to_status(0)),
             process,
             rsp: AtomicUsize::new(rsp),
             kernel_stack,
-        }, allocer)?;
-
-        let thread_handle = ThreadHandle::new(thread.clone())?;
-
-        thread.handle.store(thread_handle.ptr_mut(), Ordering::Release);
-
-        Ok((thread, thread_handle))
+        }, allocer)
     }
 
     /// This is the rsp value loaded when a syscall occurs for this thread
     pub fn syscall_rsp(&self) -> usize {
         self.kernel_stack.stack_top().as_usize()
     }
-}
 
-unsafe impl Send for Thread {}
-unsafe impl Sync for Thread {}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ThreadState {
-    Running,
-    Ready,
-    Dead {
-        // if true, the scheduler will check that this is the 
-		// last thread switching away from a dead process,
-		// and will destoy the process as well
-        try_destroy_process: bool
-    },
-    // if for_event for either suspend is false,
-	// the scheduler will not ehck the capid field on the thread,
-	// and will assume it is not waiting for an event to improve performance
-    Suspend {
-        for_event: bool,
-    },
-    SuspendTimeout {
-        for_event: bool,
-        until_nanosecond: u64,
-    },
-}
-
-/// The `ThreadHandle` references a [`Thread`] and is used in the scheduler to schedule threads
-#[derive(Debug)]
-pub struct ThreadHandle {
-    pub state: ThreadState,
-    pub thread: Arc<Thread>,
-
-    list_node_data: ListNodeData<ThreadHandle>,
-}
-
-impl ThreadHandle {
-    /// Creates a new thread handle
-    /// 
-    /// Uses the allocator from `Arc<Thread>`
-    pub fn new(thread: Arc<Thread>) -> KResult<MemOwner<ThreadHandle>> {
-        let mut allocator = Arc::alloc_ref(&thread);
-
-        MemOwner::new(
-            ThreadHandle {
-                state: ThreadState::Ready,
-                thread,
-                list_node_data: ListNodeData::default(),
+    /// Sets this threads state and incraments the generation
+    pub fn set_state(&self, state: ThreadState) {
+        self.status.fetch_update(
+            Ordering::AcqRel,
+            Ordering::Acquire,
+            |old_status| {
+                Some(state.to_status(old_status) + GENERATION_STEP_SIZE)
             },
-            &mut allocator,
-        )
-    }
-
-    /// Deallocates the thread handle
-    /// 
-    /// # Safety
-    /// 
-    /// No other references to the thread handle can exist
-    pub unsafe fn dealloc(thread_handle: MemOwner<ThreadHandle>) {
-        let mut allocator = Arc::alloc_ref(&thread_handle.thread);
-
-        unsafe {
-            thread_handle.drop_in_place(&mut allocator);
-        }
+        ).unwrap();
     }
 }
 
-impl ListNode for ThreadHandle {
-    fn list_node_data(&self) -> &ListNodeData<Self> {
-        &self.list_node_data
-    }
+#[derive(Debug, Clone)]
+pub struct ThreadRef {
+    thread: Weak<Thread>,
+    generation: usize,
+}
 
-    fn list_node_data_mut(&mut self) -> &mut ListNodeData<Self> {
-        &mut self.list_node_data
+impl ThreadRef {
+    pub fn get_thread(&self) -> Option<Arc<Thread>> {
+        let thread = self.thread.upgrade()?;
+
+        match thread.status.compare_exchange(
+            self.generation,
+            self.generation + GENERATION_STEP_SIZE,
+            Ordering::AcqRel,
+            Ordering::Acquire,
+        ) {
+            Ok(_) => Some(thread),
+            Err(_) => None,
+        }
     }
 }

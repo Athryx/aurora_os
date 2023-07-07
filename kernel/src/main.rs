@@ -101,6 +101,7 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     set_cr3(get_kernel_process().get_cr3());
 
     // initislise the scheduler
+    sched::init_thread_map();
     sched::init(*INIT_STACK)?;
 
     let acpi_madt = unsafe { boot_info.rsdt.get_table(SdtType::Madt).unwrap() };

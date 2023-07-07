@@ -143,8 +143,12 @@ pub fn thread_yield() -> KResult<()> {
 
     // TODO: detect if the only idle thread running is idle thread, and don't yield if that is the case
     // panic safety: this should never fail because the idle thread should always ba available
-    switch_current_thread_to(ThreadState::Ready, int_disable, PostSwitchAction::None)
-        .expect("could not find thread to yield to");
+    switch_current_thread_to(
+        ThreadState::Ready,
+        int_disable,
+        PostSwitchAction::None,
+        false
+    ).expect("could not find thread to yield to");
 
     Ok(())
 }
@@ -168,9 +172,10 @@ pub fn thread_suspend(options: u32, timeout_nsec: usize) -> KResult<()> {
         ).expect("could not find idle thread to switch to");*/
     } else {
         switch_current_thread_to(
-            ThreadState::Suspend { for_event: false },
+            ThreadState::Suspended,
             int_disable,
             PostSwitchAction::None,
+            false,
         ).expect("could not find idle thread to switch to");
     }
 

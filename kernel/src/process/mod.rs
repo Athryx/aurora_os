@@ -10,8 +10,7 @@ use crate::cap::memory::{Memory, MemoryInner};
 use crate::container::{Arc, Weak, HashMap};
 use crate::int::IPI_PROCESS_EXIT;
 use crate::int::apic::{Ipi, IpiDest};
-use crate::mem::MemOwner;
-use crate::sched::{Tid, Thread, ThreadHandle, ThreadState, PostSwitchAction, THREAD_MAP, switch_current_thread_to};
+use crate::sched::{Tid, Thread, ThreadState, PostSwitchAction, thread_map, switch_current_thread_to};
 use crate::alloc::{PaRef, HeapRef, root_alloc_page_ref, root_alloc_ref};
 use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability, CapabilityMap, CapType, CapId, Capability};
 use crate::prelude::*;
@@ -199,12 +198,8 @@ impl Process {
         &self.cap_map
     }
 
-    /// Releases the strong capbility for the process, which will lead to the process being destroyed
-    /// 
-    /// # Safety
-    /// 
-    /// Don't do this with any of the process' threads running
-    pub unsafe fn release_strong_capability(&self) {
+    /// Releases the strong capbility for the process, which will lead to the process being dropped when all other strong referenes are dropped
+    pub fn release_strong_capability(&self) {
         *self.strong_reference.lock() = None;
     }
 
@@ -229,8 +224,8 @@ impl Process {
     /// Crates a new idle thread structure for the currently running thread
     /// 
     /// `stack` should be a virt range referencing the whole stack of the current thread
-    pub fn create_idle_thread(&self, name: String, stack: AVirtRange) -> KResult<(Arc<Thread>, MemOwner<ThreadHandle>)> {
-        let (thread, thread_handle) = Thread::new(
+    pub fn create_idle_thread(&self, name: String, stack: AVirtRange) -> KResult<Arc<Thread>> {
+        let thread = Thread::new(
             self.next_tid(),
             name,
             self.self_weak(),
@@ -243,7 +238,7 @@ impl Process {
         // idle thread should be currently running
         self.num_threads_running.fetch_add(1, Ordering::AcqRel);
 
-        Ok((thread, thread_handle))
+        Ok(thread)
     }
 
     /// Creates a new thread
@@ -289,7 +284,7 @@ impl Process {
 
         let tid = self.next_tid();
         let kernel_rsp = kernel_stack.stack_top() - 8 * push_index;
-        let (thread, thread_handle) = Thread::new(
+        let thread = Thread::new(
             tid,
             name,
             self.self_weak(),
@@ -297,12 +292,15 @@ impl Process {
             kernel_rsp.as_usize(),
         )?;
 
-        self.insert_thread(thread)?;
+        self.insert_thread(thread.clone())?;
 
         // insert thread handle into scheduler after all other setup is done
         match start_mode {
-            ThreadStartMode::Ready => THREAD_MAP.insert_ready_thread(thread_handle),
-            ThreadStartMode::Suspended => THREAD_MAP.insert_suspended_thread(thread_handle),
+            ThreadStartMode::Ready => {
+                thread.set_state(ThreadState::Ready);
+                thread_map().insert_ready_thread(thread);
+            },
+            ThreadStartMode::Suspended => thread.set_state(ThreadState::Suspended),
         }
 
         Ok(tid)
@@ -330,32 +328,20 @@ impl Process {
             return;
         }
 
+        this.release_strong_capability();
+
         cpu_local_data().local_apic().send_ipi(Ipi::To(IpiDest::AllExcludeThis, IPI_PROCESS_EXIT));
 
         if this.is_current_process() {
-            // wait for all other threads except this one to exit
-            while this.num_threads_running.load(Ordering::Acquire) != 1 {
-                core::hint::spin_loop();
-            }
-
             drop(this);
 
             switch_current_thread_to(
-                ThreadState::Dead { try_destroy_process: true },
+                ThreadState::Dead,
                 // creating a new int disable is fine, we don't care to restore interrupts because this thread will die
                 IntDisable::new(),
-                PostSwitchAction::None
+                PostSwitchAction::None,
+                false,
             ).unwrap();
-        } else {
-            // wait for all other threads to exit
-            while this.num_threads_running.load(Ordering::Acquire) != 0 {
-                core::hint::spin_loop();
-            }
-
-            // safety: no other threads from this process are running
-            unsafe {
-                this.release_strong_capability();
-            }
         }
     }
 
