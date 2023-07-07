@@ -275,6 +275,18 @@ impl<T> Vec<T> {
         out
     }
 
+    pub fn swap(&mut self, a: usize, b: usize) {
+        if a == b {
+            return;
+        }
+
+        let a_ptr = &mut self[a] as *mut T;
+        let b_ptr = &mut self[b] as *mut T;
+
+        // safety: a_ptr and b_ptr point to valid objects of T and do not overlap (but ptr::swap might not even care about that)
+        unsafe { ptr::swap(a_ptr, b_ptr); }
+    }
+
     pub fn iter(&self) -> Iter<T> {
         Iter {
             inner: RawIter::new(self.as_slice()),
