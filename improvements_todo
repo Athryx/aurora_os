@@ -12,6 +12,9 @@ maybe merge memory_resize and memory_update_mapping syscalls
 add guard pages at the end of kernel stacks
 
 
+update orderings on all atomics to use minimum needed ordering
+
+
 bitflags for all syscall options
 maybe look into enumflags2
 

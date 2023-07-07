@@ -132,7 +132,7 @@ pub struct Process {
 
     /// Counter used to assign thread ids
     next_tid: AtomicUsize,
-    threads: IMutex<Vec<Arc<Thread>>>,
+    threads: IMutex<HashMap<Tid, Arc<Thread>>>,
 
     addr_space_data: IMutex<AddrSpaceData>,
     cr3_addr: PhysAddr,
@@ -153,7 +153,7 @@ impl Process {
                 strong_reference: IMutex::new(None),
                 self_weak: Once::new(),
                 next_tid: AtomicUsize::new(0),
-                threads: IMutex::new(Vec::new(allocer.clone())),
+                threads: IMutex::new(HashMap::new(allocer.clone())),
                 cr3_addr: addr_space.cr3_addr(),
                 addr_space_data: IMutex::new(AddrSpaceData {
                     addr_space,
@@ -208,19 +208,6 @@ impl Process {
         Tid::from(self.next_tid.fetch_add(1, Ordering::Relaxed))
     }
 
-    /// Inserts the thread into the thread list
-    /// 
-    /// The thread list is sorted by Tid
-    fn insert_thread(&self, thread: Arc<Thread>) -> KResult<()> {
-        let mut thread_list = self.threads.lock();
-
-        let insert_index = thread_list
-            .binary_search_by_key(&thread.tid, |thread| thread.tid)
-            .expect_err("duplicate tids detected");
-
-        thread_list.insert(insert_index, thread)
-    }
-
     /// Crates a new idle thread structure for the currently running thread
     /// 
     /// `stack` should be a virt range referencing the whole stack of the current thread
@@ -234,7 +221,7 @@ impl Process {
             0,
         )?;
 
-        self.insert_thread(thread.clone())?;
+        self.threads.lock().insert(thread.tid, thread.clone())?;
         // idle thread should be currently running
         self.num_threads_running.fetch_add(1, Ordering::AcqRel);
 
@@ -292,15 +279,22 @@ impl Process {
             kernel_rsp.as_usize(),
         )?;
 
-        self.insert_thread(thread.clone())?;
+        let mut threads = self.threads.lock();
+        threads.insert(thread.tid, thread.clone())?;
 
         // insert thread handle into scheduler after all other setup is done
         match start_mode {
             ThreadStartMode::Ready => {
                 thread.set_state(ThreadState::Ready);
-                thread_map().insert_ready_thread(thread);
+                let tid = thread.tid;
+                if let Err(error) = thread_map().insert_ready_thread(thread) {
+                    threads.remove(&tid);
+                    return Err(error);
+                }
             },
-            ThreadStartMode::Suspended => thread.set_state(ThreadState::Suspended),
+            ThreadStartMode::Suspended => {
+                thread.set_state(ThreadState::Suspended);
+            },
         }
 
         Ok(tid)
