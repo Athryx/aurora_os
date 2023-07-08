@@ -269,7 +269,7 @@ required capability permissions:
 {process}: cap_write
 
 syserr code:
-InvlArgs: the specified thread is not currently suspended suspended
+InvlOp: the specified thread is not currently suspended
 
 
 |=======================|

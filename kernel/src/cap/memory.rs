@@ -335,6 +335,45 @@ impl MemoryInner {
             Ok(())
         }
     }
+
+    /// Writes the data at the given offset in the memory capability
+    /// 
+    /// If the write is out of bounds of this memory capability, only the in bounds part is written
+    /// 
+    /// # Returns
+    /// 
+    /// the number of bytes written
+    /// 
+    /// # Safety
+    /// 
+    /// Must not write to any memory used by anything else, or a place that userspace doesn't expect
+    pub unsafe fn write(&mut self, mut data: &[u8], offset: usize) -> usize {
+        let Some(mut index) = self.allocation_index_of_offset(offset) else {
+            return 0;
+        };
+
+        let mut allocation_offset = offset - self.allocations[index].offset;
+        let mut total_write_size = 0;
+
+        loop {
+            let mut allocation = self.allocations[index].allocation;
+
+            let write_size = min(data.len(), allocation.size() - allocation_offset);
+            allocation.copy_from_mem_offset(&data[..write_size], allocation_offset);
+
+            total_write_size += write_size;
+            data = &data[write_size..];
+
+            allocation_offset = 0;
+            index += 1;
+
+            if data.len() == 0 || index >= self.allocations.len() {
+                break;
+            }
+        }
+
+        total_write_size
+    }
 }
 
 /// A capability that represents memory that can be mapped into a process

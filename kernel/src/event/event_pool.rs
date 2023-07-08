@@ -15,6 +15,7 @@ pub struct EventSection {
     tail: Option<EventRange>,
 }
 
+#[derive(Debug)]
 pub struct BoundedEventPool {
 
 }

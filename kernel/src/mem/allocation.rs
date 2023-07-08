@@ -53,14 +53,25 @@ impl Allocation {
         self.size
     }
 
-    // returns number of bytes copied
-    pub fn copy_from_mem(&mut self, other: &[u8]) -> usize {
-        let size = min(self.size(), other.len());
+    pub fn copy_from_mem_offset(&mut self, other: &[u8], offset: usize) -> usize {
+        if offset >= self.size() {
+            return 0;
+        }
+    
+        let size = min(self.size() - offset, other.len());
         unsafe {
-            let dst: &mut [u8] = core::slice::from_raw_parts_mut(self.as_mut_ptr(), size);
+            // safety: offset is checked to be less then size of this allocation
+            let allocation_ptr = self.as_mut_ptr::<u8>().add(offset);
+
+            let dst: &mut [u8] = core::slice::from_raw_parts_mut(allocation_ptr, size);
             let src: &[u8] = core::slice::from_raw_parts(other.as_ptr(), size);
             dst.copy_from_slice(src);
         }
         size
+    }
+
+    // returns number of bytes copied
+    pub fn copy_from_mem(&mut self, other: &[u8]) -> usize {
+        self.copy_from_mem_offset(other, 0)
     }
 }
