@@ -657,3 +657,9 @@ impl From<Allocation> for UPhysRange {
         Self::new(mem.addr().to_phys(), mem.size())
     }
 }
+
+impl<T> From<&[T]> for UVirtRange {
+    fn from(value: &[T]) -> Self {
+        Self::new(VirtAddr::new(value.as_ptr() as usize), value.len() * size_of::<T>())
+    }
+}

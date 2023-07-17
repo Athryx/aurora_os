@@ -12,7 +12,7 @@ use crate::int::IPI_PROCESS_EXIT;
 use crate::int::apic::{Ipi, IpiDest};
 use crate::sched::{Tid, Thread, ThreadState, PostSwitchAction, thread_map, switch_current_thread_to};
 use crate::alloc::{PaRef, HeapRef, root_alloc_page_ref, root_alloc_ref};
-use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability, CapabilityMap, CapType, CapId, Capability};
+use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability, CapabilityMap, CapType, CapId};
 use crate::prelude::*;
 use crate::sched::kernel_stack::KernelStack;
 use crate::sync::IMutex;

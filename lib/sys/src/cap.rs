@@ -21,15 +21,16 @@ pub enum CapType {
     BoundedEventPool = 4,
     UnboundedEventPool = 5,
     Channel = 6,
-    Key = 7,
-    Interrupt = 8,
-    Port = 9,
-    Spawner = 10,
-    Allocator = 11,
-    RootOom = 12,
-    MmioAllocator = 13,
-    IntAllocator = 14,
-    PortAllocator = 15,
+    MessageCapacity = 7,
+    Key = 8,
+    Interrupt = 9,
+    Port = 10,
+    Spawner = 11,
+    Allocator = 12,
+    RootOom = 13,
+    MmioAllocator = 14,
+    IntAllocator = 15,
+    PortAllocator = 16,
 }
 
 impl CapType {
@@ -41,15 +42,16 @@ impl CapType {
             4 => Self::BoundedEventPool,
             5 => Self::UnboundedEventPool,
             6 => Self::Channel,
-            7 => Self::Key,
-            8 => Self::Interrupt,
-            9 => Self::Port,
-            10 => Self::Spawner,
-            11 => Self::Allocator,
-            12 => Self::RootOom,
-            13 => Self::MmioAllocator,
-            14 => Self::IntAllocator,
-            15 => Self::PortAllocator,
+            7 => Self::MessageCapacity,
+            8 => Self::Key,
+            9 => Self::Interrupt,
+            10 => Self::Port,
+            11 => Self::Spawner,
+            12 => Self::Allocator,
+            13 => Self::RootOom,
+            14 => Self::MmioAllocator,
+            15 => Self::IntAllocator,
+            16 => Self::PortAllocator,
             _ => return None,
         })
     }
@@ -66,19 +68,17 @@ pub struct CapId(usize);
 impl CapId {
     pub fn try_from(n: usize) -> Option<Self> {
         // fail if invalid type of cap object
-        let bits = get_bits(n, 5..9);
-        if bits == 0 || bits > 14 {
-            None
-        } else {
-            Some(CapId(n))
-        }
+        let bits = get_bits(n, 5..10);
+        let _cap_type = CapType::from(bits)?;
+
+        Some(CapId(n))
     }
 
     /// Creates a valid CapId from the given `cap_type`, `flags`, `is_weak`, and `base_id`
     /// 
     /// `base_id` should be a unique integer in order for this id to be unique
     pub fn new(cap_type: CapType, flags: CapFlags, is_weak: bool, base_id: usize) -> Self {
-        CapId(flags.bits | ((is_weak as usize) << 4) | (cap_type.as_usize() << 5) | (base_id << 9))
+        CapId(flags.bits | ((is_weak as usize) << 4) | (cap_type.as_usize() << 5) | (base_id << 10))
     }
 
     /// Creates a null capid with the given flags
@@ -98,7 +98,7 @@ impl CapId {
 
     pub fn cap_type(&self) -> CapType {
         // panic safety: CapId will always have valid metadata, this is checked in the constructor
-        CapType::from(get_bits(self.0, 5..9)).unwrap()
+        CapType::from(get_bits(self.0, 5..10)).unwrap()
     }
 }
 

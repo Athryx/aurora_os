@@ -1,6 +1,7 @@
 use sys::CapType;
 
 use crate::cap::CapObject;
+use super::UserspaceBuffer;
 
 #[derive(Debug, Clone, Copy)]
 pub struct EventRange {
@@ -17,7 +18,7 @@ pub struct EventSection {
 
 #[derive(Debug)]
 pub struct BoundedEventPool {
-
+    buffer: UserspaceBuffer,
 }
 
 impl CapObject for BoundedEventPool {
