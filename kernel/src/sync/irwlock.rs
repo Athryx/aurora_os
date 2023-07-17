@@ -6,11 +6,11 @@ use crate::arch::x64::IntDisable;
 
 /// A RwLock that also disables interrupts when locked
 #[derive(Debug)]
-pub struct IRwLock<T: ?Sized>(RwLock<T>);
+pub struct IrwLock<T: ?Sized>(RwLock<T>);
 
-impl<T> IRwLock<T> {
+impl<T> IrwLock<T> {
     pub const fn new(user_data: T) -> Self {
-        IRwLock(RwLock::new(user_data))
+        IrwLock(RwLock::new(user_data))
     }
 
     pub fn into_inner(self) -> T {
@@ -38,14 +38,14 @@ impl<T> IRwLock<T> {
     }
 }
 
-impl<T: ?Sized + Default> Default for IRwLock<T> {
-    fn default() -> IRwLock<T> {
-        IRwLock::new(Default::default())
+impl<T: ?Sized + Default> Default for IrwLock<T> {
+    fn default() -> IrwLock<T> {
+        IrwLock::new(Default::default())
     }
 }
 
-unsafe impl<T: ?Sized + Send> Send for IRwLock<T> {}
-unsafe impl<T: ?Sized + Send> Sync for IRwLock<T> {}
+unsafe impl<T: ?Sized + Send> Send for IrwLock<T> {}
+unsafe impl<T: ?Sized + Send> Sync for IrwLock<T> {}
 
 #[derive(Debug)]
 pub struct IrwLockReadGuard<'a, T: ?Sized + 'a>(RwLockReadGuard<'a, T>, IntDisable);

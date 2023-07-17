@@ -414,7 +414,7 @@ impl Process {
             return Err(SysErr::InvlOp);
         }
 
-        let mut memory_inner = memory.object().inner();
+        let mut memory_inner = memory.object().inner_write();
 
         let size_pages = min(max_size_pages.unwrap_or(memory_inner.size_pages()), memory_inner.size_pages());
         if size_pages == 0 {
@@ -454,7 +454,7 @@ impl Process {
         assert!(memory.references_strong());
 
         let mut addr_space_data = self.addr_space_data.lock();
-        let mut memory_inner = memory.object().inner();
+        let mut memory_inner = memory.object().inner_write();
 
         let Some(mapping) = addr_space_data.mapped_memory_capabilities.remove(&memory.id) else {
             // memory was not yet mapped
@@ -490,7 +490,7 @@ impl Process {
         assert!(memory.references_strong());
 
         let mut addr_space_data = self.addr_space_data.lock();
-        let mut memory_inner = memory.object().inner();
+        let mut memory_inner = memory.object().inner_write();
 
         addr_space_data.update_memory_mapping_inner(memory.id, &mut memory_inner, max_size_pages)
     }
@@ -509,7 +509,7 @@ impl Process {
     /// acquires the `inner` lock on the memory capability
     pub fn resize_memory(&self, memory: StrongCapability<Memory>, new_page_size: usize, flags: MemoryResizeFlags) -> KResult<usize> {
         let mut addr_space_data = self.addr_space_data.lock();
-        let mut memory_inner = memory.object().inner();
+        let mut memory_inner = memory.object().inner_write();
 
         let old_page_size = memory_inner.size_pages();
 

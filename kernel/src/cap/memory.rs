@@ -3,7 +3,7 @@ use core::cmp::min;
 use crate::prelude::*;
 use crate::alloc::{PaRef, HeapRef};
 use crate::mem::{Allocation, PageLayout};
-use crate::sync::{IMutex, IMutexGuard};
+use crate::sync::{IrwLock, IrwLockReadGuard, IrwLockWriteGuard};
 use super::{CapObject, CapType};
 
 #[derive(Debug, Clone, Copy)]
@@ -107,6 +107,7 @@ pub struct MemoryInner {
     size: usize,
     page_allocator: PaRef,
     /// This is the number of locations the memory capability is currently mapped in
+    // TODO: maybe make this an atomic usize, so this can be incramented and decramented without needing write access in memory map and unmap
     pub map_ref_count: usize,
 }
 
@@ -118,10 +119,6 @@ impl MemoryInner {
 
     pub fn size_pages(&self) -> usize {
         self.size / PAGE_SIZE
-    }
-
-    pub fn get_allocation_mut(&mut self, index: usize) -> Option<Allocation> {
-        Some(self.allocations.get(index)?.allocation)
     }
 
     /// Finds the index into the allocations array that the given offset from the start of the memory capability would be contained in
@@ -347,7 +344,7 @@ impl MemoryInner {
     /// # Safety
     /// 
     /// Must not write to any memory used by anything else, or a place that userspace doesn't expect
-    pub unsafe fn write(&mut self, mut data: &[u8], offset: usize) -> usize {
+    pub unsafe fn write(&self, mut data: &[u8], offset: usize) -> usize {
         let Some(mut index) = self.allocation_index_of_offset(offset) else {
             return 0;
         };
@@ -359,7 +356,11 @@ impl MemoryInner {
             let mut allocation = self.allocations[index].allocation;
 
             let write_size = min(data.len(), allocation.size() - allocation_offset);
-            allocation.copy_from_mem_offset(&data[..write_size], allocation_offset);
+
+            // safety: caller must ensure that this memory capability only stores userspace data expecting to be written to
+            unsafe {
+                allocation.copy_from_mem_offset(&data[..write_size], allocation_offset);
+            }
 
             total_write_size += write_size;
             data = &data[write_size..];
@@ -374,12 +375,30 @@ impl MemoryInner {
 
         total_write_size
     }
+
+    /// Zeros this entire memory capability
+    /// 
+    /// # Safety
+    /// 
+    /// Must not write to any memory used by anything else, or a place that userspace doesn't expect
+    pub unsafe fn zero(&self) {
+        for allocation in self.allocations.iter() {
+            let mut raw_allocation = allocation.allocation;
+            let allocation_slice = raw_allocation.as_mut_slice_ptr();
+
+            unsafe {
+                // TODO: figure out if this might need to be volatile
+                // safety: caller must ensure that this memory capability only stores userspace data expecting to be written to
+                ptr::write_bytes(allocation_slice.as_mut_ptr(), 0, allocation_slice.len());
+            }
+        }
+    }
 }
 
 /// A capability that represents memory that can be mapped into a process
 #[derive(Debug)]
 pub struct Memory {
-    inner: IMutex<MemoryInner>,
+    inner: IrwLock<MemoryInner>,
 }
 
 impl Memory {
@@ -407,11 +426,15 @@ impl Memory {
             map_ref_count: 0,
         };
 
-        Ok(Memory { inner: IMutex::new(inner) })
+        Ok(Memory { inner: IrwLock::new(inner) })
     }
 
-    pub fn inner(&self) -> IMutexGuard<MemoryInner> {
-        self.inner.lock()
+    pub fn inner_read(&self) -> IrwLockReadGuard<MemoryInner> {
+        self.inner.read()
+    }
+
+    pub fn inner_write(&self) -> IrwLockWriteGuard<MemoryInner> {
+        self.inner.write()
     }
 }
 

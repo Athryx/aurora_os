@@ -48,7 +48,7 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<(u
         mem_cap_flags,
     );
 
-    let size = memory.inner().inner().size_pages();
+    let size = memory.inner().inner_read().size_pages();
 
     Ok((current_process.cap_map().insert_memory(Capability::Strong(memory))?.into(), size))
 }
@@ -72,7 +72,7 @@ pub fn memory_get_size(options: u32, memory_id: usize) -> KResult<usize> {
     
     let inner1 = memory.inner();
 
-    let out = Ok(inner1.inner().size_pages());
+    let out = Ok(inner1.inner_read().size_pages());
 
     out
 }

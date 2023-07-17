@@ -33,12 +33,12 @@ impl Allocation {
         self.ptr.as_mut_ptr()
     }
 
-    pub fn as_slice(&self) -> &[u8] {
-        unsafe { core::slice::from_raw_parts(self.as_ptr(), self.size) }
+    pub fn as_slice_ptr(&self) -> *const [u8] {
+        core::ptr::from_raw_parts(self.as_ptr(), self.size)
     }
 
-    pub fn as_mut_slice(&mut self) -> &mut [u8] {
-        unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr(), self.size) }
+    pub fn as_mut_slice_ptr(&mut self) -> *mut [u8] {
+        core::ptr::from_raw_parts_mut(self.as_mut_ptr(), self.size)
     }
 
     pub fn as_vrange(&self) -> UVirtRange {
@@ -53,7 +53,14 @@ impl Allocation {
         self.size
     }
 
-    pub fn copy_from_mem_offset(&mut self, other: &[u8], offset: usize) -> usize {
+    /// # Returns
+    /// 
+    /// returns number of bytes copied
+    /// 
+    /// # Safety
+    /// 
+    /// `other` must not overlap with memory that is being written to
+    pub unsafe fn copy_from_mem_offset(&mut self, other: *const [u8], offset: usize) -> usize {
         if offset >= self.size() {
             return 0;
         }
@@ -63,15 +70,22 @@ impl Allocation {
             // safety: offset is checked to be less then size of this allocation
             let allocation_ptr = self.as_mut_ptr::<u8>().add(offset);
 
-            let dst: &mut [u8] = core::slice::from_raw_parts_mut(allocation_ptr, size);
-            let src: &[u8] = core::slice::from_raw_parts(other.as_ptr(), size);
-            dst.copy_from_slice(src);
+            // safety: caller must ensure that this allocation does not overlap with source array
+            ptr::copy_nonoverlapping(other.as_ptr(), allocation_ptr, size);
         }
         size
     }
 
-    // returns number of bytes copied
-    pub fn copy_from_mem(&mut self, other: &[u8]) -> usize {
-        self.copy_from_mem_offset(other, 0)
+    /// # Returns
+    /// 
+    /// returns number of bytes copied
+    /// 
+    /// # Safety
+    /// 
+    /// `other` must not overlap with memory that is being written to
+    pub unsafe fn copy_from_mem(&mut self, other: *const [u8]) -> usize {
+        unsafe {
+            self.copy_from_mem_offset(other, 0)
+        }
     }
 }

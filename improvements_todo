@@ -35,6 +35,7 @@ use bytemuck in places where raw bytes are manipulated too much (ie libaurora st
 
 
 remove as much unsafe as possible
+put safety comments wherever unsafe is used
 document old code
 run auto formatter
 add tests

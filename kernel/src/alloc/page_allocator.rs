@@ -21,8 +21,9 @@ pub unsafe trait PageAllocator: Send + Sync {
     /// Reallocates the allocation to match the layout
     unsafe fn realloc(&self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
         let mut out = self.alloc(layout)?;
-        out.copy_from_mem(allocation.as_slice());
         unsafe {
+            // safety: allocations do not overlap because alloc will ensure they don't overlap
+            out.copy_from_mem(allocation.as_slice_ptr());
             self.dealloc(allocation);
         }
         Some(out)

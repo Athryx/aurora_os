@@ -71,7 +71,7 @@ struct MappedRegion {
     padding_end: u64,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
 struct StackInfo {
     process_data_address: usize,
@@ -190,15 +190,14 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
 
             let section_data = elf_data.segment_data(&phdr).unwrap();
 
-            let mut memory_inner = memory.inner();
-            let mut allocation = memory_inner.get_allocation_mut(0).unwrap();
+            let memory_inner = memory.inner_read();
 
-            let mem_slice = allocation.as_mut_slice();
-            mem_slice.fill(0);
+            unsafe {
+                memory_inner.zero();
 
-            let start_index = phdr.p_vaddr as usize - map_range.as_usize();
-            let end_index = start_index + section_data.len();
-            mem_slice[start_index..end_index].copy_from_slice(section_data);
+                let write_offset = phdr.p_vaddr as usize - map_range.as_usize();
+                memory_inner.write(section_data, write_offset);
+            }
         }
     }
 
@@ -220,10 +219,9 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
         PageMappingFlags::USER | PageMappingFlags::READ | PageMappingFlags::WRITE,
     ).expect("failed to map initrd memory");
 
-    initrd_memory.inner()
-        .get_allocation_mut(0)
-        .unwrap()
-        .copy_from_mem(initrd);
+    unsafe {
+        initrd_memory.inner_read().write(initrd, 0);
+    }
 
 
     // append init info to startup data
@@ -244,10 +242,9 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
 
 
     // write startup data to startup data meomry
-    startup_data_memory.inner()
-        .get_allocation_mut(0)
-        .unwrap()
-        .copy_from_mem(&startup_data);
+    unsafe {
+        startup_data_memory.inner_read().write(&startup_data, 0);
+    }
 
 
     // write pointers to stack
@@ -258,14 +255,10 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
         startup_data_size,
     };
 
-    let stack_info_address = stack_memory.inner()
-        .get_allocation_mut(0)
-        .unwrap()
-        .as_vrange()
-        .end_addr() - size_of::<StackInfo>();
-
     unsafe {
-        ptr::write(stack_info_address.as_mut_ptr(), stack_info);
+        let stack_memory_inner = stack_memory.inner_read();
+        let stack_memory_size = stack_memory_inner.size();
+        stack_memory.inner_read().write(bytes_of(&stack_info), stack_memory_size - size_of::<StackInfo>());
     }
 
 

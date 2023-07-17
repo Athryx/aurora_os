@@ -37,7 +37,7 @@ impl UserspaceBuffer {
         let cap_offset = self.offset + offset;
         let write_size = min(data.len(), self.buffer_size - offset);
 
-        let mut memory_lock = memory.inner();
+        let memory_lock = memory.inner_read();
 
         unsafe {
             Some(memory_lock.write(&data[..write_size], cap_offset))
