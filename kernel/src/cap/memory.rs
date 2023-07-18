@@ -344,7 +344,7 @@ impl MemoryInner {
     /// # Safety
     /// 
     /// Must not write to any memory used by anything else, or a place that userspace doesn't expect
-    pub unsafe fn write(&self, mut data: &[u8], offset: usize) -> usize {
+    pub unsafe fn write(&self, offset: usize, mut data: &[u8]) -> usize {
         let Some(mut index) = self.allocation_index_of_offset(offset) else {
             return 0;
         };
@@ -359,7 +359,7 @@ impl MemoryInner {
 
             // safety: caller must ensure that this memory capability only stores userspace data expecting to be written to
             unsafe {
-                allocation.copy_from_mem_offset(&data[..write_size], allocation_offset);
+                allocation.copy_from_mem_offset(allocation_offset, &data[..write_size]);
             }
 
             total_write_size += write_size;

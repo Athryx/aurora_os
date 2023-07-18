@@ -60,18 +60,18 @@ impl Allocation {
     /// # Safety
     /// 
     /// `other` must not overlap with memory that is being written to
-    pub unsafe fn copy_from_mem_offset(&mut self, other: *const [u8], offset: usize) -> usize {
+    pub unsafe fn copy_from_mem_offset(&mut self, offset: usize, data: *const [u8]) -> usize {
         if offset >= self.size() {
             return 0;
         }
     
-        let size = min(self.size() - offset, other.len());
+        let size = min(self.size() - offset, data.len());
         unsafe {
             // safety: offset is checked to be less then size of this allocation
             let allocation_ptr = self.as_mut_ptr::<u8>().add(offset);
 
             // safety: caller must ensure that this allocation does not overlap with source array
-            ptr::copy_nonoverlapping(other.as_ptr(), allocation_ptr, size);
+            ptr::copy_nonoverlapping(data.as_ptr(), allocation_ptr, size);
         }
         size
     }
@@ -85,7 +85,7 @@ impl Allocation {
     /// `other` must not overlap with memory that is being written to
     pub unsafe fn copy_from_mem(&mut self, other: *const [u8]) -> usize {
         unsafe {
-            self.copy_from_mem_offset(other, 0)
+            self.copy_from_mem_offset(0, other)
         }
     }
 }

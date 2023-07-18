@@ -27,7 +27,7 @@ impl UserspaceBuffer {
     /// # Safety
     /// 
     /// Must not overwrite things that userspace is not expecting to be overwritten
-    pub unsafe fn write(&self, data: &[u8], offset: usize) -> Option<usize> {
+    pub unsafe fn write(&self, offset: usize, data: &[u8]) -> Option<usize> {
         let memory = self.memory.upgrade()?;
 
         if offset >= self.buffer_size {
@@ -40,7 +40,7 @@ impl UserspaceBuffer {
         let memory_lock = memory.inner_read();
 
         unsafe {
-            Some(memory_lock.write(&data[..write_size], cap_offset))
+            Some(memory_lock.write(cap_offset,&data[..write_size]))
         }
     }
 }

@@ -196,7 +196,7 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
                 memory_inner.zero();
 
                 let write_offset = phdr.p_vaddr as usize - map_range.as_usize();
-                memory_inner.write(section_data, write_offset);
+                memory_inner.write(write_offset, section_data);
             }
         }
     }
@@ -220,7 +220,7 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
     ).expect("failed to map initrd memory");
 
     unsafe {
-        initrd_memory.inner_read().write(initrd, 0);
+        initrd_memory.inner_read().write(0, initrd);
     }
 
 
@@ -243,7 +243,7 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
 
     // write startup data to startup data meomry
     unsafe {
-        startup_data_memory.inner_read().write(&startup_data, 0);
+        startup_data_memory.inner_read().write(0, &startup_data);
     }
 
 
@@ -258,7 +258,7 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
     unsafe {
         let stack_memory_inner = stack_memory.inner_read();
         let stack_memory_size = stack_memory_inner.size();
-        stack_memory.inner_read().write(bytes_of(&stack_info), stack_memory_size - size_of::<StackInfo>());
+        stack_memory.inner_read().write(stack_memory_size - size_of::<StackInfo>(), bytes_of(&stack_info));
     }
 
 
