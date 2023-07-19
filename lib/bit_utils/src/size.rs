@@ -7,7 +7,7 @@ use crate::{PAGE_SIZE, page_aligned, align_up};
 pub struct Size(usize);
 
 impl Size {
-    pub fn from_bytes(bytes: usize) -> Self {
+    pub const fn from_bytes(bytes: usize) -> Self {
         Size(bytes)
     }
 
@@ -28,6 +28,10 @@ impl Size {
         } else {
             None
         }
+    }
+
+    pub const fn zero() -> Self {
+        Size(0)
     }
 
     pub const fn bytes(&self) -> usize {

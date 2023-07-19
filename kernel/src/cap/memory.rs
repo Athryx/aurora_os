@@ -1,4 +1,5 @@
 use core::cmp::min;
+use core::ops::{RangeBounds, Bound};
 
 use crate::prelude::*;
 use crate::alloc::{PaRef, HeapRef};
@@ -140,13 +141,13 @@ impl MemoryInner {
     pub fn iter_mapped_regions(
         &self,
         base_addr: VirtAddr,
-        mapping_offset_page: usize,
-        mapping_page_size: usize,
+        mapping_offset: Size,
+        mapping_size: Size,
     ) -> MappedRegionsIterator {
-        assert!(mapping_offset_page + mapping_offset_page <= self.size_pages());
+        assert!(mapping_offset.bytes() + mapping_size.bytes() <= self.size);
 
-        let start_offset = mapping_offset_page * PAGE_SIZE;
-        let end_offset = start_offset + mapping_page_size * PAGE_SIZE;
+        let start_offset = mapping_offset.bytes();
+        let end_offset = start_offset + mapping_size.bytes();
 
         let start_index = self.allocation_index_of_offset(start_offset).unwrap();
         let end_index = self.allocation_index_of_offset(end_offset - 1).unwrap();
@@ -333,6 +334,62 @@ impl MemoryInner {
         }
     }
 
+    /// Writes all the zones from the iterator into this memory capability starting at offset `offset`
+    /// 
+    /// # Safety
+    /// 
+    /// Must not write to any memory used by anything else, or a place that userspace doesn't expect
+    /// The src memory must point to valid memory and must not overlap with the copy destination
+    pub unsafe fn write_inner<T: Iterator<Item = UVirtRange>>(&self, mut offset: usize, zones: T) -> usize {
+        let Some(mut index) = self.allocation_index_of_offset(offset) else {
+            return 0;
+        };
+
+        let mut total_write_size = 0;
+
+        for zone in zones {
+            let mut src_offset = 0;
+            let mut dest_offset = offset - self.allocations[index].offset;
+
+            loop {
+                let mut allocation = self.allocations[index].allocation;
+    
+                let write_size = min(zone.size() - src_offset, allocation.size() - dest_offset);
+    
+                // when src offset is set, it is ensured to be less than the size of the zone
+                let src_ptr = unsafe { zone.addr().as_ptr::<u8>().add(src_offset) };
+                // safety: allocation_index_of_offset already checks offset is valid
+                let dest_ptr = unsafe { allocation.as_mut_ptr::<u8>().add(dest_offset) };
+
+                // safety: caller must ensure that this memory capability only stores userspace data expecting to be written to
+                unsafe {
+                    ptr::copy_nonoverlapping(src_ptr, dest_ptr, write_size);
+                }
+    
+                total_write_size += write_size;
+                offset += write_size;
+
+                if src_offset + write_size == zone.size() {
+                    // finished consuming src zone and maybe destination zone, move onto next src zone
+                    break;
+                } else {
+                    // finished consuming only destination zone
+                    index += 1;
+
+                    dest_offset = 0;
+                    src_offset += write_size;
+                }
+    
+                if index >= self.allocations.len() {
+                    // no more space left to write data
+                    return total_write_size;
+                }
+            }
+        }
+
+        total_write_size
+    }
+
     /// Writes the data at the given offset in the memory capability
     /// 
     /// If the write is out of bounds of this memory capability, only the in bounds part is written
@@ -344,36 +401,59 @@ impl MemoryInner {
     /// # Safety
     /// 
     /// Must not write to any memory used by anything else, or a place that userspace doesn't expect
-    pub unsafe fn write(&self, offset: usize, mut data: &[u8]) -> usize {
-        let Some(mut index) = self.allocation_index_of_offset(offset) else {
-            return 0;
+    pub unsafe fn write(&self, offset: usize, data: &[u8]) -> usize {
+        // safety: data points to valid data because it is a reference
+        unsafe {
+            self.write_inner(offset, core::iter::once(UVirtRange::new(
+                VirtAddr::new(data.as_ptr() as usize),
+                data.len(),
+            )))
+        }
+    }
+
+    /// Writes the bytes from at `src_range` offset into `src` from `src` to `self` starting at `dest_offset`
+    /// 
+    /// If the write is out of bounds of this memory capability, only the in bounds part is written
+    /// 
+    /// # Returns
+    /// 
+    /// the number of bytes written
+    /// 
+    /// # Safety
+    /// 
+    /// Must not write to any memory used by anything else, or a place that userspace doesn't expect
+    pub unsafe fn copy_from_memory(&self, dest_offset: usize, src: &MemoryInner, src_range: impl RangeBounds<usize>) -> usize {
+        // start byte inclusive
+        let src_start = match src_range.start_bound() {
+            Bound::Included(n) => *n,
+            Bound::Excluded(n) => n + 1,
+            Bound::Unbounded => 0,
         };
 
-        let mut allocation_offset = offset - self.allocations[index].offset;
-        let mut total_write_size = 0;
+        // end byte exclusive
+        let src_end = match src_range.end_bound() {
+            Bound::Included(n) => n + 1,
+            Bound::Excluded(n) => *n,
+            Bound::Unbounded => src.size,
+        };
 
-        loop {
-            let mut allocation = self.allocations[index].allocation;
-
-            let write_size = min(data.len(), allocation.size() - allocation_offset);
-
-            // safety: caller must ensure that this memory capability only stores userspace data expecting to be written to
-            unsafe {
-                allocation.copy_from_mem_offset(allocation_offset, &data[..write_size]);
-            }
-
-            total_write_size += write_size;
-            data = &data[write_size..];
-
-            allocation_offset = 0;
-            index += 1;
-
-            if data.len() == 0 || index >= self.allocations.len() {
-                break;
-            }
+        // no mapping is performed
+        if src_start >= src_end {
+            return 0;
         }
 
-        total_write_size
+        let src_size = src_end - src_start;
+
+        let region_iterator = src.iter_mapped_regions(
+            VirtAddr::new(0),
+            Size::from_bytes(src_start),
+            Size::from_bytes(src_size),
+        ).map(|(aligned_range, _)| aligned_range.as_unaligned());
+
+        // safety: the regions are valid for reading because they are from a valid memory capability
+        unsafe {
+            self.write_inner(dest_offset, region_iterator)
+        }
     }
 
     /// Zeros this entire memory capability

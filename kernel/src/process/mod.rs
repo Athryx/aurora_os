@@ -66,7 +66,11 @@ impl AddrSpaceData {
         if new_size > old_size {
             let new_base_addr = mapping.addr + old_size;
 
-            let mapping_iter = memory_inner.iter_mapped_regions(new_base_addr, 0, new_size - old_size);
+            let mapping_iter = memory_inner.iter_mapped_regions(
+                new_base_addr,
+                Size::zero(),
+                Size::from_pages(new_size - old_size),
+            );
 
             // must map new regions first before resizing old mapping
             let flags = mapping.flags | PageMappingFlags::USER;
@@ -90,7 +94,11 @@ impl AddrSpaceData {
         } else if new_size < old_size {
             let unmap_base_addr = mapping.addr + new_size;
 
-            let mapping_iter = memory_inner.iter_mapped_regions(unmap_base_addr, 0, old_size - new_size);
+            let mapping_iter = memory_inner.iter_mapped_regions(
+                unmap_base_addr,
+                Size::zero(),
+                Size::from_pages(old_size - new_size),
+            );
 
             // first resize the overlapping part
             self.addr_space.resize_mapping(mapping_iter.get_first_mapping_exluded_range())?;
@@ -428,7 +436,7 @@ impl Process {
         })?;
 
         let map_result = addr_space_data.addr_space.map_many(
-            memory_inner.iter_mapped_regions(addr, 0, size_pages),
+            memory_inner.iter_mapped_regions(addr, Size::zero(), Size::from_pages(size_pages)),
             flags | PageMappingFlags::USER,
         );
 
@@ -461,7 +469,11 @@ impl Process {
             return Err(SysErr::InvlOp);
         };
 
-        for (virt_range, _) in memory_inner.iter_mapped_regions(mapping.addr, 0, mapping.size_pages) {
+        for (virt_range, _) in memory_inner.iter_mapped_regions(
+            mapping.addr,
+            Size::zero(),
+            Size::from_pages(mapping.size_pages),
+        ) {
             // this should not fail because we ensure that memory was already mapped
             addr_space_data.addr_space.unmap_memory(virt_range)
                 .expect("failed to unmap memory that should have been mapped");
