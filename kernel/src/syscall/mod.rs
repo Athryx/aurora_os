@@ -5,6 +5,8 @@ use crate::arch::x64::{
 	rdmsr, wrmsr, EFER_MSR, EFER_SYSCALL_ENABLE, FMASK_MSR, LSTAR_MSR, STAR_MSR,
 };
 
+mod channel;
+use channel::*;
 mod debug;
 use debug::*;
 mod key;
@@ -235,6 +237,7 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		MEMORY_NEW => sysret_2!(syscall_2!(memory_new, vals), vals),
 		MEMORY_GET_SIZE => sysret_1!(syscall_1!(memory_get_size, vals), vals),
 		MEMORY_RESIZE => sysret_1!(syscall_3!(memory_resize, vals), vals),
+		CHANNEL_NEW => sysret_1!(syscall_1!(channel_new, vals), vals),
 		KEY_NEW => sysret_1!(syscall_1!(key_new, vals), vals),
 		KEY_ID => sysret_1!(syscall_1!(key_id, vals), vals),
 		SPAWNER_NEW => sysret_1!(syscall_2!(spawner_new, vals), vals),

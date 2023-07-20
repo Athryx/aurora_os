@@ -8,7 +8,7 @@ use crate::process::{Process, Spawner};
 use crate::alloc::CapAllocator;
 use crate::sync::IMutex;
 
-use super::{CapId, Capability, StrongCapability, CapFlags, CapObject, key::Key, memory::Memory};
+use super::{CapId, Capability, StrongCapability, CapFlags, CapObject, key::Key, memory::Memory, channel::Channel};
 
 type InnerCapMap<T> = IMutex<HashMap<CapId, Capability<T>>>;
 
@@ -19,6 +19,7 @@ pub struct CapabilityMap {
     process_map: InnerCapMap<Process>,
     memory_map: InnerCapMap<Memory>,
     key_map: InnerCapMap<Key>,
+    channel_map: InnerCapMap<Channel>,
     spawner_map: InnerCapMap<Spawner>,
     allocator_map: InnerCapMap<CapAllocator>,
 }
@@ -30,6 +31,7 @@ impl CapabilityMap {
             process_map: IMutex::new(HashMap::new(allocator.clone())),
             memory_map: IMutex::new(HashMap::new(allocator.clone())),
             key_map: IMutex::new(HashMap::new(allocator.clone())),
+            channel_map: IMutex::new(HashMap::new(allocator.clone())),
             spawner_map: IMutex::new(HashMap::new(allocator.clone())),
             allocator_map: IMutex::new(HashMap::new(allocator)),
         }
@@ -161,4 +163,5 @@ generate_cap_methods!(CapabilityMap, Process, process_map, process);
 generate_cap_methods!(CapabilityMap, Memory, memory_map, memory);
 generate_cap_methods!(CapabilityMap, Spawner, spawner_map, spawner);
 generate_cap_methods!(CapabilityMap, Key, key_map, key);
+generate_cap_methods!(CapabilityMap, Channel, channel_map, channel);
 generate_cap_methods!(CapabilityMap, CapAllocator, allocator_map, allocator);

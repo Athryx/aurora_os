@@ -17,6 +17,8 @@ pub const MEMORY_NEW: u32 = 14;
 pub const MEMORY_GET_SIZE: u32 = 15;
 pub const MEMORY_RESIZE: u32 = 16;
 
+pub const CHANNEL_NEW: u32 = 27;
+
 pub const KEY_NEW: u32 = 38;
 pub const KEY_ID: u32 = 39;
 
