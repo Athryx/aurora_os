@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "af7f0d43c976e8a5",
+        "id": "d313bf2d9e2cb70f",
         "type": "tabs",
         "children": [
           {
-            "id": "78b3406fd6345070",
+            "id": "b280dac4642fcc1f",
             "type": "leaf",
             "state": {
               "type": "markdown",
@@ -154,14 +154,14 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "78b3406fd6345070",
+  "active": "b280dac4642fcc1f",
   "lastOpenFiles": [
+    "Kernel Bytecode Interpreter.md",
+    "General Design.md",
+    "Kernel Events.md",
     "Kernel Thread Switching Design 2.md",
     "Kernel Thread Switching Design.md",
-    "Kernel Events.md",
     "Server APIs.md",
-    "General Design.md",
-    "Kernel Structures.md",
-    "Kernel Bytecode Interpreter.md"
+    "Kernel Structures.md"
   ]
 }

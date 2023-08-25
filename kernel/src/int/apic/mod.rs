@@ -39,10 +39,10 @@ fn io_apic() -> &'static IMutex<IoApic> {
 /// # Safety
 /// 
 /// Must pass a valid madt
-pub unsafe fn init_io_apic(madt: &Madt) -> KResult<Vec<u8>> {
+pub unsafe fn init_io_apic(madt: &WithTrailer<Madt>) -> KResult<Vec<u8>> {
     assert!(cpuid::has_apic(), "apic support required");
 
-    let mut local_apic_addr = PhysAddr::new(madt.lapic_addr as usize);
+    let mut local_apic_addr = PhysAddr::new(madt.data.lapic_addr as usize);
 
     let mut ap_apic_ids: Vec<u8> = Vec::new(root_alloc_ref());
     let startup_core_apic_id = cpuid::apic_id();
@@ -75,7 +75,7 @@ pub unsafe fn init_io_apic(madt: &Madt) -> KResult<Vec<u8>> {
 
     // indicates the sytem has an 8259 pic that we have to disable
 	// this is the only flags in flags, so I won't bother to make a bitflags for it
-    if madt.lapic_flags & 1 > 0 {
+    if madt.data.lapic_flags & 1 > 0 {
         pic::disable();
     }
 

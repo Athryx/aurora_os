@@ -14,8 +14,6 @@
 #![feature(ptr_metadata)]
 #![feature(let_chains)]
 #![feature(try_blocks)]
-#![feature(nonnull_slice_from_raw_parts)]
-// FIXME: get rid of this incomplete feature
 #![feature(return_position_impl_trait_in_trait)]
 #![allow(dead_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
@@ -104,10 +102,10 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     sched::init();
     sched::init_cpu_local(*INIT_STACK)?;
 
-    let acpi_madt = unsafe { boot_info.rsdt.get_table(SdtType::Madt).unwrap() };
+    let acpi_madt = boot_info.rsdt.get_table(SdtType::Madt).unwrap();
     let madt = acpi_madt.assume_madt().unwrap();
 
-    let ap_apic_ids = unsafe { apic::init_io_apic(madt)? };
+    let ap_apic_ids = unsafe { apic::init_io_apic(&madt)? };
     unsafe {
         apic::init_local_apic();
     }

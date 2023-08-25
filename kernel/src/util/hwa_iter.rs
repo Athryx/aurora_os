@@ -2,69 +2,91 @@
 
 use core::iter::FusedIterator;
 use core::marker::PhantomData;
-use core::mem::size_of_val;
+
+use bytemuck::AnyBitPattern;
+use bytemuck::checked::pod_read_unaligned;
 
 use crate::prelude::*;
 
-pub trait HwaTag {
-    type Elem<'a>: core::fmt::Debug
-    where
-        Self: 'a;
+/// A struct with trailing bytes
+#[derive(Debug, Clone, Copy)]
+pub struct WithTrailer<'a, T> {
+    pub data: T,
+    pub trailer: &'a [u8],
+}
 
-    // returns the size of the element, including the tag
+/// A trait that allows constructing a WithTrailer<T> from a raw pointer
+pub trait TrailerInit {
+    /// The size of the data type and its trailer
     fn size(&self) -> usize;
-    fn elem(&self) -> Self::Elem<'_>;
+}
 
-    // convinience function to get internal data
-    unsafe fn raw_data<T>(&self) -> &T {
-        assert!(size_of_val(self) + size_of::<T>() <= self.size());
-        let addr = (self as *const Self as *const u8 as usize) + size_of_val(self);
-        unsafe { (addr as *const T).as_ref().unwrap() }
+impl<T: TrailerInit> WithTrailer<'_, T> {
+    /// Creates a WithTrailer<T> from a raw pointer
+    /// 
+    /// # Safety
+    /// 
+    /// The pointer must be valid for writes of up to the size thet the TrailerInit::size reports
+    pub unsafe fn from_pointer<'a>(data_ptr: *const T) -> WithTrailer<'a, T> {
+        let header = unsafe { ptr::read_unaligned(data_ptr) };
+        let size = header.size();
+
+        let trailer_ptr = unsafe { data_ptr.add(1) as *const u8 };
+        let trailer = unsafe { core::slice::from_raw_parts(trailer_ptr, size - size_of::<T>()) };
+
+        WithTrailer {
+            data: header,
+            trailer,
+        }
+    }
+}
+
+/// A tag header for elements of certain lists, like mb2
+pub trait HwaTag: AnyBitPattern {
+    type Elem<'a>: core::fmt::Debug;
+
+    /// returns the size of the element, including the tag
+    fn size(&self) -> usize;
+
+    /// Retrieves the element for this tag
+    fn elem<'a>(this: WithTrailer<'a, Self>) -> Self::Elem<'a>;
+
+    /// Conveniance function to get data for this tag
+    fn data<T: AnyBitPattern>(this: &WithTrailer<Self>) -> T {
+        pod_read_unaligned(&this.trailer[..size_of::<T>()])
     }
 
-    // convinience function to get internal data and header
-    unsafe fn raw_hd<T>(&self) -> &T {
-        assert!(size_of::<T>() <= self.size());
-        unsafe { (self as *const _ as *const T).as_ref().unwrap() }
+    /// Conveniance function to get data for this tag with a trailer
+    fn data_trailer<'a, T: AnyBitPattern>(this: &WithTrailer<'a, Self>) -> WithTrailer<'a, T> {
+        let data = pod_read_unaligned(&this.trailer[..size_of::<T>()]);
+        WithTrailer {
+            data,
+            trailer: &this.trailer[size_of::<T>()..],
+        }
     }
 }
 
 /// Hardware array iterator
 /// Iterates over arrays of different sized elements with different type elements
 pub struct HwaIter<'a, T: HwaTag> {
-    // start address of elements
-    addr: usize,
-    // end address of elements
-    end: usize,
-    //  required alignment of elements
+    /// Data where tags and elements are stored
+    bytes: &'a [u8],
+    /// Required alignment of elements
     align: usize,
-    phantom: PhantomData<&'a T>,
+    marker: PhantomData<T>,
 }
 
-impl<T: HwaTag> HwaIter<'_, T> {
-    pub unsafe fn from(addr: usize, size: usize) -> Self {
-        unsafe { Self::from_align(addr, size, 0) }
+impl<'a, T: HwaTag> HwaIter<'a, T> {
+    pub fn from(bytes: &'a [u8]) -> Self {
+        Self::from_align(bytes, 0)
     }
 
-    pub unsafe fn from_align(addr: usize, size: usize, align: usize) -> Self {
-        HwaIter::<T> {
-            addr,
-            end: addr + size,
+    pub fn from_align(bytes: &'a [u8], align: usize) -> Self {
+        HwaIter {
+            bytes, 
             align,
-            phantom: PhantomData,
+            marker: PhantomData,
         }
-    }
-
-    pub unsafe fn from_struct<U>(data: &U, total_size: usize) -> Self {
-        unsafe { Self::from_struct_align(data, total_size, 0) }
-    }
-
-    // makes an iterator starteing after data, with size total_size - size_of::<T>()
-    pub unsafe fn from_struct_align<U>(data: &U, total_size: usize, align: usize) -> Self {
-        assert!(size_of::<U>() <= total_size);
-        let addr = (data as *const _ as usize) + size_of::<U>();
-        let size = total_size - size_of::<U>();
-        unsafe { Self::from_align(addr, size, align) }
     }
 }
 
@@ -72,21 +94,34 @@ impl<'a, T: HwaTag> Iterator for HwaIter<'a, T> {
     type Item = T::Elem<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        if self.addr >= self.end {
+        if self.bytes.len() < size_of::<T>() {
             None
         } else {
-            let tag = unsafe { (self.addr as *const T).as_ref().unwrap() };
+            let tag: T = pod_read_unaligned(&self.bytes[..size_of::<T>()]);
 
-            self.addr += tag.size();
-            if self.addr > self.end {
-                return None;
-            }
+            let size = tag.size();
+            let trailer = if size > size_of::<T>() {
+                &self.bytes[size_of::<T>()..size]
+            } else {
+                &[]
+            };
 
-            if self.align != 0 {
-                self.addr = align_up(self.addr, self.align);
-            }
+            let tag_trailer = WithTrailer {
+                data: tag,
+                trailer,
+            };
 
-            Some(tag.elem())
+            let advance_size = if self.align > 0 {
+                align_up(size, self.align)
+            } else {
+                size
+            };
+
+            self.bytes = &self.bytes[advance_size..];
+
+            let out = T::elem(tag_trailer);
+
+            Some(out)
         }
     }
 }
