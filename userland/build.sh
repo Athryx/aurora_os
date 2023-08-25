@@ -18,7 +18,7 @@ do
 	fi
 done
 
-[[ $1 = clean ]] && { rm -rf sysroot; exit 0; }
+[[ $1 = clean ]] && exit 0
 [[ $1 = sysroot ]] && exit 0
 [[ $1 = fmt ]] && exit 0
 

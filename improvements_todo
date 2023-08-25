@@ -40,3 +40,5 @@ document old code
 run auto formatter
 add tests
 logging
+
+maybe: figure out why disk image is so big?

@@ -5,9 +5,7 @@ NAME=$(dirname $0)
 OUT_BIN=$NAME.bin
 
 cd $(dirname $0)
-[[ $1 = clean ]] && { cargo clean; rm -rf .cargo; exit 0; }
-# in kernel, this only needs to be cargo sysroot
-[[ $1 = sysroot ]] && { $GEN_SYSROOT; exit 0; }
+[[ $1 = clean ]] && { cargo clean; exit 0; }
 [[ $1 = fmt ]] && { cargo fmt; exit 0; }
 [[ $1 = release ]] && RFLAG=--release
 
