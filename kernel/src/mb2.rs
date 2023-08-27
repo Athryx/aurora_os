@@ -29,9 +29,9 @@ struct Mb2Start {
     reserved: u32,
 }
 
-impl Mb2Start {
+impl TrailerInit for Mb2Start {
     fn size(&self) -> usize {
-        (self.size as usize) - size_of::<Self>()
+        self.size as usize
     }
 }
 
@@ -235,11 +235,11 @@ pub struct BootInfo<'a> {
 
 impl BootInfo<'_> {
     pub unsafe fn new(addr: usize) -> Self {
-        let start_ptr = addr as *const Mb2Start;
-        let start = unsafe { ptr::read_unaligned(start_ptr) };
+        let mb2_data = unsafe {
+            WithTrailer::from_pointer(addr as *const Mb2Start)
+        };
 
-        let mb2_data = unsafe { core::slice::from_raw_parts(start_ptr.add(1) as *const u8, start.size()) };
-        let iter: HwaIter<TagHeader> = HwaIter::from_align(mb2_data, 8);
+        let iter: HwaIter<TagHeader> = HwaIter::from_align(mb2_data.trailer, 8);
 
         let mut initrd_range = None;
         let mut initrd_slice = None;
