@@ -1,4 +1,3 @@
-use crate::alloc::HeapRef;
 use crate::container::{Arc, Weak};
 use crate::prelude::*;
 
@@ -150,6 +149,7 @@ impl<T: CapObject> Clone for Capability<T> {
 
 /// A capability that points to certain objects that are static and always exist in the kernel
 /// From the userspace perspective, these capabilites act like normal capabilties, except the object is not dropped ever
+#[derive(Clone, Copy)]
 pub struct StaticCapability<T: CapObject + 'static> {
     object: &'static T,
     pub id: CapId,
@@ -171,15 +171,3 @@ impl<T: CapObject + 'static> StaticCapability<T> {
         self.id.flags()
     }
 }
-
-impl<T: CapObject + 'static> Clone for StaticCapability<T> {
-    fn clone(&self) -> Self {
-        StaticCapability {
-            object: self.object,
-            id: self.id,
-        }
-    }
-}
-
-// Do this here because derive copy doesn't work for some reason
-impl<T: CapObject + 'static> Copy for StaticCapability<T> {}

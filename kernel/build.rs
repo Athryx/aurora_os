@@ -53,9 +53,9 @@ fn asm_file(file: &str, out_dir: &str) {
 
 #[cfg(target_arch = "x86_64")]
 fn asm(out_dir: &str) {
-    let incl_files = vec!["asm_def.asm"];
+    let incl_files = ["asm_def.asm"];
 
-    let files = vec![
+    let files = [
         "boot/boot.asm",
         "boot/long_init.asm",
         "boot/ap_boot.asm",

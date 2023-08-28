@@ -17,7 +17,7 @@ pub fn to_heap<T>(object: T, allocer: &mut HeapRef) -> KResult<*mut T> {
     Ok(MemOwner::new(object, allocer)?.ptr_mut())
 }
 
-pub fn iter_unaligned_pod_data<'a, T: AnyBitPattern>(data: &'a [u8]) -> impl Iterator<Item = T> + 'a {
+pub fn iter_unaligned_pod_data<T: AnyBitPattern>(data: &[u8]) -> impl Iterator<Item = T> + '_ {
     data.chunks_exact(size_of::<T>())
         .map(|chunk| pod_read_unaligned(chunk))
 }

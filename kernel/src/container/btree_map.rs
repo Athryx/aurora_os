@@ -244,7 +244,7 @@ impl<K: Ord, V> BTreeMap<K, V> {
         todo!();
     }
 
-    pub fn remove(&mut self, key: &K) -> Option<V> {
+    pub fn remove(&mut self, _key: &K) -> Option<V> {
         todo!();
     }
 }

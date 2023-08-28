@@ -1,7 +1,3 @@
-use core::mem::transmute;
-use core::slice;
-
-use crate::mem::phys_to_virt;
 use crate::prelude::*;
 
 pub mod hpet;

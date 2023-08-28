@@ -2,7 +2,7 @@ use core::cell::Cell;
 use core::cmp::max;
 use core::ptr::NonNull;
 
-use super::{HeapAllocator, PaRef, PageAllocator};
+use super::{HeapAllocator, PaRef};
 use crate::container::{LinkedList, ListNode, ListNodeData, CursorMut};
 use crate::mem::{Allocation, Layout, MemOwner, PageLayout};
 use crate::prelude::*;

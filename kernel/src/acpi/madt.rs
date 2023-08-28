@@ -55,7 +55,7 @@ impl HwaTag for MadtTag {
         self.size as usize
     }
 
-    fn elem<'a>(this: WithTrailer<'a, Self>) -> Self::Elem<'a> {
+    fn elem(this: WithTrailer<'_, Self>) -> Self::Elem<'_> {
         match this.data.typ {
             0 => MadtElem::ProcLocalApic(Self::data(&this)),
             1 => MadtElem::IoApic(Self::data(&this)),

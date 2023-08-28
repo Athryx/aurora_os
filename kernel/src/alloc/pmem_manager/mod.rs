@@ -14,7 +14,7 @@ use super::fixed_page_allocator::FixedPageAllocator;
 use super::linked_list_allocator::LinkedListAllocator;
 use super::{HeapRef, PaRef, PageAllocator};
 use crate::mb2::{MemoryMap, MemoryRegionType};
-use crate::mem::{Allocation, PageLayout, allocation};
+use crate::mem::{Allocation, PageLayout};
 use crate::prelude::*;
 
 /// Iterates over all the sections of size aligned pages in an AVirtRange

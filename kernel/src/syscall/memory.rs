@@ -1,14 +1,13 @@
-use bitflags::bitflags;
 use sys::{MemoryResizeFlags, MemoryMapFlags, MemoryUpdateMappingFlags};
 
 use crate::alloc::{PaRef, HeapRef};
 use crate::cap::{StrongCapability, Capability};
 use crate::cap::{CapFlags, CapId, memory::Memory};
 use crate::process::PageMappingFlags;
-use crate::{prelude::*, process};
+use crate::prelude::*;
 use crate::arch::x64::IntDisable;
 use crate::container::Arc;
-use super::{options_weak_autodestroy, is_option_set};
+use super::options_weak_autodestroy;
 
 /// Allocate a memory capability at least `pages` big
 /// 

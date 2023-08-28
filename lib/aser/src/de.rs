@@ -265,7 +265,7 @@ impl<'a, 'de> VariantAccess<'de> for EnumDeserializer<'a, 'de> {
 
     fn struct_variant<V>(
         self,
-        fields: &'static [&'static str],
+        _fields: &'static [&'static str],
         visitor: V,
     ) -> Result<V::Value, Self::Error>
     where

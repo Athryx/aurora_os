@@ -4,6 +4,7 @@ extern "C" {
     fn main() -> !;
 }
 
+// This is the function marked as the entrypoint by the linker
 #[naked]
 #[no_mangle]
 pub extern "C" fn _aurora_startup() {
@@ -45,4 +46,11 @@ pub extern "C" fn _rust_startup(
         // it is used only to resolve actual rust main method, it does not perform any other startup actions
         main()
     }
+}
+
+#[lang = "start"]
+fn lang_start<T: 'static>(main: fn() -> T, _argc: isize, _argv: *const *const u8, _sigpipe: u8) -> isize {
+    main();
+
+    loop { core::hint::spin_loop(); }
 }

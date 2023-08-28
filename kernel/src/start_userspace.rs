@@ -1,11 +1,11 @@
 use core::mem::size_of;
 
 use bytemuck::{Pod, Zeroable, from_bytes, cast_slice, bytes_of};
-use sys::{CapFlags, CapId, InitInfo, ProcessInitData, ProcessMemoryEntry};
+use sys::{CapFlags, InitInfo, ProcessInitData, ProcessMemoryEntry};
 use elf::{ElfBytes, endian::NativeEndian, abi::{PT_LOAD, PF_R, PF_W, PF_X}};
 use aser::to_bytes_count_cap;
 
-use crate::{prelude::*, alloc::{root_alloc, HeapRef, PaRef, root_alloc_page_ref, root_alloc_ref}, cap::{Capability, StrongCapability, memory::Memory}, process::{Spawner, PageMappingFlags, ThreadStartMode}};
+use crate::{prelude::*, alloc::{root_alloc, HeapRef, root_alloc_page_ref, root_alloc_ref}, cap::{Capability, StrongCapability, memory::Memory}, process::{Spawner, PageMappingFlags, ThreadStartMode}};
 use crate::process::Process;
 use crate::container::Arc;
 

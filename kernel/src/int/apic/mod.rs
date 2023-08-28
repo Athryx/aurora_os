@@ -3,7 +3,7 @@ use core::time::Duration;
 
 use spin::Once;
 
-use crate::alloc::{PaRef};
+use crate::alloc::PaRef;
 use crate::arch::x64::{cpuid, io_wait};
 use crate::mem::PageLayout;
 use crate::{config, consts};

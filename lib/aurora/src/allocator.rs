@@ -107,9 +107,11 @@ struct HeapZone {
 impl HeapZone {
     // size is aligned up to page size
     unsafe fn new(size: usize) -> Option<MemOwner<Self>> {
+        assert!(size >= size_of::<Self>(), "requested heapzone size is not big enough");
+
         let map_result = addr_space()
             .map_memory(MapMemoryArgs {
-                size: Some(Size::from_bytes(HEAP_ZONE_SIZE)),
+                size: Some(Size::from_bytes(size)),
                 ..Default::default()
             }).ok()?;
 
@@ -134,10 +136,6 @@ impl HeapZone {
 
     fn free_space(&self) -> usize {
         self.free_space.get()
-    }
-
-    fn empty(&self) -> bool {
-        self.free_space() == 0
     }
 
     fn contains(&self, addr: usize, size: usize) -> bool {

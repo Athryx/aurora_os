@@ -49,7 +49,7 @@ pub trait HwaTag: AnyBitPattern {
     fn size(&self) -> usize;
 
     /// Retrieves the element for this tag
-    fn elem<'a>(this: WithTrailer<'a, Self>) -> Self::Elem<'a>;
+    fn elem(this: WithTrailer<'_, Self>) -> Self::Elem<'_>;
 
     /// Conveniance function to get data for this tag
     fn data<T: AnyBitPattern>(this: &WithTrailer<Self>) -> T {

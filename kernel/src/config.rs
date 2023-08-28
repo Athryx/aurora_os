@@ -1,4 +1,3 @@
-use core::char::MAX;
 use core::time::Duration;
 use core::sync::atomic::{AtomicUsize, Ordering};
 

@@ -1,7 +1,7 @@
 use core::arch::asm;
 use core::cmp::min;
 
-use bit_utils::{PAGE_SIZE, Size};
+use bit_utils::Size;
 use serde::{Serialize, Deserialize};
 
 use crate::{syscall_nums::*, CapId, CapType, CapFlags, SysErr, KResult, Tid, MemoryResizeFlags, MemoryMappingFlags, MemoryMapFlags, MemoryUpdateMappingFlags};

@@ -7,8 +7,7 @@ extern crate aurora;
 
 pub mod prelude;
 
-mod rt;
-mod panicking;
+mod panic_impl;
 mod startup;
 
 pub use core::*;

@@ -1,6 +1,7 @@
 use core::alloc::Layout;
 use core::cmp::{min, max};
 use core::marker::PhantomData;
+use core::mem::size_of_val;
 use core::slice;
 
 use super::{Allocation, PhysAddr, VirtAddr};
@@ -660,6 +661,6 @@ impl From<Allocation> for UPhysRange {
 
 impl<T> From<&[T]> for UVirtRange {
     fn from(value: &[T]) -> Self {
-        Self::new(VirtAddr::new(value.as_ptr() as usize), value.len() * size_of::<T>())
+        Self::new(VirtAddr::new(value.as_ptr() as usize), size_of_val(value))
     }
 }

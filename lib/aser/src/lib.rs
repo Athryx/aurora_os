@@ -6,7 +6,7 @@
 #[cfg(feature = "alloc")]
 extern crate alloc;
 
-use core::fmt::{Display, self};
+use core::fmt::Display;
 #[cfg(feature = "alloc")]
 use alloc::string::{String, ToString};
 
@@ -91,14 +91,14 @@ impl serde::de::Error for AserError {
 
 #[cfg(not(feature = "alloc"))]
 impl serde::ser::Error for AserError {
-    fn custom<T: Display>(msg: T) -> Self {
+    fn custom<T: Display>(_msg: T) -> Self {
         Self::SerializeMessage
     }
 }
 
 #[cfg(not(feature = "alloc"))]
 impl serde::de::Error for AserError {
-    fn custom<T: Display>(msg: T) -> Self {
+    fn custom<T: Display>(_msg: T) -> Self {
         Self::DeserializeMessage
     }
 }

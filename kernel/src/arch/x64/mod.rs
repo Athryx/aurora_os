@@ -1,6 +1,5 @@
 use core::arch::asm;
 use core::time::Duration;
-use core::sync::atomic::AtomicUsize;
 
 use crate::prelude::*;
 

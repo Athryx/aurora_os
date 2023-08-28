@@ -99,10 +99,10 @@ extern "C" fn post_switch_handler(old_rsp: usize) {
     let mut post_switch_data = cpu_local_data().post_switch_data.lock();
     let PostSwitchData {
         old_thread,
-        old_process,
         post_switch_action,
         send_eoi,
-    } = core::mem::replace(&mut *post_switch_data, None)
+        ..
+    } = (*post_switch_data).take()
         .expect("post switch data was none after switching threads");
 
     old_thread.rsp.store(old_rsp, Ordering::Release);

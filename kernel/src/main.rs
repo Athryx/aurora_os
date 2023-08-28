@@ -47,12 +47,11 @@ mod start_userspace;
 use core::panic::PanicInfo;
 
 use acpi::SdtType;
-use alloc::{root_alloc_page_ref, root_alloc_ref};
 use arch::x64::*;
 use consts::INIT_STACK;
 use int::apic;
 use mb2::BootInfo;
-use process::{VirtAddrSpace, get_kernel_process};
+use process::get_kernel_process;
 use gs_data::Prid;
 use prelude::*;
 use sched::kernel_stack::KernelStack;

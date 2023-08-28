@@ -58,7 +58,7 @@ impl HwaTag for TagHeader {
         self.size as usize
     }
 
-    fn elem<'a>(this: WithTrailer<'a, Self>) -> Self::Elem<'a> {
+    fn elem(this: WithTrailer<'_, Self>) -> Self::Elem<'_> {
         match this.data.typ {
             END => Mb2Elem::End,
             MODULE => Mb2Elem::Module(Self::data_trailer(&this)),

@@ -34,8 +34,8 @@ impl ThreadState {
     }
 
     // Converts the thread state to a thread status, preserves the generation number of old status
-    pub fn to_status(&self, old_status: usize) -> usize {
-        (old_status & !THREAD_STATE_MASK) | *self as usize
+    pub fn to_status(self, old_status: usize) -> usize {
+        (old_status & !THREAD_STATE_MASK) | self as usize
     }
 }
 
