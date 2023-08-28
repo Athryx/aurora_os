@@ -31,7 +31,6 @@ use Size type from bit_utils in more places in kernel
 
 
 use strum for enum convert from int
-use bytemuck in places where raw bytes are manipulated too much (ie libaurora startup data)
 
 
 remove as much unsafe as possible

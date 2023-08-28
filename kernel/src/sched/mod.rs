@@ -5,7 +5,7 @@ use spin::Once;
 pub use thread::{ThreadState, Thread, ThreadRef, Tid};
 use thread_map::ThreadMap;
 use crate::alloc::root_alloc_ref;
-use crate::arch::x64::{IntDisable, set_cr3};
+use crate::arch::x64::IntDisable;
 use crate::config::SCHED_TIME;
 use crate::prelude::*;
 use crate::sync::IMutex;
@@ -105,7 +105,6 @@ extern "C" fn post_switch_handler(old_rsp: usize) {
     } = core::mem::replace(&mut *post_switch_data, None)
         .expect("post switch data was none after switching threads");
 
-    let _ = old_process.num_threads_running.fetch_sub(1, Ordering::AcqRel) - 1;
     old_thread.rsp.store(old_rsp, Ordering::Release);
 
     match post_switch_action {
@@ -142,24 +141,8 @@ pub enum ThreadSwitchToError {
 pub fn switch_current_thread_to(state: ThreadState, _int_disable: IntDisable, post_switch_hook: PostSwitchAction, send_eoi: bool) -> Result<(), ThreadSwitchToError> {
     assert!(!matches!(state, ThreadState::Running), "cannot switch current thread to running state");
 
-    let (new_thread, new_process) = loop {
-        let next_thread = thread_map().get_ready_thread()
-            .ok_or(ThreadSwitchToError::NoAvailableThreads)?;
-
-        let next_process = match next_thread.process.upgrade() {
-            Some(process) => process,
-            // process is dead, drop thread and look at next thread in thread map
-            None => continue,
-        };
-
-        if !next_process.is_alive.load(Ordering::Acquire) {
-            continue;
-        }
-
-        next_process.num_threads_running.fetch_add(1, Ordering::AcqRel);
-
-        break (next_thread, next_process);
-    };
+    let (new_thread, new_process) = thread_map().get_next_thread_and_process()
+        .ok_or(ThreadSwitchToError::NoAvailableThreads)?;
 
     let mut global_sched_state = cpu_local_data().sched_state();
 
@@ -171,6 +154,10 @@ pub fn switch_current_thread_to(state: ThreadState, _int_disable: IntDisable, po
     old_thread.set_state(state);
     new_thread.set_state(ThreadState::Running);
 
+    // update thread running count
+    old_process.num_threads_running.fetch_sub(1, Ordering::AcqRel);
+    new_process.num_threads_running.fetch_add(1, Ordering::AcqRel);
+
     // get the new rsp and address space we have to switch to
     let new_rsp = new_thread.rsp.load(Ordering::Acquire);
     let new_addr_space = new_process.get_cr3();
@@ -180,7 +167,7 @@ pub fn switch_current_thread_to(state: ThreadState, _int_disable: IntDisable, po
     // set interrupt rsp (rsp0 in tss is used when cpl of interrupts changes)
     cpu_local_data().tss.lock().rsp0 = new_thread.syscall_rsp() as u64;
 
-    // change current thread and process
+    // change current thread and process in the scheduler state
     cpu_local_data().current_process_addr.store(Arc::as_ptr(&new_process) as usize, Ordering::Release);
     global_sched_state.current_thread = new_thread;
     global_sched_state.current_process = new_process;
@@ -195,6 +182,7 @@ pub fn switch_current_thread_to(state: ThreadState, _int_disable: IntDisable, po
         send_eoi,
     });
 
+    // update last switch time
     cpu_local_data().last_thread_switch_nsec.store(cpu_local_data().local_apic().nsec(), Ordering::Release);
 
     // at this point we are holding no resources that need to be dropped except for the int_disable, so it is good to switch
