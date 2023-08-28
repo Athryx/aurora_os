@@ -4,6 +4,5 @@ disk.img
 boot/initrd
 initrd/initrd
 *target/
-*.cargo/
 *.vim/
 userland/sysroot

@@ -268,7 +268,7 @@ impl Process {
 
         let mut push_index = 0;
         let mut push = |val: usize| {
-            stack_slice[stack_slice.len() - 1 -push_index] = val;
+            stack_slice[stack_slice.len() - 1 - push_index] = val;
             push_index += 1;
         };
 
