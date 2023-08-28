@@ -1,7 +1,7 @@
 use core::mem::size_of;
 
 use bytemuck::{Pod, Zeroable, from_bytes, cast_slice, bytes_of};
-use sys::{CapFlags, CapId, InitInfo};
+use sys::{CapFlags, CapId, InitInfo, ProcessInitData, ProcessMemoryEntry};
 use elf::{ElfBytes, endian::NativeEndian, abi::{PT_LOAD, PF_R, PF_W, PF_X}};
 use aser::to_bytes_count_cap;
 
@@ -63,16 +63,6 @@ fn find_early_init_data(initrd: &[u8]) -> &[u8] {
 
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
-struct MappedRegion {
-    memory_id: u64,
-    address: u64,
-    size: u64,
-    padding_start: u64,
-    padding_end: u64,
-}
-
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-#[repr(C)]
 struct StackInfo {
     process_data_address: usize,
     process_data_size: usize,
@@ -111,12 +101,15 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
     let allocator_id = process.cap_map().insert_allocator(allocator_capability)?;
 
     let mut startup_data = Vec::new(root_alloc_ref());
-    startup_data.extend_from_slice(&usize::from(process_id).to_le_bytes())?;
-    startup_data.extend_from_slice(&usize::from(allocator_id).to_le_bytes())?;
-    startup_data.extend_from_slice(&usize::from(spawner_id).to_le_bytes())?;
 
-    // seed for aslr, we don't have rng at this point so it can't be random
-    startup_data.extend_from_slice(&EARLY_INIT_ASLR_SEED)?;
+    let process_init_data = ProcessInitData {
+        process_cap_id: process_id.into(),
+        allocator_cap_id: allocator_id.into(),
+        spawner_cap_id: spawner_id.into(),
+        // seed for aslr, we don't have rng at this point so it can't be random
+        aslr_seed: EARLY_INIT_ASLR_SEED,
+    };
+    startup_data.extend_from_slice(bytes_of(&process_init_data))?;
 
 
     // maps memomry in the userspace process and adds it to the mapped regions list
@@ -147,10 +140,10 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
             flags,
         )?;
 
-        let region = MappedRegion {
-            address: address as u64,
-            size: size as u64,
-            memory_id: usize::from(memory_id) as u64,
+        let region = ProcessMemoryEntry {
+            memory_cap_id: memory_id.into(),
+            map_address: address,
+            map_size: size,
             padding_start: 0,
             padding_end: 0,
         };

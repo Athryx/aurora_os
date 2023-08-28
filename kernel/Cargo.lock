@@ -293,6 +293,7 @@ dependencies = [
  "aser",
  "bit_utils",
  "bitflags",
+ "bytemuck",
  "lazy_static",
  "serde",
 ]

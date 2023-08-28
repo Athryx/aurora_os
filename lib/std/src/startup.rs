@@ -21,16 +21,20 @@ pub extern "C" fn _aurora_startup() {
 
 #[no_mangle]
 pub extern "C" fn _rust_startup(
-    process_data: *mut usize,
+    process_data: *mut u8,
     process_data_size: usize,
     startup_data: *mut u8,
     startup_data_size: usize,
 ) -> ! {
     let process_data = unsafe {
-        slice::from_raw_parts(process_data, process_data_size / core::mem::size_of::<usize>())
+        slice::from_raw_parts(process_data, process_data_size)
     };
 
-    aurora::init_allocation(process_data).expect("failed to initialize aurora lib allocaror");
+    let (process_init_data, memory_entries) = aurora::process_data_from_slice(process_data)
+        .expect("invalid process data array passed into program");
+
+    aurora::init_allocation(process_init_data, memory_entries)
+        .expect("failed to initialize aurora lib allocaror");
 
     let startup_data = unsafe {
         slice::from_raw_parts(startup_data, startup_data_size)

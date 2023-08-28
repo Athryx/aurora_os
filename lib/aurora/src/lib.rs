@@ -2,7 +2,6 @@
 
 #![feature(try_blocks)]
 #![feature(let_chains)]
-#![feature(nonnull_slice_from_raw_parts)]
 #![feature(slice_ptr_get)]
 #![feature(slice_take)]
 
@@ -10,6 +9,7 @@ extern crate alloc;
 
 use bit_utils::Size;
 use sys::{CapId, Process, Allocator, Spawner, Memory};
+pub use sys::{ProcessInitData, ProcessMemoryEntry, process_data_from_slice};
 use thiserror_no_std::Error;
 
 use addr_space_manager::{AddrSpaceManager, AddrSpaceError, RegionPadding, MappedRegion};
@@ -37,85 +37,63 @@ pub fn addr_space() -> MutexGuard<'static, AddrSpaceManager> {
 
 #[derive(Debug, Error)]
 pub enum InitError {
-    #[error("Unexpected end of process data")]
-    ProcessDataEnd,
     #[error("Invalid capability id in the process data")]
     InvalidCapId,
     #[error("Error initilizing address space: {0}")]
     AdrSpaceError(#[from] AddrSpaceError),
 }
 
-/// Performs all the initilization required for memory mapping and allocation to work
-/// 
-/// Format of process data is as follows:
-/// word 0: process cap id
-/// word 1: allocator cap id
-/// word 2: spawner cap id
-/// word 3, 4, 5, 6: aslr seed
-/// 
-/// The next several words are repeated for every memory region
-/// word n: memory cap id
-/// word n + 1: memory map address
-/// word n + 2: memory map size (bytes)
-/// word n + 3: padding start size (bytes)
-/// word n + 4: padding start size (bytes)
-pub fn init_allocation(mut process_data: &[usize]) -> Result<(), InitError> {
-    let mut take = || {
-        process_data.take_first().copied().ok_or(InitError::ProcessDataEnd)
-    };
+impl TryFrom<ProcessInitData> for Context {
+    type Error = InitError;
 
-    // Initialize context from first 3 words of process data
-    let process_id = CapId::try_from(take()?).ok_or(InitError::InvalidCapId)?;
-    let allocator_id = CapId::try_from(take()?).ok_or(InitError::InvalidCapId)?;
-    let spawner_id = CapId::try_from(take()?).ok_or(InitError::InvalidCapId)?;
+    fn try_from(value: ProcessInitData) -> Result<Self, Self::Error> {
+        let process_id = CapId::try_from(value.process_cap_id).ok_or(InitError::InvalidCapId)?;
+        let allocator_id = CapId::try_from(value.allocator_cap_id).ok_or(InitError::InvalidCapId)?;
+        let spawner_id = CapId::try_from(value.spawner_cap_id).ok_or(InitError::InvalidCapId)?;
 
-    let process = Process::try_from(process_id).ok_or(InitError::InvalidCapId)?;
-    let allocator = Allocator::try_from(allocator_id).ok_or(InitError::InvalidCapId)?;
-    let spawner = Spawner::try_from(spawner_id).ok_or(InitError::InvalidCapId)?;
+        let process = Process::try_from(process_id).ok_or(InitError::InvalidCapId)?;
+        let allocator = Allocator::try_from(allocator_id).ok_or(InitError::InvalidCapId)?;
+        let spawner = Spawner::try_from(spawner_id).ok_or(InitError::InvalidCapId)?;
 
-    let context = Context {
-        process,
-        allocator,
-        spawner,
-    };
+        Ok(Context {
+            process,
+            allocator,
+            spawner,
+        })
+    }
+}
 
-    THIS_CONTEXT.call_once(|| context);
+impl TryFrom<ProcessMemoryEntry> for MappedRegion {
+    type Error = InitError;
 
-
-    // initialize address space
-    let mut aslr_seed = [0; 32];
-    aslr_seed[0..8].copy_from_slice(&take()?.to_le_bytes());
-    aslr_seed[8..16].copy_from_slice(&take()?.to_le_bytes());
-    aslr_seed[16..24].copy_from_slice(&take()?.to_le_bytes());
-    aslr_seed[24..32].copy_from_slice(&take()?.to_le_bytes());
-
-    let mut addr_space = AddrSpaceManager::new(aslr_seed)?;
-
-    while process_data.len() != 0 {
-        // redefine take to avoid ownership issues
-        let mut take = || {
-            process_data.take_first().copied().ok_or(InitError::ProcessDataEnd)
-        };
-
-        let memory_id = CapId::try_from(take()?).ok_or(InitError::InvalidCapId)?;
+    fn try_from(value: ProcessMemoryEntry) -> Result<Self, Self::Error> {
+        let memory_id = CapId::try_from(value.memory_cap_id).ok_or(InitError::InvalidCapId)?;
         let memory = Memory::try_from(memory_id).ok_or(InitError::InvalidCapId)?;
 
-        let map_address = take()?;
-        let map_size = Size::from_bytes(take()?);
-
         let padding = RegionPadding {
-            start: Size::from_bytes(take()?),
-            end: Size::from_bytes(take()?),
+            start: Size::from_bytes(value.padding_start),
+            end: Size::from_bytes(value.padding_end),
         };
 
-        let region = MappedRegion {
+        Ok(MappedRegion {
             memory_cap: Some(memory),
-            address: map_address,
-            size: map_size,
+            address: value.map_address,
+            size: Size::from_bytes(value.map_size),
             padding,
-        };
+        })
+    }
+}
 
-        // TODO: add more checks to make sure this doesn't overlap
+/// Performs all the initilization required for memory mapping and allocation to work
+pub fn init_allocation(init_data: ProcessInitData, memory_entries: &[ProcessMemoryEntry]) -> Result<(), InitError> {
+    let context = init_data.try_into()?;
+    THIS_CONTEXT.call_once(|| context);
+
+    let mut addr_space = AddrSpaceManager::new(init_data.aslr_seed)?;
+    for memory_entry in memory_entries {
+        let region = (*memory_entry).try_into()?;
+
+        // TODO: add more checks to make sure regions don't overlap
         addr_space.insert_region(region)?;
     }
 
