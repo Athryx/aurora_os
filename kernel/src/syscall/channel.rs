@@ -1,4 +1,4 @@
-use sys::{CapFlags, CapId, ChannelSyncFlags};
+use sys::{CapFlags, ChannelSyncFlags};
 
 use crate::alloc::HeapRef;
 use crate::cap::channel::SendRecvResult;

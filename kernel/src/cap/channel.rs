@@ -106,6 +106,13 @@ impl Channel {
         }
     }
 
+    /// Sends a message synchrounously
+    /// 
+    /// The calling thread may need to block to send the message
+    /// 
+    /// # Returns
+    /// 
+    /// See [`SendRecvResult`]
     pub fn sync_send(&self, buffer: UserspaceBuffer) -> SendRecvResult {
         let mut inner = self.inner();
 
@@ -144,6 +151,13 @@ impl Channel {
         }
     }
 
+    /// Recieves a message synchrounously
+    /// 
+    /// The calling thread may need to block to recieve the message
+    /// 
+    /// # Returns
+    /// 
+    /// See [`SendRecvResult`]
     pub fn sync_recv(&self, buffer: UserspaceBuffer) -> SendRecvResult {
         let mut inner = self.inner();
 
