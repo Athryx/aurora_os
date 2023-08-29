@@ -2,7 +2,7 @@ use core::sync::atomic::Ordering;
 
 use spin::Once;
 
-pub use thread::{ThreadState, Thread, ThreadRef, Tid};
+pub use thread::{ThreadState, Thread, ThreadRef, Tid, WakeReason};
 use thread_map::ThreadMap;
 use crate::alloc::root_alloc_ref;
 use crate::arch::x64::IntDisable;

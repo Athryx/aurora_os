@@ -1,7 +1,7 @@
 use core::cmp::min;
 
 use crate::container::Arc;
-use crate::sched::{ThreadRef, thread_map};
+use crate::sched::{ThreadRef, thread_map, WakeReason};
 use crate::container::Weak;
 use crate::cap::memory::Memory;
 use event_pool::BoundedEventPool;
@@ -137,7 +137,7 @@ impl EventListenerRef {
                     listener.event_buffer.copy_channel_message_from_buffer(0, src)?
                 };
 
-                if !listener.thread.move_to_ready_list() {
+                if !listener.thread.move_to_ready_list(WakeReason::MsgSendRecv { msg_size: write_size }) {
                     None
                 } else {
                     Some(write_size)
@@ -162,10 +162,12 @@ pub enum EventSenderRef {
 
 impl EventSenderRef {
     /// Notifies the event sender that the event has been handled
-    pub fn acknowledge_event(&self) {
+    pub fn acknowledge_send(&self, write_size: usize) {
         match self {
             EventSenderRef::Thread(sender) => {
-                sender.thread.move_to_ready_list();
+                sender.thread.move_to_ready_list(
+                    WakeReason::MsgSendRecv { msg_size: write_size }
+                );
             },
             EventSenderRef::EventPool { .. } => todo!(),
         }

@@ -1,6 +1,7 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::container::Arc;
+use crate::sync::IMutex;
 use super::kernel_stack::KernelStack;
 use super::thread_map;
 use crate::container::Weak;
@@ -40,11 +41,24 @@ impl ThreadState {
     }
 }
 
+/// Notifies a thread why it was woken up
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WakeReason {
+    None,
+    /// Thread was woken up do to a timeout finishing
+    Timeout,
+    /// Thread was woken up after sending or recieving a message from a channel
+    MsgSendRecv {
+        msg_size: usize,
+    },
+}
+
 #[derive(Debug)]
 pub struct Thread {
     pub tid: Tid,
     name: String,
     status: AtomicUsize,
+    wake_reason: IMutex<WakeReason>,
     pub process: Weak<Process>,
     // this has to be atomic usize because it is written to in assembly
     pub rsp: AtomicUsize,
@@ -68,6 +82,7 @@ impl Thread {
             tid,
             name,
             status: AtomicUsize::new(ThreadState::Suspended.to_status(0)),
+            wake_reason: IMutex::new(WakeReason::None),
             process,
             rsp: AtomicUsize::new(rsp),
             kernel_stack,
@@ -88,6 +103,11 @@ impl Thread {
                 Some(state.to_status(old_status) + GENERATION_STEP_SIZE)
             },
         ).unwrap();
+    }
+
+    /// Gets the wake reason of this thread
+    pub fn wake_reason(&self) -> WakeReason {
+        *self.wake_reason.lock()
     }
 
     /// Sets this threads state and incraments the generation, only if the old state is `old_state`
@@ -174,10 +194,12 @@ impl ThreadRef {
     }
 
     /// Attempts to move the thread to the ready list, returns true on success and false on failure
-    pub fn move_to_ready_list(&self) -> bool {
+    pub fn move_to_ready_list(&self, wake_reason: WakeReason) -> bool {
         let Some(thread) = self.get_thread_as_ready() else {
             return false;
         };
+
+        *thread.wake_reason.lock() = wake_reason;
 
         // FIXME: don't have oom here
         thread_map().insert_ready_thread(Arc::downgrade(&thread))

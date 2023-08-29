@@ -98,7 +98,7 @@ impl Channel {
                 continue;
             };
 
-            sender.data.acknowledge_event();
+            sender.data.acknowledge_send(write_size);
 
             unsafe { sender.drop_in_place(&mut self.allocator.clone()); }
 
@@ -174,7 +174,7 @@ impl Channel {
                 continue;
             };
 
-            sender.data.acknowledge_event();
+            sender.data.acknowledge_send(write_size);
 
             unsafe { sender.drop_in_place(&mut self.allocator.clone()); }
 

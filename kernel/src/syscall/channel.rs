@@ -7,7 +7,7 @@ use crate::container::Arc;
 use crate::event::UserspaceBuffer;
 use crate::prelude::*;
 use crate::arch::x64::IntDisable;
-use crate::sched::{switch_current_thread_to, ThreadState, PostSwitchAction};
+use crate::sched::{switch_current_thread_to, ThreadState, PostSwitchAction, WakeReason};
 
 use super::options_weak_autodestroy;
 
@@ -122,8 +122,12 @@ pub fn channel_sync_send(
                 false,
             ).expect("failed to suspend thread while waiting on channel");
 
-            // FIXME: report write size correctly
-            Ok(0)
+            let _int_disable = IntDisable::new();
+            match cpu_local_data().current_thread().wake_reason() {
+                WakeReason::MsgSendRecv { msg_size } => Ok(msg_size),
+                WakeReason::Timeout => Err(SysErr::OkTimeout),
+                _ => unreachable!(),
+            }
         },
     }
 }
@@ -189,8 +193,12 @@ pub fn channel_sync_recv(
                 false,
             ).expect("failed to suspend thread while waiting on channel");
 
-            // FIXME: report write size correctly
-            Ok(0)
+            let _int_disable = IntDisable::new();
+            match cpu_local_data().current_thread().wake_reason() {
+                WakeReason::MsgSendRecv { msg_size } => Ok(msg_size),
+                WakeReason::Timeout => Err(SysErr::OkTimeout),
+                _ => unreachable!(),
+            }
         },
     }
 }

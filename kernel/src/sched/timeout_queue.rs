@@ -3,7 +3,7 @@ use core::cmp::{Ordering, Reverse};
 use sys::KResult;
 
 use crate::{container::{Arc, BinaryHeap}, alloc::HeapRef};
-use super::{ThreadRef, thread_map};
+use super::{ThreadRef, thread_map, thread::WakeReason};
 
 #[derive(Debug, Clone)]
 struct ThreadTimeout {
@@ -50,7 +50,7 @@ impl TimeoutQueue {
                 // panic safety: peek already checked that this exists
                 let Reverse(next_thread) = self.threads.pop().unwrap();
 
-                next_thread.thread.move_to_ready_list();
+                next_thread.thread.move_to_ready_list(WakeReason::Timeout);
             } else {
                 break;
             }
