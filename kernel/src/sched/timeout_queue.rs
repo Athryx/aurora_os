@@ -50,11 +50,7 @@ impl TimeoutQueue {
                 // panic safety: peek already checked that this exists
                 let Reverse(next_thread) = self.threads.pop().unwrap();
 
-                if let Some(thread) = next_thread.thread.get_thread_as_ready() {
-                    // FIXME: don't have oom here
-                    thread_map().insert_ready_thread(Arc::downgrade(&thread))
-                        .expect("failed to wake up thread");
-                }
+                next_thread.thread.move_to_ready_list();
             } else {
                 break;
             }

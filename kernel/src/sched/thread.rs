@@ -2,6 +2,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::container::Arc;
 use super::kernel_stack::KernelStack;
+use super::thread_map;
 use crate::container::Weak;
 use crate::process::Process;
 use crate::prelude::*;
@@ -133,18 +134,55 @@ impl ThreadRef {
         }
     }
 
+    /// Returns a thread ref to the next generation of this thread
+    /// 
+    /// It assumes the thread's state will be suspended in the next generation
+    pub fn future_ref(thread: &Arc<Thread>) -> Self {
+        let generation = thread.status.load(Ordering::Acquire);
+        let next_generation = ThreadState::Suspended.to_status(generation) + GENERATION_STEP_SIZE;
+
+        ThreadRef {
+            thread: Arc::downgrade(thread),
+            generation: next_generation,
+        }
+    }
+
     /// Gets the thread and sets its status to Ready if it is alive adn the correct generation
     pub fn get_thread_as_ready(&self) -> Option<Arc<Thread>> {
         let thread = self.thread.upgrade()?;
+        let ref_generation = self.generation & !THREAD_STATE_MASK;
 
-        match thread.status.compare_exchange(
-            self.generation,
-            ThreadState::Ready.to_status(self.generation) + GENERATION_STEP_SIZE,
-            Ordering::AcqRel,
-            Ordering::Acquire,
-        ) {
-            Ok(_) => Some(thread),
-            Err(_) => None,
+        loop {
+            match thread.status.compare_exchange(
+                self.generation,
+                ThreadState::Ready.to_status(self.generation) + GENERATION_STEP_SIZE,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Some(thread),
+                Err(old_status) => {
+                    let old_generation = old_status & !THREAD_STATE_MASK;
+
+                    // this will cause loop to spin if the ref generation is greater than the old generation,
+                    // which gives time for a thread to adjust its state to be consistant with a `ThreadRef::future_ref`
+                    if old_generation >= ref_generation {
+                        return None;
+                    }
+                },
+            }
         }
+    }
+
+    /// Attempts to move the thread to the ready list, returns true on success and false on failure
+    pub fn move_to_ready_list(&self) -> bool {
+        let Some(thread) = self.get_thread_as_ready() else {
+            return false;
+        };
+
+        // FIXME: don't have oom here
+        thread_map().insert_ready_thread(Arc::downgrade(&thread))
+            .expect("failed to insert thread into ready list");
+
+        true
     }
 }

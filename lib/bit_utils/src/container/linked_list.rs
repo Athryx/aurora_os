@@ -51,6 +51,32 @@ pub trait ListNode: Sized {
     }
 }
 
+/// A regular linked list node which just stores 1 piece of data
+#[derive(Debug)]
+pub struct DefaultNode<T> {
+    pub data: T,
+    list_node_data: ListNodeData<Self>,
+}
+
+impl<T> From<T> for DefaultNode<T> {
+    fn from(value: T) -> Self {
+        DefaultNode {
+            data: value,
+            list_node_data: ListNodeData::default(),
+        }
+    }
+}
+
+impl<T> ListNode for DefaultNode<T> {
+    fn list_node_data(&self) -> &ListNodeData<Self> {
+        &self.list_node_data
+    }
+
+    fn list_node_data_mut(&mut self) -> &mut ListNodeData<Self> {
+        &mut self.list_node_data
+    }
+}
+
 /// An intrusive linked list which doesn't require allocation
 pub struct LinkedList<T: ListNode> {
     start: Option<NonNull<T>>,

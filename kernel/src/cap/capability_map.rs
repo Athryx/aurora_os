@@ -2,6 +2,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 use concat_idents::concat_idents;
 
+use crate::event::UserspaceBuffer;
 use crate::{prelude::*, alloc::HeapRef};
 use crate::container::HashMap;
 use crate::process::{Process, Spawner};
@@ -165,3 +166,21 @@ generate_cap_methods!(CapabilityMap, Spawner, spawner_map, spawner);
 generate_cap_methods!(CapabilityMap, Key, key_map, key);
 generate_cap_methods!(CapabilityMap, Channel, channel_map, channel);
 generate_cap_methods!(CapabilityMap, CapAllocator, allocator_map, allocator);
+
+impl CapabilityMap {
+    /// Gets a userspace buffer from the given memory id and size and offset
+    pub fn get_userspace_buffer(
+        &self,
+        memory_id: usize,
+        buffer_offset: usize,
+        buffer_size: usize,
+        required_perms: CapFlags,
+        weak_auto_destroy: bool,
+    ) -> KResult<UserspaceBuffer> {
+        let memory = self.get_memory_with_perms(memory_id, required_perms, weak_auto_destroy)?
+            .downgrade()
+            .into_inner();
+
+        Ok(UserspaceBuffer::new(memory, buffer_offset, buffer_size))
+    }
+}

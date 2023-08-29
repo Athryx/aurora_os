@@ -9,7 +9,7 @@ use crate::gdt::{Gdt, Tss};
 use crate::int::apic::LocalApic;
 use crate::int::idt::Idt;
 use crate::sync::{IMutex, IMutexGuard};
-use crate::sched::{SchedState, PostSwitchData};
+use crate::sched::{SchedState, PostSwitchData, Thread};
 use crate::process::Process;
 
 crate::make_id_type!(Prid);
@@ -80,6 +80,15 @@ impl GsData {
     /// acquires `sched_state` lock
     pub fn current_process(&self) -> Arc<Process> {
         self.sched_state().current_process.clone()
+    }
+
+    /// Returns the current thread
+    /// 
+    /// # Locking
+    /// 
+    /// acquires `sched_state` lock
+    pub fn current_thread(&self) -> Arc<Thread> {
+        self.sched_state().current_thread.clone()
     }
 }
 

@@ -18,6 +18,12 @@ pub const MEMORY_GET_SIZE: u32 = 15;
 pub const MEMORY_RESIZE: u32 = 16;
 
 pub const CHANNEL_NEW: u32 = 27;
+pub const CHANNEL_TRY_SEND: u32 = 28;
+pub const CHANNEL_SYNC_SEND: u32 = 29;
+pub const CHANNEL_ASYNC_SEND: u32 = 30;
+pub const CHANNEL_TRY_RECV: u32 = 31;
+pub const CHANNEL_SYNC_RECV: u32 = 32;
+pub const CHANNEL_ASYNC_RECV: u32 = 33;
 
 pub const KEY_NEW: u32 = 38;
 pub const KEY_ID: u32 = 39;
