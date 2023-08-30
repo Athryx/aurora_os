@@ -28,5 +28,7 @@ pub const CHANNEL_ASYNC_RECV: u32 = 33;
 pub const KEY_NEW: u32 = 38;
 pub const KEY_ID: u32 = 39;
 
+pub const DROP_CHECK_NEW: u32 = 40;
+
 pub const SPAWNER_NEW: u32 = 46;
 pub const SPAWNER_KILL_ALL: u32 = 47;

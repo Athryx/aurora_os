@@ -9,6 +9,8 @@ mod channel;
 use channel::*;
 mod debug;
 use debug::*;
+mod drop_check;
+use drop_check::*;
 mod key;
 use key::*;
 mod memory;
@@ -244,6 +246,7 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		CHANNEL_SYNC_RECV => sysret_1!(syscall_5!(channel_sync_recv, vals), vals),
 		KEY_NEW => sysret_1!(syscall_1!(key_new, vals), vals),
 		KEY_ID => sysret_1!(syscall_1!(key_id, vals), vals),
+		DROP_CHECK_NEW => sysret_2!(syscall_2!(drop_check_new, vals), vals),
 		SPAWNER_NEW => sysret_1!(syscall_2!(spawner_new, vals), vals),
 		SPAWNER_KILL_ALL => sysret_0!(syscall_1!(spawner_kill_all, vals), vals),
         _ => vals.a1 = SysErr::InvlSyscall.num(),

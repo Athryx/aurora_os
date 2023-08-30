@@ -9,6 +9,7 @@ use crate::process::{Process, Spawner};
 use crate::alloc::CapAllocator;
 use crate::sync::IMutex;
 
+use super::drop_check::{DropCheck, DropCheckReciever};
 use super::{CapId, Capability, StrongCapability, CapFlags, CapObject, key::Key, memory::Memory, channel::Channel};
 
 type InnerCapMap<T> = IMutex<HashMap<CapId, Capability<T>>>;
@@ -23,6 +24,8 @@ pub struct CapabilityMap {
     channel_map: InnerCapMap<Channel>,
     spawner_map: InnerCapMap<Spawner>,
     allocator_map: InnerCapMap<CapAllocator>,
+    drop_check_map: InnerCapMap<DropCheck>,
+    drop_check_reciever_map: InnerCapMap<DropCheckReciever>,
 }
 
 impl CapabilityMap {
@@ -34,7 +37,9 @@ impl CapabilityMap {
             key_map: IMutex::new(HashMap::new(allocator.clone())),
             channel_map: IMutex::new(HashMap::new(allocator.clone())),
             spawner_map: IMutex::new(HashMap::new(allocator.clone())),
-            allocator_map: IMutex::new(HashMap::new(allocator)),
+            allocator_map: IMutex::new(HashMap::new(allocator.clone())),
+            drop_check_map: IMutex::new(HashMap::new(allocator.clone())),
+            drop_check_reciever_map: IMutex::new(HashMap::new(allocator)),
         }
     }
 }
@@ -57,6 +62,13 @@ macro_rules! generate_cap_methods {
 
                     self.$cap_map.lock().insert(cap_id, capability)?;
                     Ok(cap_id)
+                }
+            });
+
+            concat_idents!(remove_cap = remove_, $cap_name {
+                pub fn remove_cap(&self, cap_id: CapId) -> KResult<Capability<$cap_type>> {
+                    self.$cap_map.lock().remove(&cap_id)
+                        .ok_or(SysErr::InvlId)
                 }
             });
 
@@ -166,6 +178,8 @@ generate_cap_methods!(CapabilityMap, Spawner, spawner_map, spawner);
 generate_cap_methods!(CapabilityMap, Key, key_map, key);
 generate_cap_methods!(CapabilityMap, Channel, channel_map, channel);
 generate_cap_methods!(CapabilityMap, CapAllocator, allocator_map, allocator);
+generate_cap_methods!(CapabilityMap, DropCheck, drop_check_map, drop_check);
+generate_cap_methods!(CapabilityMap, DropCheckReciever, drop_check_reciever_map, drop_check_reciever);
 
 impl CapabilityMap {
     /// Gets a userspace buffer from the given memory id and size and offset

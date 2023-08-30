@@ -4,6 +4,7 @@ use crate::prelude::*;
 mod capability_map;
 pub use capability_map::*;
 pub mod channel;
+pub mod drop_check;
 pub mod key;
 pub mod memory;
 

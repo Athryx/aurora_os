@@ -46,7 +46,7 @@ bitflags! {
 }
 
 bitflags! {
-    /// Used by `chennel_sync_send` and channel_sync_recv`
+    /// Used by `chennel_sync_send` and `channel_sync_recv`
     pub struct ChannelSyncFlags: u32 {
         const TIMEOUT = 1;
     }

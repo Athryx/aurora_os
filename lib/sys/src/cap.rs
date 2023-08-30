@@ -27,10 +27,12 @@ pub enum CapType {
     Port = 10,
     Spawner = 11,
     Allocator = 12,
-    RootOom = 13,
-    MmioAllocator = 14,
-    IntAllocator = 15,
-    PortAllocator = 16,
+    DropCheck = 13,
+    DropCheckReciever = 14,
+    RootOom = 15,
+    MmioAllocator = 16,
+    IntAllocator = 17,
+    PortAllocator = 18,
 }
 
 impl CapType {
@@ -48,10 +50,12 @@ impl CapType {
             10 => Self::Port,
             11 => Self::Spawner,
             12 => Self::Allocator,
-            13 => Self::RootOom,
-            14 => Self::MmioAllocator,
-            15 => Self::IntAllocator,
-            16 => Self::PortAllocator,
+            13 => Self::DropCheck,
+            14 => Self::DropCheckReciever,
+            15 => Self::RootOom,
+            16 => Self::MmioAllocator,
+            17 => Self::IntAllocator,
+            18 => Self::PortAllocator,
             _ => return None,
         })
     }
