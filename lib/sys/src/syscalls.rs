@@ -12,7 +12,12 @@ macro_rules! syscall {
     ($num:expr) => {syscall!($num, 0)};
 
 	($num:expr, $opt:expr) => {{
-        asm!("syscall", inout("rax") (($opt as usize) << 32) | ($num as usize) => _);
+        asm!("syscall",
+            inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
+            out("rcx") _,
+            out("r10") _,
+            out("r11") _,
+        );
 	}};
 
 	($num:expr, $opt:expr, $a1:expr) => {{
@@ -26,6 +31,8 @@ macro_rules! syscall {
             inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
             inout("rcx") $a1 => o1,
             out("rdx") o2,
+            out("r10") _,
+            out("r11") _,
         );
 		(o1, o2)
 	}};
@@ -41,6 +48,8 @@ macro_rules! syscall {
             inout("rax") (($opt as usize) << 32) | ($num as usize) => _,
             inout("rcx") $a1 => o1,
             inout("rdx") $a2 => o2,
+            out("r10") _,
+            out("r11") _,
         );
 		(o1, o2)
 	}};
@@ -58,6 +67,8 @@ macro_rules! syscall {
             inout("rcx") $a1 => o1,
             inout("rdx") $a2 => o2,
             inout("rsi") $a3 => o3,
+            out("r10") _,
+            out("r11") _,
         );
 		(o1, o2, o3)
 	}};
@@ -77,6 +88,8 @@ macro_rules! syscall {
             inout("rdx") $a2 => o2,
             inout("rsi") $a3 => o3,
             inout("rdi") $a4 => o4,
+            out("r10") _,
+            out("r11") _,
         );
 		(o1, o2, o3, o4)
 	}};
@@ -98,6 +111,8 @@ macro_rules! syscall {
             inout("rsi") $a3 => o3,
             inout("rdi") $a4 => o4,
             inout("r12") $a5 => o5,
+            out("r10") _,
+            out("r11") _,
         );
 		(o1, o2, o3, o4, o5)
 	}};
@@ -121,6 +136,8 @@ macro_rules! syscall {
             inout("rdi") $a4 => o4,
             inout("r12") $a5 => o5,
             inout("r13") $a6 => o6,
+            out("r10") _,
+            out("r11") _,
         );
 		(o1, o2, o3, o4, o5, o6)
 	}};
@@ -146,6 +163,8 @@ macro_rules! syscall {
             inout("r12") $a5 => o5,
             inout("r13") $a6 => o6,
             inout("r14") $a7 => o7,
+            out("r10") _,
+            out("r11") _,
         );
 		(o1, o2, o3, o4, o5, o6, o7)
 	}};
@@ -173,6 +192,8 @@ macro_rules! syscall {
             inout("r13") $a6 => o6,
             inout("r14") $a7 => o7,
             inout("r15") $a8 => o8,
+            out("r10") _,
+            out("r11") _,
         );
 		(o1, o2, o3, o4, o5, o6, o7, o8)
 	}};
