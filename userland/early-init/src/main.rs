@@ -76,19 +76,23 @@ pub extern "C" fn _rust_startup(
 
     dprintln!("early-init started");
 
-    /*let tmp = Test::D {
+    let tmp = Test::D {
         bruh: 8,
         a: false,
         hi: 12309470182309128,
-    };*/
-    let tmp = Test::B(69);
+    };
+    //let tmp = Test::B(69);
     //let tmp = Test::A;
     let result: Vec<u8> = aser::to_bytes(&tmp, 0).unwrap();
-    dprintln!("{:?}", result);
+    dprintln!("test to bytes {:?}", result);
     let tmp: Test = aser::from_bytes(&result).unwrap();
-    dprintln!("{:?}", tmp);
+    dprintln!("test from bytes {:?}", tmp);
     let value: aser::Value = aser::from_bytes(&result).unwrap();
-    dprintln!("{:?}", value);
+    dprintln!("value from bytes {:?}", value);
+    let value2 = aser::Value::from_serialize(&tmp);
+    dprintln!("value from test {:?}", value2);
+    let test2: Test = value.into_deserialize().unwrap();
+    dprintln!("test from value {:?}", test2);
 
     loop { core::hint::spin_loop(); }
 }

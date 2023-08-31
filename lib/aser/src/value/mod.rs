@@ -15,6 +15,7 @@ use serde::{
 use super::AserError;
 
 mod value_serializer;
+mod value_deserializer;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Integer {
@@ -111,8 +112,12 @@ pub enum Value {
 }
 
 impl Value {
-    pub fn from_serialize<T: Serialize>(data: T) -> Result<Self, AserError> {
+    pub fn from_serialize<T: Serialize>(data: &T) -> Result<Self, AserError> {
         data.serialize(value_serializer::ValueSerializer)
+    }
+
+    pub fn into_deserialize<'de, T: Deserialize<'de>>(&'de self) -> Result<T, AserError> {
+        T::deserialize(self)
     }
 }
 
