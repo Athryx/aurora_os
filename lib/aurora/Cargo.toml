@@ -16,5 +16,5 @@ rand_core = { version = "0.6.4", default-features = false }
 rand_chacha = { version = "0.3.1", default-features = false }
 serde = { version = "1.0.163", default-features = false, features = ["alloc", "derive"] }
 num_enum = { version = "0.6.1", default-features = false }
-hashbrown = { version = "0.14.0", default-features = false, features = ["inline-more"]}
+hashbrown = { version = "0.14.0", default-features = false, features = ["inline-more", "serde"]}
 rustc-hash = { version = "1.1.0", default-features = false}

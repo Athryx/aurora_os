@@ -7,6 +7,7 @@
 
 extern crate alloc;
 
+use aser::{from_bytes, AserError};
 use bit_utils::Size;
 use sys::{CapId, Process, Allocator, Spawner, Memory};
 pub use sys::{ProcessInitData, ProcessMemoryEntry, process_data_from_slice};
@@ -15,12 +16,14 @@ use thiserror_no_std::Error;
 use addr_space_manager::{AddrSpaceManager, AddrSpaceError, RegionPadding, MappedRegion};
 use context::Context;
 use sync::{Once, Mutex, MutexGuard};
+use env::{Namespace, THIS_NAMESPACE};
 
 mod addr_space_manager;
 mod allocator;
 mod context;
 pub mod container;
 pub mod debug_print;
+pub mod env;
 mod prelude;
 pub mod process;
 mod sync;
@@ -43,6 +46,8 @@ pub enum InitError {
     InvalidCapId,
     #[error("Error initilizing address space: {0}")]
     AdrSpaceError(#[from] AddrSpaceError),
+    #[error("Error deserializing namespace data: {0}")]
+    SerializationError(#[from] AserError),
 }
 
 impl TryFrom<ProcessInitData> for Context {
@@ -108,5 +113,7 @@ pub fn init_allocation(init_data: ProcessInitData, memory_entries: &[ProcessMemo
 /// 
 /// Requires [`init_allocation`] to be called first
 pub fn init(namespace_data: &[u8]) -> Result<(), InitError> {
+    let namespace: Namespace = from_bytes(namespace_data)?;
+    THIS_NAMESPACE.call_once(|| namespace);
     Ok(())
 }

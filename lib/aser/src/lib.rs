@@ -71,6 +71,8 @@ pub enum AserError {
     EnumUnexpectedData,
     #[error("The specified capability index is out of range")]
     InvalidCapabilityIndex,
+    #[error("The specified capability id is invalid")]
+    InvalidCapabilityId,
     #[error("There are trailing characters on the end of the input")]
     TrailingInput,
 }
