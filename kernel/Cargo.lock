@@ -20,6 +20,7 @@ version = "0.1.0"
 dependencies = [
  "num_enum",
  "serde",
+ "sys",
  "thiserror-no-std",
 ]
 
@@ -290,7 +291,6 @@ dependencies = [
 name = "sys"
 version = "0.1.0"
 dependencies = [
- "aser",
  "bit_utils",
  "bitflags",
  "bytemuck",

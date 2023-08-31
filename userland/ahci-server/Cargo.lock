@@ -15,6 +15,7 @@ version = "0.1.0"
 dependencies = [
  "num_enum",
  "serde",
+ "sys",
  "thiserror-no-std",
 ]
 
@@ -24,9 +25,11 @@ version = "0.1.0"
 dependencies = [
  "aser",
  "bit_utils",
+ "hashbrown",
  "num_enum",
  "rand_chacha",
  "rand_core",
+ "rustc-hash",
  "serde",
  "spin 0.9.8",
  "sys",
@@ -91,6 +94,12 @@ dependencies = [
  "rustc_version",
  "syn 1.0.109",
 ]
+
+[[package]]
+name = "hashbrown"
+version = "0.14.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2c6201b9ff9fd90a5a3bac2e56a830d0caa509576f0e503818ee82c181b3437a"
 
 [[package]]
 name = "lazy_static"
@@ -170,6 +179,12 @@ name = "rand_core"
 version = "0.6.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
+
+[[package]]
+name = "rustc-hash"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "08d43f7aa6b08d49f382cde6a7982047c3426db949b1424bc4b7ec9ae12c6ce2"
 
 [[package]]
 name = "rustc_version"
@@ -260,7 +275,6 @@ dependencies = [
 name = "sys"
 version = "0.1.0"
 dependencies = [
- "aser",
  "bit_utils",
  "bitflags",
  "bytemuck",

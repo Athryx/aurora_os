@@ -1,7 +1,6 @@
 use bitflags::bitflags;
 use bit_utils::get_bits;
 use serde::{Serialize, Deserialize, de::{Visitor, Error}};
-use aser::CAPABILTY_NEWTYPE_NAME;
 
 bitflags! {
     pub struct CapFlags: usize {
@@ -104,6 +103,12 @@ impl CapId {
         // panic safety: CapId will always have valid metadata, this is checked in the constructor
         CapType::from(get_bits(self.0, 5..10)).unwrap()
     }
+
+
+    /// Any newtype struct with this name will be treated as a capability by aser
+    /// 
+    /// This name is reserved for other structs
+    pub const SERIALIZE_NEWTYPE_NAME: &str = "__aser_cap";
 }
 
 impl From<CapId> for usize {
@@ -116,7 +121,7 @@ impl Serialize for CapId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer {
-        serializer.serialize_newtype_struct("__aser_cap", &self.0)
+        serializer.serialize_newtype_struct(Self::SERIALIZE_NEWTYPE_NAME, &self.0)
     }
 }
 
@@ -124,7 +129,7 @@ impl<'de> Deserialize<'de> for CapId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de> {
-        deserializer.deserialize_newtype_struct(CAPABILTY_NEWTYPE_NAME, CapIdVisitor)
+        deserializer.deserialize_newtype_struct(Self::SERIALIZE_NEWTYPE_NAME, CapIdVisitor)
     }
 }
 

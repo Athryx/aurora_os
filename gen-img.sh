@@ -20,7 +20,7 @@ rm -f $BOOT_DIR/kernel.bin
 cp $1 $BOOT_DIR/kernel.bin
 cp $2 $BOOT_DIR/initrd
 
-dd if=/dev/zero of=$IMG bs=516096 count=80 || exit 1
+dd if=/dev/zero of=$IMG bs=516096 count=100 || exit 1
 
 sudo losetup $DEV0 $IMG || exit 1
 LOOP="1"

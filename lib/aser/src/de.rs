@@ -157,14 +157,20 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
                 visitor.visit_borrowed_bytes(self.take_bytes(num_bytes)?)
             },
 
-            DataType::SequenceStart => visitor.visit_seq(SequenceDeserializer(self)),
+            DataType::SequenceStart => visitor.visit_seq(SequenceDeserializer::from(self)),
             DataType::SequenceEnd => Err(AserError::UnexpectedTerminator),
 
-            DataType::MapStart => visitor.visit_map(MapDeserializer(self)),
+            DataType::MapStart => visitor.visit_map(MapDeserializer::from(self)),
             DataType::MapEnd => Err(AserError::UnexpectedTerminator),
 
-            DataType::Variant => visitor.visit_enum(self.take_u32()?.into_deserializer()),
-            DataType::VariantValue => visitor.visit_enum(EnumDeserializer(self)),
+            DataType::Variant => visitor.visit_enum(EnumDeserializer {
+                deserializer: self,
+                has_data: false,
+            }),
+            DataType::VariantValue => visitor.visit_enum(EnumDeserializer {
+                deserializer: self,
+                has_data: true,
+            }),
 
             DataType::Capability => {
                 let index = self.take_u16()?;
@@ -183,7 +189,19 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     }
 }
 
-struct SequenceDeserializer<'a, 'de: 'a>(&'a mut Deserializer<'de>);
+struct SequenceDeserializer<'a, 'de: 'a> {
+    deserializer: &'a mut Deserializer<'de>,
+    finished: bool,
+}
+
+impl<'a, 'de: 'a> From<&'a mut Deserializer<'de>> for SequenceDeserializer<'a, 'de> {
+    fn from(deserializer: &'a mut Deserializer<'de>) -> Self {
+        SequenceDeserializer {
+            deserializer,
+            finished: false,
+        }
+    }
+}
 
 impl<'a, 'de> SeqAccess<'de> for SequenceDeserializer<'a, 'de> {
     type Error = AserError;
@@ -191,19 +209,35 @@ impl<'a, 'de> SeqAccess<'de> for SequenceDeserializer<'a, 'de> {
     fn next_element_seed<T>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error>
     where
         T: de::DeserializeSeed<'de> {
-        let next_type = self.0.peek_data_type()?;
-
-        if next_type == DataType::SequenceEnd {
-            // take end byte
-            self.0.take_data_type().unwrap();
+        if self.finished {
             return Ok(None);
         }
 
-        seed.deserialize(&mut *self.0).map(Some)
+        let out = seed.deserialize(&mut *self.deserializer).map(Some);
+
+        if self.deserializer.peek_data_type()? == DataType::SequenceEnd {
+            // take end byte
+            self.deserializer.take_data_type().unwrap();
+            self.finished = true;
+        }
+
+        out
     }
 }
 
-struct MapDeserializer<'a, 'de: 'a>(&'a mut Deserializer<'de>);
+struct MapDeserializer<'a, 'de: 'a> {
+    deserializer: &'a mut Deserializer<'de>,
+    finished: bool,
+}
+
+impl<'a, 'de: 'a> From<&'a mut Deserializer<'de>> for MapDeserializer<'a, 'de> {
+    fn from(deserializer: &'a mut Deserializer<'de>) -> Self {
+        MapDeserializer {
+            deserializer,
+            finished: false,
+        }
+    }
+}
 
 impl<'a, 'de> MapAccess<'de> for MapDeserializer<'a, 'de> {
     type Error = AserError;
@@ -211,25 +245,33 @@ impl<'a, 'de> MapAccess<'de> for MapDeserializer<'a, 'de> {
     fn next_key_seed<K>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error>
     where
         K: de::DeserializeSeed<'de> {
-        let next_type = self.0.peek_data_type()?;
-
-        if next_type == DataType::MapEnd {
-            // take end byte
-            self.0.take_data_type().unwrap();
+        if self.finished {
             return Ok(None);
         }
 
-        seed.deserialize(&mut *self.0).map(Some)
+        seed.deserialize(&mut *self.deserializer).map(Some)
     }
 
     fn next_value_seed<V>(&mut self, seed: V) -> Result<V::Value, Self::Error>
     where
         V: de::DeserializeSeed<'de> {
-        seed.deserialize(&mut *self.0)
+        let out = seed.deserialize(&mut *self.deserializer);
+
+        if self.deserializer.peek_data_type()? == DataType::MapEnd {
+            // take end byte
+            self.deserializer.take_data_type().unwrap();
+            self.finished = true;
+        }
+
+        out
     }
 }
 
-struct EnumDeserializer<'a, 'de: 'a>(&'a mut Deserializer<'de>);
+struct EnumDeserializer<'a, 'de: 'a> {
+    deserializer: &'a mut Deserializer<'de>,
+    // will be false if this EnumDeserializer was made for a Variant with no value
+    has_data: bool,
+}
 
 impl<'a, 'de> EnumAccess<'de> for EnumDeserializer<'a, 'de> {
     type Error = AserError;
@@ -238,7 +280,7 @@ impl<'a, 'de> EnumAccess<'de> for EnumDeserializer<'a, 'de> {
     fn variant_seed<V>(self, seed: V) -> Result<(V::Value, Self::Variant), Self::Error>
     where
         V: de::DeserializeSeed<'de> {
-        let val = self.0.take_u32()?;
+        let val = self.deserializer.take_u32()?;
 
         Ok((seed.deserialize(val.into_deserializer())?, self))
     }
@@ -248,19 +290,32 @@ impl<'a, 'de> VariantAccess<'de> for EnumDeserializer<'a, 'de> {
     type Error = AserError;
 
     fn unit_variant(self) -> Result<(), Self::Error> {
-        Err(AserError::EnumUnexpectedData)
+        if self.has_data {
+            Err(AserError::EnumUnexpectedData)
+        } else {
+            Ok(())
+        }
+        
     }
 
     fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Self::Error>
     where
         T: de::DeserializeSeed<'de> {
-        seed.deserialize(self.0)
+        if self.has_data {
+            seed.deserialize(self.deserializer)
+        } else {
+            seed.deserialize(().into_deserializer())
+        }
     }
 
     fn tuple_variant<V>(self, _len: usize, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de> {
-        de::Deserializer::deserialize_seq(self.0, visitor)
+        if self.has_data {
+            de::Deserializer::deserialize_seq(self.deserializer, visitor)
+        } else {
+            Err(AserError::EnumUnexpectedData)
+        }
     }
 
     fn struct_variant<V>(
@@ -270,6 +325,10 @@ impl<'a, 'de> VariantAccess<'de> for EnumDeserializer<'a, 'de> {
     ) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de> {
-        de::Deserializer::deserialize_map(self.0, visitor)
+        if self.has_data {
+            de::Deserializer::deserialize_map(self.deserializer, visitor)
+        } else {
+            Err(AserError::EnumUnexpectedData)
+        }
     }
 }

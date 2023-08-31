@@ -6,6 +6,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+sys = { path = "../sys" }
 thiserror-no-std = "2.0.2"
 serde = { version = "1.0.163", default-features = false, features = ["derive"] }
 num_enum = { version = "0.6.1", default-features = false }

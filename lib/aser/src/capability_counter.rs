@@ -8,8 +8,7 @@ use serde::{ser::{
     SerializeStruct,
     SerializeStructVariant,
 }, Serialize};
-
-use crate::CAPABILTY_NEWTYPE_NAME;
+use sys::CapId;
 
 use super::{AserError, capability_serializer::CapabilitySerializer};
 
@@ -141,7 +140,7 @@ impl Serializer for &'_ mut CapabilityCounter {
     ) -> Result<Self::Ok, Self::Error>
     where
         T: serde::Serialize {
-        if name == CAPABILTY_NEWTYPE_NAME {
+        if name == CapId::SERIALIZE_NEWTYPE_NAME {
             let mut capability_serializer = CapabilitySerializer::default();
             value.serialize(&mut capability_serializer)?;
             let _ = capability_serializer.get_capability()?;

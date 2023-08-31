@@ -10,6 +10,7 @@ edition = "2021"
 aurora = { path = "../../lib/aurora" }
 aser = { path = "../../lib/aser" }
 sys = { path = "../../lib/sys" }
+serde = { version = "1.0.163", default-features = false, features = ["derive", "alloc"] }
 
 [panic.dev]
 panic = "abort"

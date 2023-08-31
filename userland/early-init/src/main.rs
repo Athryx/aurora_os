@@ -3,9 +3,14 @@
 
 #![feature(naked_functions)]
 
+extern crate alloc;
+
 use core::arch::asm;
 use core::panic::PanicInfo;
 use core::slice;
+use alloc::vec::Vec;
+
+use serde::{Serialize, Deserialize};
 
 use aurora::dprintln;
 use aser::from_bytes;
@@ -33,12 +38,24 @@ pub extern "C" fn _aurora_startup() {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+enum Test {
+    A,
+    B(i32),
+    C(u8, u8),
+    D {
+        bruh: u8,
+        a: bool,
+        hi: i128,
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn _rust_startup(
     process_data: *mut u8,
     process_data_size: usize,
-    startup_data: *mut u8,
-    startup_data_size: usize,
+    init_data: *mut u8,
+    init_data_size: usize,
 ) -> ! {
     let process_data = unsafe {
         slice::from_raw_parts(process_data, process_data_size)
@@ -50,14 +67,28 @@ pub extern "C" fn _rust_startup(
     aurora::init_allocation(process_init_data, memory_entries)
         .expect("failed to initialize aurora lib allocaror");
 
-    let startup_data = unsafe {
-        slice::from_raw_parts(startup_data, startup_data_size)
+    let init_data = unsafe {
+        slice::from_raw_parts(init_data, init_data_size)
     };
 
-    let init_info: InitInfo = from_bytes(startup_data)
-        .expect("failed to deserialize startup data");
+    let init_info: InitInfo = from_bytes(init_data)
+        .expect("failed to deserialize init data");
 
     dprintln!("early-init started");
+
+    /*let tmp = Test::D {
+        bruh: 8,
+        a: false,
+        hi: 12309470182309128,
+    };*/
+    let tmp = Test::B(69);
+    //let tmp = Test::A;
+    let result: Vec<u8> = aser::to_bytes(&tmp, 0).unwrap();
+    dprintln!("{:?}", result);
+    let tmp: Test = aser::from_bytes(&result).unwrap();
+    dprintln!("{:?}", tmp);
+    let value: aser::Value = aser::from_bytes(&result).unwrap();
+    dprintln!("{:?}", value);
 
     loop { core::hint::spin_loop(); }
 }

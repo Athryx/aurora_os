@@ -19,8 +19,10 @@ use sync::{Once, Mutex, MutexGuard};
 mod addr_space_manager;
 mod allocator;
 mod context;
+pub mod container;
 pub mod debug_print;
 mod prelude;
+pub mod process;
 mod sync;
 
 static THIS_CONTEXT: Once<Context> = Once::new();
@@ -99,5 +101,12 @@ pub fn init_allocation(init_data: ProcessInitData, memory_entries: &[ProcessMemo
 
     ADDR_SPACE.call_once(|| Mutex::new(addr_space));
 
+    Ok(())
+}
+
+/// Initializes the rest of the aurora library
+/// 
+/// Requires [`init_allocation`] to be called first
+pub fn init(namespace_data: &[u8]) -> Result<(), InitError> {
     Ok(())
 }

@@ -1,10 +1,11 @@
 use core::fmt::Write;
 
 use serde::{ser, Serialize};
+use sys::CapId;
 
 use crate::ByteBuf;
 
-use super::{AserError, DataType, CAPABILTY_NEWTYPE_NAME, capability_serializer::CapabilitySerializer, count_capabilties};
+use super::{AserError, DataType, capability_serializer::CapabilitySerializer, count_capabilties};
 
 pub fn to_bytes<T: Serialize, B: ByteBuf>(data: &T, num_capabilities: usize) -> Result<B, AserError> {
     let mut serializer = Serializer::new(num_capabilities);
@@ -35,7 +36,7 @@ impl<B: ByteBuf> Serializer<B> {
     pub fn new(num_capabilties: usize) -> Self {
         let mut buf = B::default();
 
-        buf.extend_from_slice(&num_capabilties.to_be_bytes());
+        buf.extend_from_slice(&num_capabilties.to_le_bytes());
         for _ in 0..num_capabilties * 8 {
             buf.push(0);
         }
@@ -48,19 +49,19 @@ impl<B: ByteBuf> Serializer<B> {
     }
 
     fn push_u16(&mut self, val: u16) {
-        self.buf.extend_from_slice(&val.to_be_bytes());
+        self.buf.extend_from_slice(&val.to_le_bytes());
     }
 
     fn push_u32(&mut self, val: u32) {
-        self.buf.extend_from_slice(&val.to_be_bytes());
+        self.buf.extend_from_slice(&val.to_le_bytes());
     }
 
     fn push_u64(&mut self, val: u64) {
-        self.buf.extend_from_slice(&val.to_be_bytes());
+        self.buf.extend_from_slice(&val.to_le_bytes());
     }
 
     fn push_u128(&mut self, val: u128) {
-        self.buf.extend_from_slice(&val.to_be_bytes());
+        self.buf.extend_from_slice(&val.to_le_bytes());
     }
 
     fn push_type(&mut self, data_type: DataType) {
@@ -73,7 +74,7 @@ impl<B: ByteBuf> Serializer<B> {
         }
 
         let dest_slice = &mut self.buf.as_slice()[self.capability_index..self.capability_index + 8];
-        dest_slice.copy_from_slice(&cap_id.to_be_bytes());
+        dest_slice.copy_from_slice(&cap_id.to_le_bytes());
 
         self.capability_index += 8;
 
@@ -288,7 +289,7 @@ impl<'a, B: ByteBuf> ser::Serializer for &'a mut Serializer<B> {
     ) -> Result<Self::Ok, Self::Error>
     where
         T: serde::Serialize {
-        if name == CAPABILTY_NEWTYPE_NAME {
+        if name == CapId::SERIALIZE_NEWTYPE_NAME {
             self.push_type(DataType::Capability);
             self.push_u16((self.capability_index / 8) as u16);
 

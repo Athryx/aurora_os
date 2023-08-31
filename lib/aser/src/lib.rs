@@ -2,6 +2,7 @@
 #![no_std]
 
 #![feature(slice_take)]
+#![feature(error_in_core)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;
@@ -22,13 +23,12 @@ mod ser;
 pub use ser::{Serializer, to_bytes, to_bytes_count_cap};
 mod de;
 pub use de::{Deserializer, from_bytes};
+#[cfg(feature = "alloc")]
+mod value;
+#[cfg(feature = "alloc")]
+pub use value::{Value, Integer, Float};
 
 pub type Result<T> = core::result::Result<T, AserError>;
-
-/// Any newtype struct with this name will be treated as a capability
-/// 
-/// This name is reserved for other structs
-pub const CAPABILTY_NEWTYPE_NAME: &str = "__aser_cap";
 
 #[derive(Debug, Error)]
 pub enum AserError {
