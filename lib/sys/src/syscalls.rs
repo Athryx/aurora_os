@@ -4,7 +4,7 @@ use core::cmp::min;
 use bit_utils::Size;
 use serde::{Serialize, Deserialize};
 
-use crate::{syscall_nums::*, CapId, CapType, CapFlags, SysErr, KResult, Tid, MemoryResizeFlags, MemoryMappingFlags, MemoryMapFlags, MemoryUpdateMappingFlags, ChannelSyncFlags};
+use crate::{syscall_nums::*, CapId, CapType, CapFlags, SysErr, KResult, Tid, MemoryResizeFlags, MemoryMappingFlags, MemoryMapFlags, MemoryUpdateMappingFlags, ChannelSyncFlags, CapCloneFlags};
 
 // need to use rcx because rbx is reserved by llvm
 // FIXME: ugly
@@ -250,39 +250,20 @@ macro_rules! sysret_2 {
     };
 }
 
-macro_rules! make_cap_struct {
-    ($name:ident, $type:expr) => {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-        pub struct $name(CapId);
+pub trait Capability {
+    const TYPE: CapType;
 
-        impl $name {
-            /// Create a new capability struct wrapping an existing CapId
-            /// 
-            /// Returns None if the cap_type of `cap_id` is not the right type
-            pub fn try_from(cap_id: CapId) -> Option<Self> {
-                if cap_id.cap_type() == $type {
-                    Some(Self(cap_id))
-                } else {
-                    None
-                }
-            }
-        
-            /// Returns the CapId of this capability struct
-            pub fn cap_id(&self) -> CapId {
-                self.0
-            }
+    /// Create a new capability struct wrapping an existing CapId
+    /// 
+    /// Returns None if the cap_type of `cap_id` is not the right type
+    fn from_cap_id(cap_id: CapId) -> Option<Self>
+        where Self: Sized;
 
-            pub fn as_usize(&self) -> usize {
-                self.0.into()
-            }
-        }
+    fn cap_id(&self) -> CapId;
 
-        impl From<$name> for usize {
-            fn from(cap: $name) -> usize {
-                cap.0.into()
-            }
-        }
-    };
+    fn as_usize(&self) -> usize {
+        self.cap_id().into()
+    }
 }
 
 const WEAK_AUTO_DESTROY: u32 = 1 << 31;
@@ -357,7 +338,24 @@ pub fn suspend_until(nsec: u64) {
     }
 }
 
-make_cap_struct!(Process, CapType::Process);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Process(CapId);
+
+impl Capability for Process {
+    const TYPE: CapType = CapType::Process;
+
+    fn from_cap_id(cap_id: CapId) -> Option<Self> {
+        if cap_id.cap_type() == CapType::Process {
+            Some(Process(cap_id))
+        } else {
+            None
+        }
+    }
+
+    fn cap_id(&self) -> CapId {
+        self.0
+    }
+}
 
 impl Process {
     pub fn new(flags: CapFlags, allocator: Allocator, spawner: Spawner) -> KResult<Self> {
@@ -461,6 +459,101 @@ impl Process {
     }
 }
 
+
+/// Specifies which process an operation should be performed on
+#[derive(Debug, Clone, Copy)]
+pub enum ProcessTarget {
+    /// Perform it on the current process
+    Current,
+    /// Perform it on another process
+    Other(Process),
+}
+
+macro_rules! make_cap_fn {
+    ($fn_name:ident, $make_weak:expr, $destroy_src_cap:expr) => {
+        pub fn $fn_name<T: Capability>(
+            dst_process: ProcessTarget,
+            src_process: ProcessTarget,
+            cap: T,
+            new_flags: CapFlags,
+        ) -> KResult<T> {
+            let cap_id = cap_clone_inner(
+                dst_process,
+                src_process,
+                cap.cap_id(),
+                new_flags,
+                $make_weak,
+                $destroy_src_cap,
+            )?;
+
+            Ok(T::from_cap_id(cap_id).expect("invalid capid returned by kernel"))
+        }        
+    };
+}
+
+make_cap_fn!(cap_clone, false, false);
+make_cap_fn!(cap_move, false, true);
+make_cap_fn!(cap_clone_weak, true, false);
+make_cap_fn!(cap_move_weak, true, true);
+
+fn cap_clone_inner(
+    dst_process: ProcessTarget,
+    src_process: ProcessTarget,
+    cap_id: CapId,
+    new_flags: CapFlags,
+    make_weak: bool,
+    destroy_src_cap: bool,
+) -> KResult<CapId> {
+    let mut flags = CapCloneFlags::empty();
+
+    if new_flags.contains(CapFlags::READ) {
+        flags |= CapCloneFlags::READ;
+    }
+    if new_flags.contains(CapFlags::PROD) {
+        flags |= CapCloneFlags::PROD;
+    }
+    if new_flags.contains(CapFlags::WRITE) {
+        flags |= CapCloneFlags::WRITE;
+    }
+    if new_flags.contains(CapFlags::UPGRADE) {
+        flags |= CapCloneFlags::UPGRADE;
+    }
+
+    if make_weak {
+        flags |= CapCloneFlags::MAKE_WEAK;
+    }
+
+    if destroy_src_cap {
+        flags |= CapCloneFlags::DESTROY_SRC_CAP;
+    }
+
+    let src_process_id = match src_process {
+        ProcessTarget::Current => {
+            flags |= CapCloneFlags::SRC_PROCESS_SELF;
+            0
+        },
+        ProcessTarget::Other(process) => process.as_usize(),
+    };
+
+    let dst_process_id = match dst_process {
+        ProcessTarget::Current => {
+            flags |= CapCloneFlags::DST_PROCESS_SELF;
+            0
+        },
+        ProcessTarget::Other(process) => process.as_usize(),
+    };
+
+    unsafe {
+        sysret_1!(syscall!(
+            CAP_CLONE,
+            flags.bits() | WEAK_AUTO_DESTROY,
+            dst_process_id,
+            src_process_id,
+            usize::from(cap_id)
+        )).map(|num| CapId::try_from(num).expect(INVALID_CAPID_MESSAGE))
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Memory {
     id: CapId,
@@ -468,29 +561,10 @@ pub struct Memory {
     size: Size,
 }
 
-impl Memory {
-    /// Updates the size field using `memory_get_size` syscall
-    /// 
-    /// # Returns
-    /// 
-    /// The new size of the memory in pages
-    pub fn refresh_size(&mut self) -> KResult<Size> {
-        // panic safety: from_pages can panic, but syscall should not return invalid number of pages
-        self.size = unsafe {
-            Size::from_pages(sysret_1!(syscall!(
-                MEMORY_GET_SIZE,
-                WEAK_AUTO_DESTROY,
-                self.as_usize()
-            ))?)
-        };
+impl Capability for Memory {
+    const TYPE: CapType = CapType::Memory;
 
-        Ok(self.size)
-    }
-
-    /// Create a new capability struct wrapping an existing CapId
-    /// 
-    /// Returns None if the cap_type of `cap_id` is not the right type
-    pub fn try_from(cap_id: CapId) -> Option<Self> {
+    fn from_cap_id(cap_id: CapId) -> Option<Self> {
         if cap_id.cap_type() == CapType::Memory {
             let mut out = Self {
                 id: cap_id,
@@ -505,23 +579,8 @@ impl Memory {
         }
     }
 
-    pub fn size(&self) -> Size {
-        self.size
-    }
-
-    /// Returns the CapId of this capability struct
-    pub fn cap_id(&self) -> CapId {
+    fn cap_id(&self) -> CapId {
         self.id
-    }
-
-    pub fn as_usize(&self) -> usize {
-        self.id.into()
-    }
-}
-
-impl From<Memory> for usize {
-    fn from(cap: Memory) -> usize {
-        cap.id.into()
     }
 }
 
@@ -540,6 +599,28 @@ impl Memory {
                 size: Size::from_pages(size),
             })
         }
+    }
+
+    /// Updates the size field using `memory_get_size` syscall
+    /// 
+    /// # Returns
+    /// 
+    /// The new size of the memory in pages
+    pub fn refresh_size(&mut self) -> KResult<Size> {
+        // panic safety: from_pages can panic, but syscall should not return invalid number of pages
+        self.size = unsafe {
+            Size::from_pages(sysret_1!(syscall!(
+                MEMORY_GET_SIZE,
+                WEAK_AUTO_DESTROY,
+                self.as_usize()
+            ))?)
+        };
+
+        Ok(self.size)
+    }
+
+    pub fn size(&self) -> Size {
+        self.size
     }
 }
 
@@ -561,7 +642,24 @@ impl MessageBuffer {
     }
 }
 
-make_cap_struct!(Channel, CapType::Channel);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Channel(CapId);
+
+impl Capability for Channel {
+    const TYPE: CapType = CapType::Channel;
+
+    fn from_cap_id(cap_id: CapId) -> Option<Self> {
+        if cap_id.cap_type() == CapType::Channel {
+            Some(Channel(cap_id))
+        } else {
+            None
+        }
+    }
+
+    fn cap_id(&self) -> CapId {
+        self.0
+    }
+}
 
 impl Channel {
     pub fn new(flags: CapFlags, allocator: Allocator) -> KResult<Self> {
@@ -647,7 +745,24 @@ impl Channel {
     }
 }
 
-make_cap_struct!(Key, CapType::Key);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Key(CapId);
+
+impl Capability for Key {
+    const TYPE: CapType = CapType::Key;
+
+    fn from_cap_id(cap_id: CapId) -> Option<Self> {
+        if cap_id.cap_type() == CapType::Key {
+            Some(Key(cap_id))
+        } else {
+            None
+        }
+    }
+
+    fn cap_id(&self) -> CapId {
+        self.0
+    }
+}
 
 impl Key {
     pub fn new(flags: CapFlags, allocator: Allocator) -> KResult<Self> {
@@ -671,7 +786,24 @@ impl Key {
     }
 }
 
-make_cap_struct!(Spawner, CapType::Spawner);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Spawner(CapId);
+
+impl Capability for Spawner {
+    const TYPE: CapType = CapType::Spawner;
+
+    fn from_cap_id(cap_id: CapId) -> Option<Self> {
+        if cap_id.cap_type() == CapType::Spawner {
+            Some(Spawner(cap_id))
+        } else {
+            None
+        }
+    }
+
+    fn cap_id(&self) -> CapId {
+        self.0
+    }
+}
 
 impl Spawner {
     pub fn new(flags: CapFlags, allocator: Allocator, spawn_key: Key) -> KResult<Self> {
@@ -696,4 +828,21 @@ impl Spawner {
     }
 }
 
-make_cap_struct!(Allocator, CapType::Allocator);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Allocator(CapId);
+
+impl Capability for Allocator {
+    const TYPE: CapType = CapType::Allocator;
+
+    fn from_cap_id(cap_id: CapId) -> Option<Self> {
+        if cap_id.cap_type() == CapType::Allocator {
+            Some(Allocator(cap_id))
+        } else {
+            None
+        }
+    }
+
+    fn cap_id(&self) -> CapId {
+        self.0
+    }
+}

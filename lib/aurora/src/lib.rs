@@ -10,7 +10,7 @@ extern crate alloc;
 use aser::{from_bytes, AserError};
 use bit_utils::Size;
 use sys::{CapId, Process, Allocator, Spawner, Memory};
-pub use sys::{ProcessInitData, ProcessMemoryEntry, process_data_from_slice};
+pub use sys::{ProcessInitData, ProcessMemoryEntry, Capability, process_data_from_slice};
 use thiserror_no_std::Error;
 
 use allocator::addr_space::{AddrSpaceManager, AddrSpaceError, RegionPadding, MappedRegion};
@@ -57,9 +57,9 @@ impl TryFrom<ProcessInitData> for Context {
         let allocator_id = CapId::try_from(value.allocator_cap_id).ok_or(InitError::InvalidCapId)?;
         let spawner_id = CapId::try_from(value.spawner_cap_id).ok_or(InitError::InvalidCapId)?;
 
-        let process = Process::try_from(process_id).ok_or(InitError::InvalidCapId)?;
-        let allocator = Allocator::try_from(allocator_id).ok_or(InitError::InvalidCapId)?;
-        let spawner = Spawner::try_from(spawner_id).ok_or(InitError::InvalidCapId)?;
+        let process = Process::from_cap_id(process_id).ok_or(InitError::InvalidCapId)?;
+        let allocator = Allocator::from_cap_id(allocator_id).ok_or(InitError::InvalidCapId)?;
+        let spawner = Spawner::from_cap_id(spawner_id).ok_or(InitError::InvalidCapId)?;
 
         Ok(Context {
             process,
@@ -74,7 +74,7 @@ impl TryFrom<ProcessMemoryEntry> for MappedRegion {
 
     fn try_from(value: ProcessMemoryEntry) -> Result<Self, Self::Error> {
         let memory_id = CapId::try_from(value.memory_cap_id).ok_or(InitError::InvalidCapId)?;
-        let memory = Memory::try_from(memory_id).ok_or(InitError::InvalidCapId)?;
+        let memory = Memory::from_cap_id(memory_id).ok_or(InitError::InvalidCapId)?;
 
         let padding = RegionPadding {
             start: Size::from_bytes(value.padding_start),
