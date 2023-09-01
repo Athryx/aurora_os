@@ -11,7 +11,6 @@ use crate::{
     MemoryMappingFlags,
     MemoryMapFlags,
     MemoryUpdateMappingFlags,
-    CapCloneFlags, 
     syscall,
     sysret_0,
     sysret_1,
@@ -165,100 +164,5 @@ impl Process {
         memory.size = Size::from_pages(new_size);
 
         Ok(new_size)
-    }
-}
-
-
-/// Specifies which process an operation should be performed on
-#[derive(Debug, Clone, Copy)]
-pub enum ProcessTarget {
-    /// Perform it on the current process
-    Current,
-    /// Perform it on another process
-    Other(Process),
-}
-
-macro_rules! make_cap_fn {
-    ($fn_name:ident, $make_weak:expr, $destroy_src_cap:expr) => {
-        pub fn $fn_name<T: Capability>(
-            dst_process: ProcessTarget,
-            src_process: ProcessTarget,
-            cap: T,
-            new_flags: CapFlags,
-        ) -> KResult<T> {
-            let cap_id = cap_clone_inner(
-                dst_process,
-                src_process,
-                cap.cap_id(),
-                new_flags,
-                $make_weak,
-                $destroy_src_cap,
-            )?;
-
-            Ok(T::from_cap_id(cap_id).expect("invalid capid returned by kernel"))
-        }        
-    };
-}
-
-make_cap_fn!(cap_clone, false, false);
-make_cap_fn!(cap_move, false, true);
-make_cap_fn!(cap_clone_weak, true, false);
-make_cap_fn!(cap_move_weak, true, true);
-
-fn cap_clone_inner(
-    dst_process: ProcessTarget,
-    src_process: ProcessTarget,
-    cap_id: CapId,
-    new_flags: CapFlags,
-    make_weak: bool,
-    destroy_src_cap: bool,
-) -> KResult<CapId> {
-    let mut flags = CapCloneFlags::empty();
-
-    if new_flags.contains(CapFlags::READ) {
-        flags |= CapCloneFlags::READ;
-    }
-    if new_flags.contains(CapFlags::PROD) {
-        flags |= CapCloneFlags::PROD;
-    }
-    if new_flags.contains(CapFlags::WRITE) {
-        flags |= CapCloneFlags::WRITE;
-    }
-    if new_flags.contains(CapFlags::UPGRADE) {
-        flags |= CapCloneFlags::UPGRADE;
-    }
-
-    if make_weak {
-        flags |= CapCloneFlags::MAKE_WEAK;
-    }
-
-    if destroy_src_cap {
-        flags |= CapCloneFlags::DESTROY_SRC_CAP;
-    }
-
-    let src_process_id = match src_process {
-        ProcessTarget::Current => {
-            flags |= CapCloneFlags::SRC_PROCESS_SELF;
-            0
-        },
-        ProcessTarget::Other(process) => process.as_usize(),
-    };
-
-    let dst_process_id = match dst_process {
-        ProcessTarget::Current => {
-            flags |= CapCloneFlags::DST_PROCESS_SELF;
-            0
-        },
-        ProcessTarget::Other(process) => process.as_usize(),
-    };
-
-    unsafe {
-        sysret_1!(syscall!(
-            CAP_CLONE,
-            flags.bits() | WEAK_AUTO_DESTROY,
-            dst_process_id,
-            src_process_id,
-            usize::from(cap_id)
-        )).map(|num| CapId::try_from(num).expect(INVALID_CAPID_MESSAGE))
     }
 }
