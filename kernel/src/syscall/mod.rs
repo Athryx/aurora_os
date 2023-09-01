@@ -5,6 +5,8 @@ use crate::arch::x64::{
 	rdmsr, wrmsr, EFER_MSR, EFER_SYSCALL_ENABLE, FMASK_MSR, LSTAR_MSR, STAR_MSR,
 };
 
+mod cap;
+use cap::*;
 mod channel;
 use channel::*;
 mod debug;
@@ -234,6 +236,8 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		THREAD_DESTROY => sysret_0!(syscall_2!(thread_destroy, vals), vals),
 		THREAD_SUSPEND => sysret_0!(syscall_1!(thread_suspend, vals), vals),
 		THREAD_RESUME => sysret_0!(syscall_2!(thread_resume, vals), vals),
+		CAP_CLONE => sysret_1!(syscall_3!(cap_clone, vals), vals),
+		CAP_DESTROY => sysret_0!(syscall_2!(cap_destroy, vals), vals),
 		MEMORY_MAP => sysret_1!(syscall_4!(memory_map, vals), vals),
 		MEMORY_UNMAP => sysret_0!(syscall_2!(memory_unmap, vals), vals),
 		MEMORY_NEW => sysret_2!(syscall_2!(memory_new, vals), vals),

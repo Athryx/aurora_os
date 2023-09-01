@@ -10,6 +10,9 @@ pub const THREAD_DESTROY: u32 = 5;
 pub const THREAD_SUSPEND: u32 = 6;
 pub const THREAD_RESUME: u32 = 7;
 
+pub const CAP_CLONE: u32 = 8;
+pub const CAP_DESTROY: u32 = 9;
+
 pub const MEMORY_MAP: u32 = 11;
 pub const MEMORY_UNMAP: u32 = 12;
 pub const MEMORY_UPDATE_MAPPING: u32 = 13;

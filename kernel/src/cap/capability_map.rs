@@ -1,6 +1,6 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
-use concat_idents::concat_idents;
+use paste::paste;
 
 use crate::event::UserspaceBuffer;
 use crate::{prelude::*, alloc::HeapRef};
@@ -46,9 +46,9 @@ impl CapabilityMap {
 
 macro_rules! generate_cap_methods {
     ($map:ty, $cap_type:ty, $cap_map:ident, $cap_name:ident) => {
-        impl $map {
-            concat_idents!(insert_cap = insert_, $cap_name {
-                pub fn insert_cap(&self, mut capability: Capability<$cap_type>) -> KResult<CapId> {
+        paste! {
+            impl $map {
+                pub fn [<insert_ $cap_name>](&self, mut capability: Capability<$cap_type>) -> KResult<CapId> {
                     let next_id = self.next_id.fetch_add(1, Ordering::Relaxed);
                     
                     let cap_id = CapId::new(
@@ -63,17 +63,13 @@ macro_rules! generate_cap_methods {
                     self.$cap_map.lock().insert(cap_id, capability)?;
                     Ok(cap_id)
                 }
-            });
 
-            concat_idents!(remove_cap = remove_, $cap_name {
-                pub fn remove_cap(&self, cap_id: CapId) -> KResult<Capability<$cap_type>> {
+                pub fn [<remove_ $cap_name>](&self, cap_id: CapId) -> KResult<Capability<$cap_type>> {
                     self.$cap_map.lock().remove(&cap_id)
                         .ok_or(SysErr::InvlId)
                 }
-            });
 
-            concat_idents!(get_strong_with_perms = get_strong_, $cap_name, _with_perms {
-                pub fn get_strong_with_perms(
+                pub fn [<get_strong_ $cap_name _with_perms>](
                     &self,
                     cap_id: usize,
                     required_perms: CapFlags,
@@ -92,10 +88,8 @@ macro_rules! generate_cap_methods {
                         Capability::Weak(_) => Err(SysErr::InvlWeak),
                     }
                 }
-            });
 
-            concat_idents!(get_with_perms = get_, $cap_name, _with_perms {
-                pub fn get_with_perms(
+                pub fn [<get_ $cap_name _with_perms>](
                     &self,
                     cap_id: usize,
                     required_perms: CapFlags,
@@ -128,10 +122,8 @@ macro_rules! generate_cap_methods {
                         },
                     }
                 }
-            });
 
-            concat_idents!(get_strong_cap = get_strong_, $cap_name {
-                pub fn get_strong_cap(
+                pub fn [<get_strong_ $cap_name>](
                     &self,
                     cap_id: usize,
                     weak_auto_destroy: bool,
@@ -159,15 +151,68 @@ macro_rules! generate_cap_methods {
                         },
                     }
                 }
-            });
 
-            concat_idents!(get_cap = get_, $cap_name {
-                pub fn get_cap(&self, cap_id: CapId) -> KResult<Capability<$cap_type>> {
+                pub fn [<get_ $cap_name>](&self, cap_id: CapId) -> KResult<Capability<$cap_type>> {
                     let map = self.$cap_map.lock();
 
                     Ok(map.get(&cap_id).ok_or(SysErr::InvlId)?.clone())
                 }
-            });
+
+                /// Used by cap_clone syscall
+                // TODO: don't have so many arguments
+                pub fn [<clone_ $cap_name>](
+                    dst: &Self,
+                    src: &Self,
+                    cap_id: CapId,
+                    new_perms: CapFlags,
+                    make_strong_cap: bool,
+                    destroy_old_cap: bool,
+                    weak_auto_destroy: bool,
+                ) -> KResult<CapId> {
+                    let capability = src.[<get_ $cap_name>](cap_id)?;
+
+                    let new_flags_capid = CapId::null_flags(capability.flags() & new_perms, !make_strong_cap);
+
+                    let new_capability = match capability {
+                        Capability::Strong(mut capability) => {
+                            capability.id = new_flags_capid;
+
+                            if make_strong_cap {
+                                Capability::Strong(capability)
+                            } else {
+                                Capability::Weak(capability.downgrade())
+                            }
+                        },
+                        Capability::Weak(mut capability) => {
+                            capability.id = new_flags_capid;
+
+                            if make_strong_cap {
+                                let Some(strong_cap) = capability.upgrade() else {
+                                    if weak_auto_destroy {
+                                        // panic safety: this capability is already checked to exist
+                                        src.[<remove_ $cap_name>](cap_id).unwrap();
+                                    }
+
+                                    return Err(SysErr::InvlWeak);
+                                };
+
+                                Capability::Strong(strong_cap)
+                            } else {
+                                Capability::Weak(capability)
+                            }
+                        },
+                    };
+
+                    let new_cap_id = dst.[<insert_ $cap_name>](new_capability)?;
+
+                    if destroy_old_cap {
+                        // panic safety: this capability is already checked to exist
+                        src.[<remove_ $cap_name>](cap_id).unwrap();
+                    }
+
+                    Ok(new_cap_id)
+                }
+            }
         }
     };
 }

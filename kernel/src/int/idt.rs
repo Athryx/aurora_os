@@ -1,5 +1,7 @@
 use core::arch::asm;
 
+use paste::paste;
+
 use crate::arch::x64::CPUPrivLevel;
 use crate::prelude::*;
 
@@ -57,12 +59,12 @@ impl IdtEntry {
 
 macro_rules! make_idt_entry {
     ($idt:expr, $num:literal, $handler_type:expr, $priv_level:expr) => {
-        concat_idents::concat_idents!(fn_name = int_handler_, $num {
+        paste! {
             extern "C" {
-                fn fn_name();
+                fn [<int_handler_ $num>]();
             }
-            $idt.entries[$num] = IdtEntry::new(fn_name as usize, $handler_type, $priv_level);
-        })
+            $idt.entries[$num] = IdtEntry::new([<int_handler_ $num>] as usize, $handler_type, $priv_level);
+        }
     };
 }
 

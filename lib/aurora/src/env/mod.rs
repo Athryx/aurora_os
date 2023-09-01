@@ -12,11 +12,11 @@ pub fn this_namespace() -> &'static Namespace {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Namespace {
-    args: Args,
+    pub(super) args: Args,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct Args {
-    positional_args: Vec<Value>,
-    named_args: Value,
+pub(super) struct Args {
+    pub(super) positional_args: Vec<Value>,
+    pub(super) named_args: Value,
 }

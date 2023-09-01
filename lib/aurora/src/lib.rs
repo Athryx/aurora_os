@@ -13,15 +13,14 @@ use sys::{CapId, Process, Allocator, Spawner, Memory};
 pub use sys::{ProcessInitData, ProcessMemoryEntry, process_data_from_slice};
 use thiserror_no_std::Error;
 
-use addr_space_manager::{AddrSpaceManager, AddrSpaceError, RegionPadding, MappedRegion};
+use allocator::addr_space::{AddrSpaceManager, AddrSpaceError, RegionPadding, MappedRegion};
 use context::Context;
 use sync::{Once, Mutex, MutexGuard};
 use env::{Namespace, THIS_NAMESPACE};
 
-mod addr_space_manager;
 mod allocator;
 mod context;
-pub mod container;
+pub mod collections;
 pub mod debug_print;
 pub mod env;
 mod prelude;
