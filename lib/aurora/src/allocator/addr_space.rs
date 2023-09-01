@@ -6,6 +6,8 @@ use thiserror_no_std::Error;
 use bit_utils::{Size, PAGE_SIZE, LOWER_HALF_END, KERNEL_RESERVED_START, HIGHER_HALF_START};
 use sys::{Memory, MemoryMappingFlags, CapFlags, SysErr, MemoryResizeFlags};
 
+use crate::context::Context;
+use crate::prelude::*;
 use crate::this_context;
 
 /// This is the first address that is not allowed to be mapped by address space manager
@@ -80,8 +82,15 @@ impl MappedRegion {
 /// Maximum possible size of region list in pages
 const REGION_LIST_MAX_SIZE: Size = Size::from_pages(4096);
 
-/// Manages memory that is mapped into address space
-pub struct AddrSpaceManager {
+pub trait MappedRegionStorage: Deref<Target = [MappedRegion]> {
+    fn len(&self) -> usize;
+    
+    fn insert(&mut self, index: usize, region: MappedRegion) -> Result<(), AddrSpaceError>;
+    fn remove(&mut self, index: usize) -> MappedRegion;
+}
+
+/// Stores the mapped regions in a memory capability
+pub struct MemoryCapStorage {
     /// Memory capability that stores the region list
     memory_cap: Memory,
     /// Pointer to region list
@@ -90,13 +99,10 @@ pub struct AddrSpaceManager {
     len: usize,
     /// Total number of elements that the region list has capacity to store
     cap: usize,
-    aslr_rng: ChaCha20Rng,
 }
 
-impl AddrSpaceManager {
-    pub fn new(aslr_seed: [u8; 32]) -> Result<Self, AddrSpaceError> {
-        let mut aslr_rng = ChaCha20Rng::from_seed(aslr_seed);
-
+impl MemoryCapStorage {
+    fn new(aslr_rng: &mut ChaCha20Rng) -> Result<Self, AddrSpaceError> {
         // randomly place region list in higher half memory
         let higher_half_size = KERNEL_RESERVED_START - HIGHER_HALF_START;
         let available_map_positons = 1 + (higher_half_size - REGION_LIST_MAX_SIZE.bytes()) / PAGE_SIZE;
@@ -117,30 +123,17 @@ impl AddrSpaceManager {
                 None,
                 MemoryMappingFlags::READ | MemoryMappingFlags::WRITE,
             ).or(Err(AddrSpaceError::RegionListOom))?;
-
-        let mut out = AddrSpaceManager {
+        
+        Ok(MemoryCapStorage {
             memory_cap,
             data: NonNull::new(map_address as *mut MappedRegion).unwrap(),
             len: 0,
             cap: memory_cap.size().bytes() / size_of::<MappedRegion>(),
-            aslr_rng,
-        };
-
-        // marks the 0th page as reserved so null address is never mapped
-        out.map_memory(MapMemoryArgs {
-            memory: None,
-            size: None,
-            address: Some(0),
-            padding: RegionPadding {
-                start: Size::default(),
-                end: Size::from_pages(1)
-            },
-            ..Default::default()
-        })?;
-
-        Ok(out)
+        })
     }
+}
 
+impl MemoryCapStorage {
     /// Doubles the size of the region list to allow space for more entries
     fn try_grow(&mut self) -> Result<(), AddrSpaceError> {
         // because of max region size, this should not overflow
@@ -175,6 +168,22 @@ impl AddrSpaceManager {
     unsafe fn off(&mut self, index: usize) -> *mut MappedRegion {
         unsafe { self.data.as_ptr().add(index) }
     }
+}
+
+impl Deref for MemoryCapStorage {
+    type Target = [MappedRegion];
+
+    fn deref(&self) -> &Self::Target {
+        unsafe {
+            core::slice::from_raw_parts(self.data.as_ptr(), self.len)
+        }
+    }
+}
+
+impl MappedRegionStorage for MemoryCapStorage {
+    fn len(&self) -> usize {
+        self.len
+    }
 
     fn insert(&mut self, index: usize, region: MappedRegion) -> Result<(), AddrSpaceError> {
         assert!(index <= self.len);
@@ -193,19 +202,6 @@ impl AddrSpaceManager {
         Ok(())
     }
 
-    /// Inserts the region so it will be in address space order
-    /// 
-    /// # Panics
-    /// 
-    /// panics if the regions start address is the same as another regions address
-    /// 
-    /// this does not check for any other type of overlap though, this is assumed to be already checked
-    pub(crate) fn insert_region(&mut self, region: MappedRegion) -> Result<(), AddrSpaceError> {
-        let index = self.binary_search_address(region.address).unwrap_err();
-
-        self.insert(index, region)
-    }
-
     fn remove(&mut self, index: usize) -> MappedRegion {
         assert!(index < self.len, "index out of bounds");
 
@@ -220,23 +216,96 @@ impl AddrSpaceManager {
 
         out
     }
+}
+
+impl MappedRegionStorage for Vec<MappedRegion> {
+    fn len(&self) -> usize {
+        self.len()
+    }
+
+    fn insert(&mut self, index: usize, region: MappedRegion) -> Result<(), AddrSpaceError> {
+        Ok(self.insert(index, region))
+    }
+
+    fn remove(&mut self, index: usize) -> MappedRegion {
+        self.remove(index)
+    }
+}
+
+
+pub type LocalAddrSpaceManager = AddrSpaceManager<MemoryCapStorage>;
+pub type RemoteAddrSpaceManager = AddrSpaceManager<Vec<MappedRegion>>;
+
+/// Manages memory that is mapped into address space
+pub struct AddrSpaceManager<T: MappedRegionStorage> {
+    memory_regions: T,
+    aslr_rng: ChaCha20Rng,
+    /// This will be the context where memory is mapped and unmapped
+    context: Context,
+}
+
+impl LocalAddrSpaceManager {
+    /// Creates an AddrSpaceManager for the current process
+    pub fn new_local(aslr_seed: [u8; 32]) -> Result<Self, AddrSpaceError> {
+        let mut aslr_rng = ChaCha20Rng::from_seed(aslr_seed);
+
+        let mut out = AddrSpaceManager {
+            memory_regions: MemoryCapStorage::new(&mut aslr_rng)?,
+            aslr_rng,
+            context: this_context().clone(),
+        };
+
+        out.reserve_null_page()?;
+
+        Ok(out)
+    }
+}
+
+impl RemoteAddrSpaceManager {
+    /// Creates an AddrSpaceManager for a different process to manage its address space
+    pub fn new_remote(aslr_seed: [u8; 32], context: Context) -> Result<Self, AddrSpaceError> {
+        let mut out = AddrSpaceManager {
+            memory_regions: Vec::new(),
+            aslr_rng: ChaCha20Rng::from_seed(aslr_seed),
+            context,
+        };
+
+        out.reserve_null_page()?;
+
+        Ok(out)
+    }
+}
+
+impl<T: MappedRegionStorage> AddrSpaceManager<T> {
+    /// Inserts the region so it will be in address space order
+    /// 
+    /// # Panics
+    /// 
+    /// panics if the regions start address is the same as another regions address
+    /// 
+    /// this does not check for any other type of overlap though, this is assumed to be already checked
+    pub(crate) fn insert_region(&mut self, region: MappedRegion) -> Result<(), AddrSpaceError> {
+        let index = self.binary_search_address(region.address).unwrap_err();
+
+        self.memory_regions.insert(index, region)
+    }
 
     fn remove_region(&mut self, address: usize) -> Result<MappedRegion, AddrSpaceError> {
         let index = self.binary_search_address(address)
             .or(Err(AddrSpaceError::InvalidAddress(address)))?;
 
-        Ok(self.remove(index))
+        Ok(self.memory_regions.remove(index))
     }
 
     fn get_region(&self, address: usize) -> Result<&MappedRegion, AddrSpaceError> {
         let index = self.binary_search_address(address)
             .or(Err(AddrSpaceError::InvalidAddress(address)))?;
 
-        Ok(&self[index])
+        Ok(&self.memory_regions[index])
     }
 
     fn binary_search_address(&self, address: usize) -> Result<usize, usize> {
-        self.binary_search_by_key(&address, |region| region.address)
+        self.memory_regions.binary_search_by_key(&address, |region| region.address)
     }
 
     /// Returns an iteratore over all the free regions
@@ -250,7 +319,7 @@ impl AddrSpaceManager {
         };
 
         let mut prev_addr = 0;
-        self.iter()
+        self.memory_regions.iter()
             .copied()
             .chain(core::iter::once(end_region))
             .map(move |region| {
@@ -283,8 +352,8 @@ impl AddrSpaceManager {
         match self.binary_search_address(start_address) {
             Ok(_) => false,
             Err(index) => {
-                (index == 0 || !self[index - 1].contains_address(start_address))
-                    && (index == self.len || !self[index].contains_address(end_address))
+                (index == 0 || !self.memory_regions[index - 1].contains_address(start_address))
+                    && (index == self.memory_regions.len() || !self.memory_regions[index].contains_address(end_address))
             },
         }
     }
@@ -363,7 +432,7 @@ pub struct MapMemoryResult {
     pub size: Size,
 }
 
-impl AddrSpaceManager {
+impl<T: MappedRegionStorage> AddrSpaceManager<T> {
     /// Maps memory into the address space, see [`MapMemoryArgs`] for more details
     // FIXME: check if padding goes below zero or above max userspace address, or non canonical address
     pub fn map_memory(&mut self, args: MapMemoryArgs) -> Result<MapMemoryResult, AddrSpaceError> {
@@ -375,7 +444,7 @@ impl AddrSpaceManager {
                 if let Some(size) = args.size {
                     (Some(Memory::new(
                         CapFlags::READ | CapFlags::WRITE | CapFlags::PROD,
-                        this_context().allocator,
+                        self.context.allocator,
                         size,
                     ).or(Err(AddrSpaceError::AnanamousMappingOom))?), size)
                 } else {
@@ -417,7 +486,7 @@ impl AddrSpaceManager {
 
         if let Some(memory) = memory {
             // TODO: have a way to not specify max size pages
-            let result = this_context().process
+            let result = self.context.process
                 .map_memory(memory, address, Some(size), args.flags)
                 .map_err(|err| AddrSpaceError::MemorySyscallError(err));
 
@@ -450,7 +519,7 @@ impl AddrSpaceManager {
         let region = self.remove_region(address)?;
 
         if let Some(memory) = region.memory_cap {
-            this_context().process.unmap_memory(memory)
+            self.context.process.unmap_memory(memory)
                 .expect("failed to unmap previously mapped memory");
 
             // FIXME: drop memory capability
@@ -459,16 +528,22 @@ impl AddrSpaceManager {
 
         Ok(())
     }
-}
 
-impl Deref for AddrSpaceManager {
-    type Target = [MappedRegion];
+    /// Marks the first page (at address 0) as reserved so null dereferences will alwayus cause page fault
+    fn reserve_null_page(&mut self) -> Result<(), AddrSpaceError> {
+        self.map_memory(MapMemoryArgs {
+            memory: None,
+            size: None,
+            address: Some(0),
+            padding: RegionPadding {
+                start: Size::default(),
+                end: Size::from_pages(1)
+            },
+            ..Default::default()
+        })?;
 
-    fn deref(&self) -> &Self::Target {
-        unsafe {
-            core::slice::from_raw_parts(self.data.as_ptr(), self.len)
-        }
+        Ok(())
     }
 }
 
-unsafe impl Send for AddrSpaceManager {}
+unsafe impl<T: MappedRegionStorage> Send for AddrSpaceManager<T> {}

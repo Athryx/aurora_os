@@ -1,11 +1,26 @@
+use crate::allocator::addr_space::{RemoteAddrSpaceManager, AddrSpaceError};
+use crate::context::Context;
 use crate::env::{Args, Namespace};
 
 use aser::Value;
+use elf::{ElfBytes, ParseError};
+use elf::endian::NativeEndian;
 use serde::Serialize;
-use sys::{Allocator, Spawner, KResult, Process};
+use sys::{Allocator, Spawner, Process, CapFlags, SysErr};
+use thiserror_no_std::Error;
 
 use crate::{prelude::*, this_context};
 use crate::collections::HashMap;
+
+#[derive(Error)]
+pub enum ProcessError {
+    #[error("System error: {0}")]
+    SysErr(#[from] SysErr),
+    #[error("Error parsing elf data: {0}")]
+    ElfParseError(#[from] ParseError),
+    #[error("Error mapping memory in new process: {0}")]
+    AddrSpaceError(#[from] AddrSpaceError),
+}
 
 /// Where the elf data to launc hthe process is comming from
 enum ProcessDataSource {
@@ -82,7 +97,7 @@ impl Command {
         self
     }
 
-    pub fn spawn(&mut self) -> KResult<Process> {
+    pub fn spawn(&mut self) -> Result<Process, ProcessError> {
         let namespace = Namespace {
             args: Args::from(&self.args),
         };
@@ -93,8 +108,19 @@ impl Command {
     }
 }
 
-fn spawn_process(exe_data: &[u8], namespace: Namespace, allocator: Allocator, spawner: Spawner) -> KResult<Process> {
+fn spawn_process(exe_data: &[u8], namespace: Namespace, allocator: Allocator, spawner: Spawner) -> Result<Process, ProcessError> {
     let aslr_seed = gen_aslr_seed();
+
+    let process = Process::new(CapFlags::all(), allocator, spawner)?;
+    let context = Context {
+        process,
+        allocator,
+        spawner,
+    };
+
+    let manager = RemoteAddrSpaceManager::new_remote(aslr_seed, context)?;
+
+    let elf_data = ElfBytes::<NativeEndian>::minimal_parse(exe_data)?;
 
     todo!()
 }

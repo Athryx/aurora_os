@@ -13,7 +13,7 @@ use sys::{CapId, Process, Allocator, Spawner, Memory};
 pub use sys::{ProcessInitData, ProcessMemoryEntry, Capability, process_data_from_slice};
 use thiserror_no_std::Error;
 
-use allocator::addr_space::{AddrSpaceManager, AddrSpaceError, RegionPadding, MappedRegion};
+use allocator::addr_space::{LocalAddrSpaceManager, AddrSpaceError, RegionPadding, MappedRegion};
 use context::Context;
 use sync::{Once, Mutex, MutexGuard};
 use env::{Namespace, THIS_NAMESPACE};
@@ -33,9 +33,9 @@ pub fn this_context() -> &'static Context {
     THIS_CONTEXT.get().unwrap()
 }
 
-static ADDR_SPACE: Once<Mutex<AddrSpaceManager>> = Once::new();
+static ADDR_SPACE: Once<Mutex<LocalAddrSpaceManager>> = Once::new();
 
-pub fn addr_space() -> MutexGuard<'static, AddrSpaceManager> {
+pub fn addr_space() -> MutexGuard<'static, LocalAddrSpaceManager> {
     ADDR_SPACE.get().unwrap().lock()
 }
 
@@ -95,7 +95,7 @@ pub fn init_allocation(init_data: ProcessInitData, memory_entries: &[ProcessMemo
     let context = init_data.try_into()?;
     THIS_CONTEXT.call_once(|| context);
 
-    let mut addr_space = AddrSpaceManager::new(init_data.aslr_seed)?;
+    let mut addr_space = LocalAddrSpaceManager::new_local(init_data.aslr_seed)?;
     for memory_entry in memory_entries {
         let region = (*memory_entry).try_into()?;
 

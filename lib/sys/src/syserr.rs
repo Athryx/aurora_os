@@ -1,3 +1,5 @@
+use core::fmt;
+
 /// Result type returned by syscalls
 pub type KResult<T> = Result<T, SysErr>;
 
@@ -56,5 +58,11 @@ impl SysErr {
             Self::InvlSyscall => "invalid syscall number",
             Self::Unknown => "unknown error",
         }
+    }
+}
+
+impl fmt::Display for SysErr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
