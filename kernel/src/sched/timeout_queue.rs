@@ -2,8 +2,8 @@ use core::cmp::{Ordering, Reverse};
 
 use sys::KResult;
 
-use crate::{container::{Arc, BinaryHeap}, alloc::HeapRef};
-use super::{ThreadRef, thread_map, thread::WakeReason};
+use crate::{container::BinaryHeap, alloc::HeapRef};
+use super::{ThreadRef, thread::WakeReason};
 
 #[derive(Debug, Clone)]
 struct ThreadTimeout {
