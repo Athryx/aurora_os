@@ -9,6 +9,16 @@ extend memory_update_mapping to support moving the base address and changing map
 maybe merge memory_resize and memory_update_mapping syscalls
 
 
+seperate process into a few different things
+currently it is an:
+address space
+capability space
+group of threads
+
+clean up ownership of capabilities in userspace
+(it can be hard to reason about, if a capability is in your process or remote process, or when it should be dropped)
+
+
 add guard pages at the end of kernel stacks
 
 

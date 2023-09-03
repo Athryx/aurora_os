@@ -4,7 +4,7 @@ use rand_core::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use thiserror_no_std::Error;
 use bit_utils::{Size, PAGE_SIZE, LOWER_HALF_END, KERNEL_RESERVED_START, HIGHER_HALF_START};
-use sys::{Memory, MemoryMappingFlags, CapFlags, SysErr, MemoryResizeFlags};
+use sys::{Memory, AutoDrop, MemoryMappingFlags, CapFlags, SysErr, MemoryResizeFlags};
 
 use crate::context::Context;
 use crate::prelude::*;
@@ -407,7 +407,7 @@ impl<T: MappedRegionStorage> AddrSpaceManager<T> {
 /// Arguments for mapping memory in the address apce manager
 #[derive(Debug, Clone, Copy, Default)]
 pub struct MapMemoryArgs {
-    /// Memory capability to map, or the flags for an ananamous mapping
+    /// Memory capability to map, or None for an ananamous mapping
     pub memory: Option<Memory>,
     /// Flags to map memory with
     pub flags: MemoryMappingFlags,
@@ -438,17 +438,19 @@ impl<T: MappedRegionStorage> AddrSpaceManager<T> {
     pub fn map_memory(&mut self, args: MapMemoryArgs) -> Result<MapMemoryResult, AddrSpaceError> {
         let padding = args.padding;
 
-        let (memory, size) = match args.memory {
-            Some(memory) => (Some(memory), memory.size()),
+        let (memory, _memory_auto_drop, size) = match args.memory {
+            Some(memory) => (Some(memory), None, memory.size()),
             None => {
                 if let Some(size) = args.size {
-                    (Some(Memory::new(
+                    let memory = Memory::new(
                         CapFlags::READ | CapFlags::WRITE | CapFlags::PROD,
                         self.context.allocator,
-                        size,
-                    ).or(Err(AddrSpaceError::AnanamousMappingOom))?), size)
+                        size
+                    ).or(Err(AddrSpaceError::AnanamousMappingOom))?;
+
+                    (Some(memory), Some(AutoDrop::from(memory)), size)
                 } else {
-                    (None, Size::default())
+                    (None, None, Size::default())
                 }
             }
         };
@@ -485,22 +487,26 @@ impl<T: MappedRegionStorage> AddrSpaceManager<T> {
         self.insert_region(region)?;
 
         if let Some(memory) = memory {
+            let (map_capability, remote_auto_drop) = if let Some(new_capability) = self.context.clone_capability_to(memory)? {
+                (new_capability, Some(AutoDrop::new_in_process(new_capability, self.context.process_target())))
+            } else {
+                (memory, None)
+            };
+
             // TODO: have a way to not specify max size pages
             let result = self.context.process
-                .map_memory(memory, address, Some(size), args.flags)
+                .map_memory(map_capability, address, Some(size), args.flags)
                 .map_err(|err| AddrSpaceError::MemorySyscallError(err));
 
             if let Err(err) = result {
                 // panic safety: region was added earlier
                 self.remove_region(address).unwrap();
 
-                if args.memory.is_none() {
-                    // FIXME: drop memory capability
-                    todo!();
-                }
-
                 return Err(err);
             }
+
+            // no more errors can occur at this point, don't need to drop remote memory capability anymore
+            core::mem::forget(remote_auto_drop);
         }
 
         Ok(MapMemoryResult {

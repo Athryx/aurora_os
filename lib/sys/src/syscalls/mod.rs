@@ -281,6 +281,44 @@ pub trait Capability {
     }
 }
 
+/// Automatically drops the wrapped capability when this capability is dropped
+pub struct AutoDrop<T: Capability + Copy> {
+    /// Which process the capability is in
+    process: ProcessTarget,
+    capability: T,
+}
+
+impl<T: Capability + Copy> AutoDrop<T> {
+    pub fn new_in_process(capability: T, process: ProcessTarget) -> Self {
+        AutoDrop {
+            process,
+            capability,
+        }
+    }
+
+    pub fn capability(&self) -> T {
+        self.capability
+    }
+
+    pub fn into_inner(self) -> T {
+        let out = self.capability;
+        core::mem::forget(self);
+        out
+    }
+}
+
+impl<T: Capability + Copy> From<T> for AutoDrop<T> {
+    fn from(value: T) -> Self {
+        Self::new_in_process(value, ProcessTarget::Current)
+    }
+}
+
+impl<T: Capability + Copy> Drop for AutoDrop<T> {
+    fn drop(&mut self) {
+        let _ = cap_destroy(self.process, self.capability);
+    }
+}
+
 /// Specifies which process an operation should be performed on
 #[derive(Debug, Clone, Copy)]
 pub enum ProcessTarget {
