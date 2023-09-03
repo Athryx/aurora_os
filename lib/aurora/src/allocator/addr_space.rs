@@ -438,7 +438,7 @@ impl<T: MappedRegionStorage> AddrSpaceManager<T> {
     pub fn map_memory(&mut self, args: MapMemoryArgs) -> Result<MapMemoryResult, AddrSpaceError> {
         let padding = args.padding;
 
-        let (memory, _memory_auto_drop, size) = match args.memory {
+        let (memory, memory_auto_drop, size) = match args.memory {
             Some(memory) => (Some(memory), None, memory.size()),
             None => {
                 if let Some(size) = args.size {
@@ -506,7 +506,12 @@ impl<T: MappedRegionStorage> AddrSpaceManager<T> {
             }
 
             // no more errors can occur at this point, don't need to drop remote memory capability anymore
-            core::mem::forget(remote_auto_drop);
+            match remote_auto_drop {
+                // if memory was copied to new process, don't drop the new memory
+                Some(auto_drop) => auto_drop.forget(),
+                // memory was not moved to new process, don't forget the current memory
+                None => core::mem::forget(memory_auto_drop),
+            }
         }
 
         Ok(MapMemoryResult {

@@ -8,7 +8,6 @@ use sys::MemoryResizeFlags;
 use crate::arch::x64::{asm_thread_init, IntDisable};
 use crate::cap::memory::{Memory, MemoryInner};
 use crate::container::{Arc, Weak, HashMap};
-use crate::event::UserspaceBuffer;
 use crate::int::IPI_PROCESS_EXIT;
 use crate::int::apic::{Ipi, IpiDest};
 use crate::sched::{Tid, Thread, ThreadState, PostSwitchAction, thread_map, switch_current_thread_to};

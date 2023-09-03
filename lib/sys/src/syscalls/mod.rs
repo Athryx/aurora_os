@@ -300,9 +300,13 @@ impl<T: Capability + Copy> AutoDrop<T> {
         self.capability
     }
 
+    pub fn forget(self) {
+        core::mem::forget(self)
+    }
+
     pub fn into_inner(self) -> T {
         let out = self.capability;
-        core::mem::forget(self);
+        self.forget();
         out
     }
 }
