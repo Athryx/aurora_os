@@ -1,13 +1,16 @@
-use core::sync::atomic::{AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicUsize, Ordering, AtomicBool};
 
+use crate::cap::CapObject;
+use crate::cap::capability_space::CapabilitySpace;
+use crate::cap::address_space::AddressSpace;
 use crate::container::Arc;
 use crate::sync::IMutex;
 use super::kernel_stack::KernelStack;
-use super::thread_map;
+use super::{thread_map, ThreadGroup};
 use crate::container::Weak;
-use crate::process::Process;
 use crate::prelude::*;
 
+use sys::CapType;
 pub use sys::Tid;
 
 /// Amount status must be incramented to change generation without changing ThreadState
@@ -55,38 +58,47 @@ pub enum WakeReason {
 
 #[derive(Debug)]
 pub struct Thread {
-    pub tid: Tid,
     name: String,
     status: AtomicUsize,
     wake_reason: IMutex<WakeReason>,
-    pub process: Weak<Process>,
+    // TODO: figure out if this is needed
+    pub is_alive: AtomicBool,
     // this has to be atomic usize because it is written to in assembly
     pub rsp: AtomicUsize,
     kernel_stack: KernelStack,
+    thread_group: Weak<ThreadGroup>,
+    address_space: Arc<AddressSpace>,
+    capability_space: Arc<CapabilitySpace>,
 }
 
 impl Thread {
-    /// Creates a new thread, and returns the thread and its thread handle
-    /// 
-    /// If `kernel_stack` is owned, it must use the same allocator as the process (the drop implementation assumes this to be true)
     pub fn new(
-        tid: Tid,
         name: String,
-        process: Weak<Process>,
         kernel_stack: KernelStack,
-        rsp: usize
-    ) -> KResult<Arc<Thread>> {
-        let allocer = process.alloc_ref();
-
-        Arc::new(Thread {
-            tid,
+        rsp: usize,
+        thread_group: Weak<ThreadGroup>,
+        address_space: Arc<AddressSpace>,
+        capability_space: Arc<CapabilitySpace>,
+    ) -> Self {
+        Thread {
             name,
             status: AtomicUsize::new(ThreadState::Suspended.to_status(0)),
             wake_reason: IMutex::new(WakeReason::None),
-            process,
+            is_alive: AtomicBool::new(true),
             rsp: AtomicUsize::new(rsp),
             kernel_stack,
-        }, allocer)
+            thread_group,
+            address_space,
+            capability_space,
+        }
+    }
+
+    pub fn address_space(&self) -> &Arc<AddressSpace> {
+        &self.address_space
+    }
+
+    pub fn capability_space(&self) -> &Arc<CapabilitySpace> {
+        &self.capability_space
     }
 
     /// This is the rsp value loaded when a syscall occurs for this thread
@@ -126,6 +138,45 @@ impl Thread {
             },
         ).is_ok()
     }
+
+    pub fn is_current_thread(&self) -> bool {
+        ptr::eq(
+            self as *const Thread,
+            Arc::as_ptr(&cpu_local_data().current_thread()),
+        )
+    }
+
+    pub fn destroy_suspended_thread(thread: &Arc<Thread>) -> KResult<()> {
+        if thread.transition_state(ThreadState::Suspended, ThreadState::Dead) {
+            thread.is_alive.store(false, Ordering::Release);
+
+            let Some(thread_group) = thread.thread_group.upgrade() else {
+                return Ok(())
+            };
+
+            thread_group.remove_thread(thread);
+
+            Ok(())
+        } else {
+            Err(SysErr::InvlOp)
+        }
+    }
+
+    pub fn resume_suspended_thread(thread: &Arc<Thread>) -> KResult<()> {
+        if thread.transition_state(ThreadState::Suspended, ThreadState::Ready) {
+            // FIXME: don't panic on oom
+            thread_map().insert_ready_thread(Arc::downgrade(thread))
+                .expect("could not resume suepended thread");
+
+            Ok(())
+        } else {
+            Err(SysErr::InvlOp)
+        }
+    }
+}
+
+impl CapObject for Thread {
+    const TYPE: CapType = CapType::Thread;
 }
 
 #[derive(Debug, Clone)]

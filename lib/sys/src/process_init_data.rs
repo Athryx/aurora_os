@@ -10,9 +10,11 @@ use bytemuck::{Pod, Zeroable, PodCastError, try_from_bytes, try_cast_slice};
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct ProcessInitData {
-    pub process_cap_id: usize,
-    pub allocator_cap_id: usize,
-    pub spawner_cap_id: usize,
+    pub thread_group_id: usize,
+    pub address_space_id: usize,
+    pub capability_space_id: usize,
+    pub allocator_id: usize,
+    pub main_thread_id: usize,
     pub aslr_seed: [u8; 32]
 }
 

@@ -1,14 +1,16 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 use paste::paste;
+use sys::CapType;
 
 use crate::event::UserspaceBuffer;
+use crate::sched::{ThreadGroup, Thread};
 use crate::{prelude::*, alloc::HeapRef};
 use crate::container::HashMap;
-use crate::process::{Process, Spawner};
 use crate::alloc::CapAllocator;
 use crate::sync::IMutex;
-
+use crate::container::Arc;
+use super::address_space::AddressSpace;
 use super::drop_check::{DropCheck, DropCheckReciever};
 use super::{CapId, Capability, StrongCapability, CapFlags, CapObject, key::Key, memory::Memory, channel::Channel};
 
@@ -16,31 +18,40 @@ type InnerCapMap<T> = IMutex<HashMap<CapId, Capability<T>>>;
 
 /// A map that holds all the capabilities in a process
 #[derive(Debug)]
-pub struct CapabilityMap {
+pub struct CapabilitySpace {
     next_id: AtomicUsize,
-    process_map: InnerCapMap<Process>,
+    thread_map: InnerCapMap<Thread>,
+    thread_group_map: InnerCapMap<ThreadGroup>,
+    address_space_map: InnerCapMap<AddressSpace>,
+    capability_space_map: InnerCapMap<Self>,
     memory_map: InnerCapMap<Memory>,
     key_map: InnerCapMap<Key>,
     channel_map: InnerCapMap<Channel>,
-    spawner_map: InnerCapMap<Spawner>,
     allocator_map: InnerCapMap<CapAllocator>,
     drop_check_map: InnerCapMap<DropCheck>,
     drop_check_reciever_map: InnerCapMap<DropCheckReciever>,
 }
 
-impl CapabilityMap {
+impl CapabilitySpace {
     pub fn new(allocator: HeapRef) -> Self {
-        CapabilityMap {
+        CapabilitySpace {
             next_id: AtomicUsize::new(0),
-            process_map: IMutex::new(HashMap::new(allocator.clone())),
+            thread_map: IMutex::new(HashMap::new(allocator.clone())),
+            thread_group_map: IMutex::new(HashMap::new(allocator.clone())),
+            address_space_map: IMutex::new(HashMap::new(allocator.clone())),
+            capability_space_map: IMutex::new(HashMap::new(allocator.clone())),
             memory_map: IMutex::new(HashMap::new(allocator.clone())),
             key_map: IMutex::new(HashMap::new(allocator.clone())),
             channel_map: IMutex::new(HashMap::new(allocator.clone())),
-            spawner_map: IMutex::new(HashMap::new(allocator.clone())),
             allocator_map: IMutex::new(HashMap::new(allocator.clone())),
             drop_check_map: IMutex::new(HashMap::new(allocator.clone())),
             drop_check_reciever_map: IMutex::new(HashMap::new(allocator)),
         }
+    }
+
+    /// Gets the CapabilitySpace of the current thread
+    pub fn current() -> Arc<Self> {
+        cpu_local_data().current_thread().capability_space().clone()
     }
 }
 
@@ -217,16 +228,18 @@ macro_rules! generate_cap_methods {
     };
 }
 
-generate_cap_methods!(CapabilityMap, Process, process_map, process);
-generate_cap_methods!(CapabilityMap, Memory, memory_map, memory);
-generate_cap_methods!(CapabilityMap, Spawner, spawner_map, spawner);
-generate_cap_methods!(CapabilityMap, Key, key_map, key);
-generate_cap_methods!(CapabilityMap, Channel, channel_map, channel);
-generate_cap_methods!(CapabilityMap, CapAllocator, allocator_map, allocator);
-generate_cap_methods!(CapabilityMap, DropCheck, drop_check_map, drop_check);
-generate_cap_methods!(CapabilityMap, DropCheckReciever, drop_check_reciever_map, drop_check_reciever);
+generate_cap_methods!(CapabilitySpace, Thread, thread_map, thread);
+generate_cap_methods!(CapabilitySpace, ThreadGroup, thread_group_map, thread_group);
+generate_cap_methods!(CapabilitySpace, AddressSpace, address_space_map, address_space);
+generate_cap_methods!(CapabilitySpace, CapabilitySpace, capability_space_map, capability_space);
+generate_cap_methods!(CapabilitySpace, Memory, memory_map, memory);
+generate_cap_methods!(CapabilitySpace, Key, key_map, key);
+generate_cap_methods!(CapabilitySpace, Channel, channel_map, channel);
+generate_cap_methods!(CapabilitySpace, CapAllocator, allocator_map, allocator);
+generate_cap_methods!(CapabilitySpace, DropCheck, drop_check_map, drop_check);
+generate_cap_methods!(CapabilitySpace, DropCheckReciever, drop_check_reciever_map, drop_check_reciever);
 
-impl CapabilityMap {
+impl CapabilitySpace {
     /// Gets a userspace buffer from the given memory id and size and offset
     pub fn get_userspace_buffer(
         &self,
@@ -242,4 +255,8 @@ impl CapabilityMap {
 
         Ok(UserspaceBuffer::new(memory, buffer_offset, buffer_size))
     }
+}
+
+impl CapObject for CapabilitySpace {
+    const TYPE: CapType = CapType::CapabilitySpace;
 }

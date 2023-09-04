@@ -1,6 +1,7 @@
 use sys::{KResult, CapId, SysErr, CapCloneFlags, CapFlags, CapType, CapDestroyFlags};
 
-use crate::{arch::x64::IntDisable, prelude::cpu_local_data, cap::CapabilityMap};
+use crate::prelude::*;
+use crate::{arch::x64::IntDisable, cap::capability_space::CapabilitySpace};
 
 use super::options_weak_autodestroy;
 
@@ -19,29 +20,27 @@ pub fn cap_clone(
 
     let _int_disable = IntDisable::new();
 
-    let src_process = if flags.contains(CapCloneFlags::SRC_PROCESS_SELF) {
-        cpu_local_data().current_process()
+    let src_cspace = if flags.contains(CapCloneFlags::SRC_PROCESS_SELF) {
+        CapabilitySpace::current()
     } else {
-        cpu_local_data().current_process().cap_map()
-            .get_process_with_perms(src_process_id, CapFlags::WRITE, weak_auto_destroy)?
+        CapabilitySpace::current()
+            .get_capability_space_with_perms(src_process_id, CapFlags::WRITE, weak_auto_destroy)?
             .into_inner()
     };
-    let src_cap_map = src_process.cap_map();
 
-    let dst_process = if flags.contains(CapCloneFlags::DST_PROCESS_SELF) {
-        cpu_local_data().current_process()
+    let dst_cspace = if flags.contains(CapCloneFlags::DST_PROCESS_SELF) {
+        CapabilitySpace::current()
     } else {
-        cpu_local_data().current_process().cap_map()
-            .get_process_with_perms(dst_process_id, CapFlags::WRITE, weak_auto_destroy)?
+        CapabilitySpace::current()
+            .get_capability_space_with_perms(dst_process_id, CapFlags::WRITE, weak_auto_destroy)?
             .into_inner()
     };
-    let dst_cap_map = dst_process.cap_map();
 
     macro_rules! call_cap_clone {
-        ($cap_map_clone:ident) => {
-            CapabilityMap::$cap_map_clone(
-                dst_cap_map,
-                src_cap_map,
+        ($cspace_clone:ident) => {
+            CapabilitySpace::$cspace_clone(
+                &dst_cspace,
+                &src_cspace,
                 old_cap,
                 new_cap_perms,
                 !flags.contains(CapCloneFlags::MAKE_WEAK),
@@ -52,7 +51,10 @@ pub fn cap_clone(
     }
 
     let new_cap_id = match old_cap.cap_type() {
-        CapType::Process => call_cap_clone!(clone_process),
+        CapType::Thread => call_cap_clone!(clone_thread),
+        CapType::ThreadGroup => call_cap_clone!(clone_thread_group),
+        CapType::AddressSpace => call_cap_clone!(clone_address_space),
+        CapType::CapabilitySpace => call_cap_clone!(clone_capability_space),
         CapType::Memory => call_cap_clone!(clone_memory),
         //CapType::Lock => call_cap_clone!(clone_),
         //CapType::BoundedEventPool => call_cap_clone!(clone_),
@@ -62,7 +64,6 @@ pub fn cap_clone(
         CapType::Key => call_cap_clone!(clone_key),
         //CapType::Interrupt => call_cap_clone!(clone_),
         //CapType::Port => call_cap_clone!(clone_),
-        CapType::Spawner => call_cap_clone!(clone_spawner),
         CapType::Allocator => call_cap_clone!(clone_allocator),
         CapType::DropCheck => call_cap_clone!(clone_drop_check),
         CapType::DropCheckReciever => call_cap_clone!(clone_drop_check_reciever),
@@ -89,30 +90,31 @@ pub fn cap_destroy(
 
     let _int_disable = IntDisable::new();
 
-    let process = if flags.contains(CapDestroyFlags::PROCESS_SELF) {
-        cpu_local_data().current_process()
+    let cspace = if flags.contains(CapDestroyFlags::PROCESS_SELF) {
+        CapabilitySpace::current()
     } else {
-        cpu_local_data().current_process().cap_map()
-            .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?
+        CapabilitySpace::current()
+            .get_capability_space_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?
             .into_inner()
     };
-    let cap_map = process.cap_map();
 
     match cap_id.cap_type() {
-        CapType::Process => { cap_map.remove_process(cap_id)?; },
-        CapType::Memory => { cap_map.remove_memory(cap_id)?; },
+        CapType::Thread => { cspace.remove_thread(cap_id)?; },
+        CapType::ThreadGroup => { cspace.remove_thread_group(cap_id)?; },
+        CapType::AddressSpace => { cspace.remove_address_space(cap_id)?; },
+        CapType::CapabilitySpace => { cspace.remove_capability_space(cap_id)?; },
+        CapType::Memory => { cspace.remove_memory(cap_id)?; },
         //CapType::Lock => call_cap_clone!(clone_),
         //CapType::BoundedEventPool => call_cap_clone!(clone_),
         //CapType::UnboundedEventPool => call_cap_clone!(clone_),
-        CapType::Channel => { cap_map.remove_channel(cap_id)?; },
+        CapType::Channel => { cspace.remove_channel(cap_id)?; },
         //CapType::MessageCapacity => call_cap_clone!(clone_),
-        CapType::Key => { cap_map.remove_key(cap_id)?; },
+        CapType::Key => { cspace.remove_key(cap_id)?; },
         //CapType::Interrupt => call_cap_clone!(clone_),
         //CapType::Port => call_cap_clone!(clone_),
-        CapType::Spawner => { cap_map.remove_spawner(cap_id)?; },
-        CapType::Allocator => { cap_map.remove_allocator(cap_id)?; },
-        CapType::DropCheck => { cap_map.remove_drop_check(cap_id)?; },
-        CapType::DropCheckReciever => { cap_map.remove_drop_check_reciever(cap_id)?; },
+        CapType::Allocator => { cspace.remove_allocator(cap_id)?; },
+        CapType::DropCheck => { cspace.remove_drop_check(cap_id)?; },
+        CapType::DropCheckReciever => { cspace.remove_drop_check_reciever(cap_id)?; },
         //CapType::RootOom => call_cap_clone!(clone_),
         //CapType::MmioAllocator => call_cap_clone!(clone_),
         //CapType::IntAllocator => call_cap_clone!(clone_),

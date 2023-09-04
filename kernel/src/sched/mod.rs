@@ -3,19 +3,23 @@ use core::sync::atomic::Ordering;
 use spin::Once;
 
 pub use thread::{ThreadState, Thread, ThreadRef, Tid, WakeReason};
+pub use thread_group::{ThreadGroup, ThreadStartMode};
 use thread_map::ThreadMap;
-use crate::alloc::root_alloc_ref;
-use crate::arch::x64::IntDisable;
+use crate::alloc::{root_alloc_ref, root_alloc_page_ref};
+use crate::arch::x64::{IntDisable, set_cr3};
+use crate::cap::address_space::AddressSpace;
+use crate::cap::capability_space::CapabilitySpace;
 use crate::config::SCHED_TIME;
 use crate::prelude::*;
 use crate::sync::IMutex;
 use crate::arch::x64::asm_switch_thread;
 use crate::container::Arc;
-use crate::process::{Process, get_kernel_process};
 use timeout_queue::TimeoutQueue;
+use kernel_stack::KernelStack;
 
 pub mod kernel_stack;
 mod thread;
+mod thread_group;
 mod thread_map;
 mod timeout_queue;
 
@@ -36,7 +40,6 @@ pub fn timeout_queue() -> &'static IMutex<TimeoutQueue> {
 #[derive(Debug)]
 pub struct SchedState {
     pub current_thread: Arc<Thread>,
-    pub current_process: Arc<Process>,
 }
 
 /// Called every time the local apic timer ticks
@@ -58,7 +61,7 @@ pub fn timer_handler() {
 
 /// Called when an ipi_exit ipi occurs, and potentialy exits the current thread
 pub fn exit_handler() {
-    if cpu_local_data().current_process().is_alive.load(Ordering::Acquire) {
+    if cpu_local_data().current_thread().is_alive.load(Ordering::Acquire) {
         switch_current_thread_to(
             ThreadState::Dead,
             IntDisable::new(),
@@ -72,7 +75,6 @@ pub fn exit_handler() {
 #[derive(Debug)]
 pub struct PostSwitchData {
     old_thread: Arc<Thread>,
-    old_process: Arc<Process>,
     post_switch_action: PostSwitchAction,
     send_eoi: bool,
 }
@@ -141,26 +143,20 @@ pub enum ThreadSwitchToError {
 pub fn switch_current_thread_to(state: ThreadState, _int_disable: IntDisable, post_switch_hook: PostSwitchAction, send_eoi: bool) -> Result<(), ThreadSwitchToError> {
     assert!(!matches!(state, ThreadState::Running), "cannot switch current thread to running state");
 
-    let (new_thread, new_process) = thread_map().get_next_thread_and_process()
+    let new_thread = thread_map().get_next_thread()
         .ok_or(ThreadSwitchToError::NoAvailableThreads)?;
 
     let mut global_sched_state = cpu_local_data().sched_state();
 
-    // save old thread and old process to decrament running thread count in post switch handler
     let old_thread = global_sched_state.current_thread.clone();
-    let old_process = global_sched_state.current_process.clone();
 
     // change all thread states that need to be changed
     old_thread.set_state(state);
     new_thread.set_state(ThreadState::Running);
 
-    // update thread running count
-    old_process.num_threads_running.fetch_sub(1, Ordering::AcqRel);
-    new_process.num_threads_running.fetch_add(1, Ordering::AcqRel);
-
     // get the new rsp and address space we have to switch to
     let new_rsp = new_thread.rsp.load(Ordering::Acquire);
-    let new_addr_space = new_process.get_cr3();
+    let new_addr_space = new_thread.address_space().get_cr3().as_usize();
 
     // set syscall rsp
     cpu_local_data().syscall_rsp.store(new_thread.syscall_rsp(), Ordering::Release);
@@ -168,16 +164,13 @@ pub fn switch_current_thread_to(state: ThreadState, _int_disable: IntDisable, po
     cpu_local_data().tss.lock().rsp0 = new_thread.syscall_rsp() as u64;
 
     // change current thread and process in the scheduler state
-    cpu_local_data().current_process_addr.store(Arc::as_ptr(&new_process) as usize, Ordering::Release);
     global_sched_state.current_thread = new_thread;
-    global_sched_state.current_process = new_process;
 
     drop(global_sched_state);
 
     // set post switch data
     *cpu_local_data().post_switch_data.lock() = Some(PostSwitchData {
         old_thread,
-        old_process,
         post_switch_action: post_switch_hook,
         send_eoi,
     });
@@ -198,21 +191,61 @@ pub fn init() {
     TIMEOUT_QUEUE.call_once(|| IMutex::new(TimeoutQueue::new(root_alloc_ref())));
 }
 
-/// Creates an idle thread and sets up scheduler from the currently executing thread and its stack
-pub fn init_cpu_local(stack: AVirtRange) -> KResult<()> {
-    let kernel_process = get_kernel_process();
+static KERNEL_THREAD_GROUP: Once<Arc<ThreadGroup>> = Once::new();
+static KERNEL_ADDRESS_SPACE: Once<Arc<AddressSpace>> = Once::new();
+static KERNEL_CAPABILITY_SPACE: Once<Arc<CapabilitySpace>> = Once::new();
 
-    let thread = kernel_process.create_idle_thread(
-        String::from_str(root_alloc_ref(), "idle_thread")?,
-        stack,
+/// Initializes thread group, address space, and capability space used by kernel threads
+pub fn init_kernel_context() -> KResult<()> {
+    let thread_group = Arc::new(
+        ThreadGroup::new(root_alloc_page_ref(), root_alloc_ref()),
+        root_alloc_ref(),
     )?;
 
+    let address_space = Arc::new(
+        AddressSpace::new(root_alloc_page_ref(), root_alloc_ref())?,
+        root_alloc_ref(),
+    )?;
+
+    let capability_space = Arc::new(
+        CapabilitySpace::new(root_alloc_ref()),
+        root_alloc_ref(),
+    )?;
+
+    KERNEL_THREAD_GROUP.call_once(|| thread_group);
+    KERNEL_ADDRESS_SPACE.call_once(|| address_space);
+    KERNEL_CAPABILITY_SPACE.call_once(|| capability_space);
+
+    Ok(())
+}
+
+/// Creates an idle thread and sets up scheduler from the currently executing thread and its stack
+pub fn init_cpu_local(stack: AVirtRange) -> KResult<()> {
+    let thread_group = KERNEL_THREAD_GROUP.get().unwrap();
+    let address_space = KERNEL_ADDRESS_SPACE.get().unwrap();
+    let capability_space = KERNEL_CAPABILITY_SPACE.get().unwrap();
+
+    set_cr3(address_space.get_cr3().as_usize());
+
+    let thread = Arc::new(
+        Thread::new(
+            String::from_str(root_alloc_ref(), "idle_thread")?,
+            KernelStack::Existing(stack),
+            // rsp will be set on next switch
+            0,
+            Arc::downgrade(thread_group),
+            address_space.clone(),
+            capability_space.clone(),
+        ),
+        root_alloc_ref(),
+    )?;
+
+    thread_group.add_thread(thread.clone())?;
+
     cpu_local_data().syscall_rsp.store(thread.syscall_rsp(), Ordering::Release);
-    cpu_local_data().current_process_addr.store(Arc::as_ptr(&kernel_process) as usize, Ordering::Release);
 
     cpu_local_data().set_sched_state(SchedState {
         current_thread: thread,
-        current_process: kernel_process,
     });
 
     Ok(())

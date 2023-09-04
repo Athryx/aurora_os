@@ -34,15 +34,15 @@ impl Size {
         Size(0)
     }
 
-    pub const fn bytes(&self) -> usize {
+    pub const fn bytes(self) -> usize {
         self.0
     }
 
-    pub const fn bytes_aligned(&self) -> usize {
+    pub const fn bytes_aligned(self) -> usize {
         align_up(self.0, PAGE_SIZE)
     }
 
-    pub fn pages(&self) -> Option<usize> {
+    pub fn pages(self) -> Option<usize> {
         if page_aligned(self.0) {
             Some(self.0 / PAGE_SIZE)
         } else {
@@ -50,12 +50,16 @@ impl Size {
         }
     }
 
-    pub const fn pages_rounded(&self) -> usize {
+    pub const fn pages_rounded(self) -> usize {
         self.bytes_aligned() / PAGE_SIZE
     }
 
-    pub const fn is_zero(&self) -> bool {
+    pub const fn is_zero(self) -> bool {
         self.0 == 0
+    }
+
+    pub fn is_page_aligned(self) -> bool {
+        page_aligned(self.0)
     }
 }
 

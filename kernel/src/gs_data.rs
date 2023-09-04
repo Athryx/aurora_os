@@ -10,7 +10,6 @@ use crate::int::apic::LocalApic;
 use crate::int::idt::Idt;
 use crate::sync::{IMutex, IMutexGuard};
 use crate::sched::{SchedState, PostSwitchData, Thread};
-use crate::process::Process;
 
 crate::make_id_type!(Prid);
 
@@ -47,9 +46,6 @@ pub struct GsData {
     pub sched_state: Once<IMutex<SchedState>>,
     /// Stores the post switch action to be completed after switching threads
     pub post_switch_data: IMutex<Option<PostSwitchData>>,
-    /// Used to determine if a process is the current proces without locking sched state
-    /// FIXME: this is an ugly hack
-    pub current_process_addr: AtomicUsize,
 }
 
 impl GsData {
@@ -71,15 +67,6 @@ impl GsData {
 
     pub fn sched_state(&self) -> IMutexGuard<SchedState> {
         self.sched_state.get().expect("sched state not initialized").lock()
-    }
-
-    /// Returns the current process
-    /// 
-    /// # Locking
-    /// 
-    /// acquires `sched_state` lock
-    pub fn current_process(&self) -> Arc<Process> {
-        self.sched_state().current_process.clone()
     }
 
     /// Returns the current thread
@@ -105,7 +92,6 @@ pub fn init(prid: Prid) {
         last_thread_switch_nsec: AtomicU64::new(0),
         sched_state: Once::new(),
         post_switch_data: IMutex::new(None),
-        current_process_addr: AtomicUsize::new(0),
     };
 
     let gs_data = Box::new(gs_data, root_alloc_ref()).expect("Failed to allocate gs data struct");

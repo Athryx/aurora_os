@@ -1,6 +1,7 @@
 use sys::{CapFlags, ChannelSyncFlags};
 
 use crate::alloc::HeapRef;
+use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::channel::SendRecvResult;
 use crate::cap::{Capability, StrongCapability, channel::Channel};
 use crate::container::Arc;
@@ -17,9 +18,9 @@ pub fn channel_new(options: u32, allocator_id: usize) -> KResult<usize> {
 
     let _int_disable = IntDisable::new();
 
-    let current_process = cpu_local_data().current_process();
+    let cspace = CapabilitySpace::current();
 
-    let allocator = current_process.cap_map()
+    let allocator = cspace
         .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?
         .into_inner();
     let heap_ref = HeapRef::from_arc(allocator);
@@ -29,7 +30,7 @@ pub fn channel_new(options: u32, allocator_id: usize) -> KResult<usize> {
         channel_cap_flags,
     );
 
-    Ok(current_process.cap_map().insert_channel(Capability::Strong(channel))?.into())
+    Ok(cspace.insert_channel(Capability::Strong(channel))?.into())
 }
 
 /// Used for `channel_try_send`, `channel_sync_send`, `channel_try_recv`, `channel_sync_recv` to process common arguments
@@ -43,13 +44,13 @@ fn channel_handle_args(
 ) -> KResult<(Arc<Channel>, UserspaceBuffer)> {
     let weak_auto_destroy = options_weak_autodestroy(options);
 
-    let current_process = cpu_local_data().current_process();
+    let cspace = CapabilitySpace::current();
 
-    let channel = current_process.cap_map()
+    let channel = cspace
         .get_channel_with_perms(channel_id, CapFlags::PROD, weak_auto_destroy)?
         .into_inner();
 
-    let buffer = current_process.cap_map()
+    let buffer = cspace
         .get_userspace_buffer(
             msg_buf_id,
             msg_buf_offset,

@@ -1,3 +1,4 @@
+use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::{StrongCapability, Capability};
 use crate::prelude::*;
 use crate::cap::{CapFlags, key::Key};
@@ -24,9 +25,9 @@ pub fn key_new(options: u32, allocator_id: usize) -> KResult<usize> {
 
     let _int_disable = IntDisable::new();
 
-    let current_process = cpu_local_data().current_process();
+    let cspace = CapabilitySpace::current();
 
-    let allocator = current_process.cap_map()
+    let allocator = cspace
         .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?
         .into_inner();
     let alloc_ref = HeapRef::from_arc(allocator);
@@ -36,7 +37,7 @@ pub fn key_new(options: u32, allocator_id: usize) -> KResult<usize> {
         key_cap_flags,
     );
 
-    Ok(current_process.cap_map().insert_key(Capability::Strong(key))?.into())
+    Ok(cspace.insert_key(Capability::Strong(key))?.into())
 }
 
 /// returns `key`s id
@@ -51,10 +52,10 @@ pub fn key_id(options: u32, key_cap_id: usize) -> KResult<usize> {
 
     let _int_disable = IntDisable::new();
 
-    Ok(cpu_local_data()
-        .current_process()
-        .cap_map()
+    let key_id = CapabilitySpace::current()
         .get_key_with_perms(key_cap_id, CapFlags::READ, weak_auto_destroy)?
         .into_inner()
-        .id() as usize)
+        .id() as usize;
+
+    Ok(key_id)
 }

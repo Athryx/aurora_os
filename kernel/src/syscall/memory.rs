@@ -1,9 +1,10 @@
 use sys::{MemoryResizeFlags, MemoryMapFlags, MemoryUpdateMappingFlags};
 
 use crate::alloc::{PaRef, HeapRef};
+use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::{StrongCapability, Capability};
-use crate::cap::{CapFlags, CapId, memory::Memory};
-use crate::process::PageMappingFlags;
+use crate::cap::{CapFlags, memory::Memory};
+use crate::vmem_manager::PageMappingFlags;
 use crate::prelude::*;
 use crate::arch::x64::IntDisable;
 use crate::container::Arc;
@@ -31,9 +32,9 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<(u
 
     let _int_disable = IntDisable::new();
 
-    let current_process = cpu_local_data().current_process();
+    let cspace = CapabilitySpace::current();
 
-    let allocator = current_process.cap_map()
+    let allocator = cspace
         .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?
         .into_inner();
     let page_allocator = PaRef::from_arc(allocator.clone());
@@ -47,9 +48,9 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<(u
         mem_cap_flags,
     );
 
-    let size = memory.inner().inner_read().size_pages();
+    let size = memory.inner().inner_read().size();
 
-    Ok((current_process.cap_map().insert_memory(Capability::Strong(memory))?.into(), size))
+    Ok((cspace.insert_memory(Capability::Strong(memory))?.into(), size.pages_rounded()))
 }
 
 /// Get the size of the memory capability in pages
@@ -64,16 +65,13 @@ pub fn memory_get_size(options: u32, memory_id: usize) -> KResult<usize> {
 
     let _int_disable = IntDisable::new();
 
-    let memory = cpu_local_data()
-        .current_process()
-        .cap_map()
-        .get_memory_with_perms(memory_id, CapFlags::READ, weak_auto_destroy)?;
-    
-    let inner1 = memory.inner();
+    let memory = CapabilitySpace::current()
+        .get_memory_with_perms(memory_id, CapFlags::READ, weak_auto_destroy)?
+        .into_inner();
 
-    let out = Ok(inner1.inner_read().size_pages());
+    let inner = memory.inner_read();
 
-    out
+    Ok(inner.size().pages_rounded())
 }
 
 /// maps a capability `mem` that can be mapped into memory into the memory of process `process` starting at address `addr`
@@ -106,7 +104,7 @@ pub fn memory_get_size(options: u32, memory_id: usize) -> KResult<usize> {
 /// size: size of the memory that was mapped into address space in pages (this will be the size of memory capability)
 pub fn memory_map(
     options: u32,
-    process_id: usize,
+    addr_space_id: usize,
     memory_id: usize,
     addr: usize,
     max_size: usize,
@@ -118,7 +116,10 @@ pub fn memory_map(
     let other_flags = MemoryMapFlags::from_bits_truncate(options);
 
     let max_size = if other_flags.contains(MemoryMapFlags::MAX_SIZE) {
-        Some(max_size)
+        let size = Size::try_from_pages(max_size)
+            .ok_or(SysErr::Overflow)?;
+
+        Some(size)
     } else {
         None
     };
@@ -133,16 +134,18 @@ pub fn memory_map(
 
     let _int_disable = IntDisable::new();
 
-    let process = cpu_local_data()
-        .current_process()
-        .cap_map()
-        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?
+    let cspace = CapabilitySpace::current();
+
+    let addr_space = cspace
+        .get_address_space_with_perms(addr_space_id, CapFlags::WRITE, weak_auto_destroy)?
         .into_inner();
 
-    let memory = process.cap_map()
-        .get_strong_memory_with_perms(memory_id, required_cap_flags)?;
+    let memory = cspace
+        .get_memory_with_perms(memory_id, required_cap_flags, weak_auto_destroy)?
+        .into_inner();
 
-    process.map_memory(memory, addr, max_size, map_flags)
+    addr_space.map_memory(memory, addr, max_size, map_flags)
+        .map(Size::bytes)
 }
 
 /// Unmaps memory mapped by [`memory_map`]
@@ -159,23 +162,19 @@ pub fn memory_map(
 /// InvlWeak: `mem` is a weak capability
 pub fn memory_unmap(
     options: u32,
-    process_id: usize,
-    memory_id: usize,
+    addr_space_id: usize,
+    address: usize,
 ) -> KResult<()> {
     let weak_auto_destroy = options_weak_autodestroy(options);
+    let address = VirtAddr::try_new_aligned(address)?;
 
     let _int_disable = IntDisable::new();
 
-    let process = cpu_local_data()
-        .current_process()
-        .cap_map()
-        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?
+    let addr_space = CapabilitySpace::current()
+        .get_address_space_with_perms(addr_space_id, CapFlags::WRITE, weak_auto_destroy)?
         .into_inner();
 
-    let memory = process.cap_map()
-        .get_strong_memory_with_perms(memory_id, CapFlags::empty())?;
-
-    process.unmap_memory(memory)
+    addr_space.unmap_memory(address)
 }
 
 /// Updates memory mappings created by [`memory_map`]
@@ -198,31 +197,32 @@ pub fn memory_unmap(
 /// Returns the size of the new mapping in pages
 pub fn memory_update_mapping(
     options: u32,
-    process_id: usize,
-    memory_id: usize,
+    addr_space_id: usize,
+    address: usize,
     new_page_size: usize,
 ) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
     let flags = MemoryUpdateMappingFlags::from_bits_truncate(options);
 
+    let address = VirtAddr::try_new_aligned(address)?;
+
     let max_size_pages = if flags.contains(MemoryUpdateMappingFlags::UPDATE_SIZE) {
-        Some(new_page_size)
+        let size = Size::try_from_pages(new_page_size)
+            .ok_or(SysErr::Overflow)?;
+
+        Some(size)
     } else {
         None
     };
 
     let _int_disable = IntDisable::new();
 
-    let process = cpu_local_data()
-        .current_process()
-        .cap_map()
-        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?
+    let addr_space = CapabilitySpace::current()
+        .get_address_space_with_perms(addr_space_id, CapFlags::WRITE, weak_auto_destroy)?
         .into_inner();
 
-    let memory = process.cap_map()
-        .get_strong_memory_with_perms(memory_id, CapFlags::empty())?;
-
-    process.update_memory_mapping(memory, max_size_pages)
+    addr_space.update_memory_mapping(address, max_size_pages)
+        .map(Size::bytes)
 }
 
 /// Resizes the memory capability referenced by `memory`
@@ -248,28 +248,28 @@ pub fn memory_update_mapping(
 /// The new size of the memory capability in pages
 pub fn memory_resize(
     options: u32,
-    process_id: usize,
+    addr_space_id: usize,
     memory_id: usize,
     new_page_size: usize,
 ) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
     let flags = MemoryResizeFlags::from_bits_truncate(options);
-    let memory_cap_id = CapId::try_from(memory_id).ok_or(SysErr::InvlId)?;
 
-    if !memory_cap_id.flags().contains(CapFlags::PROD) {
-        return Err(SysErr::InvlPerm);
-    }
+    let new_page_size = Size::try_from_pages(new_page_size)
+        .ok_or(SysErr::Overflow)?;
 
     let _int_disable = IntDisable::new();
 
-    let process = cpu_local_data()
-        .current_process()
-        .cap_map()
-        .get_process_with_perms(process_id, CapFlags::WRITE, weak_auto_destroy)?
+    let cspace = CapabilitySpace::current();
+
+    let addr_space = cspace
+        .get_address_space_with_perms(addr_space_id, CapFlags::WRITE, weak_auto_destroy)?
         .into_inner();
 
-    let memory = process.cap_map()
-        .get_strong_memory_with_perms(memory_id, CapFlags::PROD)?;
+    let memory = cspace
+        .get_memory_with_perms(memory_id, CapFlags::PROD, weak_auto_destroy)?
+        .into_inner();
 
-    process.resize_memory(memory, new_page_size, flags)
+    addr_space.resize_memory(memory, new_page_size, flags)
+        .map(Size::bytes)
 }

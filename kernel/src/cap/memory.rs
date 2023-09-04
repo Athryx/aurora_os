@@ -1,11 +1,14 @@
 use core::cmp::min;
 use core::ops::{RangeBounds, Bound};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::prelude::*;
+use crate::{prelude::*, make_id_type};
 use crate::alloc::{PaRef, HeapRef};
 use crate::mem::{Allocation, PageLayout};
 use crate::sync::{IrwLock, IrwLockReadGuard, IrwLockWriteGuard};
 use super::{CapObject, CapType};
+
+make_id_type!(MemoryId);
 
 #[derive(Debug, Clone, Copy)]
 struct AllocationEntry {
@@ -113,12 +116,13 @@ pub struct MemoryInner {
 }
 
 impl MemoryInner {
-    /// Returns the size in bytes of this memory
-    pub fn size(&self) -> usize {
-        self.size
+    /// Returns the total size of this memory
+    pub fn size(&self) -> Size {
+        Size::from_bytes(self.size)
     }
 
-    pub fn size_pages(&self) -> usize {
+    // TODO: remove
+    fn size_pages(&self) -> usize {
         self.size / PAGE_SIZE
     }
 
@@ -475,9 +479,12 @@ impl MemoryInner {
     }
 }
 
+static NEXT_MEMORY_ID: AtomicUsize = AtomicUsize::new(0);
+
 /// A capability that represents memory that can be mapped into a process
 #[derive(Debug)]
 pub struct Memory {
+    id: MemoryId,
     inner: IrwLock<MemoryInner>,
 }
 
@@ -506,7 +513,14 @@ impl Memory {
             map_ref_count: 0,
         };
 
-        Ok(Memory { inner: IrwLock::new(inner) })
+        Ok(Memory {
+            id: MemoryId::from(NEXT_MEMORY_ID.fetch_add(1, Ordering::Relaxed)),
+            inner: IrwLock::new(inner),
+        })
+    }
+
+    pub fn id(&self) -> MemoryId {
+        self.id
     }
 
     pub fn inner_read(&self) -> IrwLockReadGuard<MemoryInner> {

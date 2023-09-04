@@ -2,6 +2,9 @@
 
 ## Specific
 
+- drop implementation of thread group should remove itself from parent
+    - also try to make it terminate current thread immediately if needed
+- add options to call create syscalls to specify created object capflags
 - improve the kernel heap allocator, it is very bad
 - add guard pages at the end of kernel stacks
 - update orderings on all atomics to use minimum needed ordering

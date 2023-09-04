@@ -5,7 +5,7 @@ use crate::container::{Arc, Weak, Vec};
 use crate::sync::IMutex;
 use crate::prelude::*;
 
-use super::{Thread, Process};
+use super::Thread;
 
 /// This stores all of the ready threads, used by scheduler to pick next thread
 #[derive(Debug)]
@@ -25,7 +25,7 @@ impl ThreadMap {
     /// 
     /// Returns `None` if there are no available threads to run
     /// Also removes any dead threads that are encountered from the ready threads list
-    pub fn get_next_thread_and_process(&self) -> Option<(Arc<Thread>, Arc<Process>)> {
+    pub fn get_next_thread(&self) -> Option<Arc<Thread>> {
         let mut ready_threads = self.ready_threads.lock();
 
         loop {
@@ -34,15 +34,11 @@ impl ThreadMap {
                 continue;
             };
 
-            let Some(process) = thread.process.upgrade() else {
-                continue;
-            };
-
-            if !process.is_alive.load(Ordering::Acquire) {
+            if !thread.is_alive.load(Ordering::Acquire) {
                 continue;
             }
 
-            return Some((thread, process));
+            return Some(thread);
         }
     }
 

@@ -29,11 +29,11 @@ mod container;
 mod event;
 mod int;
 mod mem;
-mod process;
 mod sched;
 mod sync;
 mod syscall;
 mod util;
+mod vmem_manager;
 
 mod consts;
 mod config;
@@ -51,7 +51,6 @@ use arch::x64::*;
 use consts::INIT_STACK;
 use int::apic;
 use mb2::BootInfo;
-use process::get_kernel_process;
 use gs_data::Prid;
 use prelude::*;
 use sched::kernel_stack::KernelStack;
@@ -93,12 +92,9 @@ fn init(boot_info_addr: usize) -> KResult<()> {
 
     syscall::init();
 
-    process::init_kernel_process();
-    // load kernel process address space
-    set_cr3(get_kernel_process().get_cr3());
-
     // initislise the scheduler
     sched::init();
+    sched::init_kernel_context().expect("failed to initialize kernel context");
     sched::init_cpu_local(*INIT_STACK)?;
 
     let acpi_madt = boot_info.rsdt.get_table(SdtType::Madt).unwrap();
@@ -149,9 +145,6 @@ fn ap_init(id: usize, stack_addr: usize) -> KResult<()> {
     cpu_local_data().idt.load();
 
     syscall::init();
-
-    // load kernel process address space
-    set_cr3(get_kernel_process().get_cr3());
 
     let stack_range = AVirtRange::new(
         VirtAddr::new(stack_addr + 8 - KernelStack::DEFAULT_SIZE),

@@ -19,10 +19,11 @@ pub enum SysErr {
     InvlMemZone = 9,
     InvlVirtAddr = 10,
     InvlAlign = 11,
-    InvlBytecode = 12,
-    Obscured = 13,
-    InvlSyscall = 14,
-    Unknown = 15,
+    Overflow = 12,
+    InvlBytecode = 13,
+    Obscured = 14,
+    InvlSyscall = 15,
+    Unknown = 16,
 }
 
 impl SysErr {
@@ -53,6 +54,7 @@ impl SysErr {
             Self::InvlMemZone => "invalid memory zone or memory zone collision",
             Self::InvlVirtAddr => "non canonical address",
             Self::InvlAlign => "invalid alignment",
+            Self::Overflow => "supplied syscall values caused an integer overflow or underflow",
             Self::InvlBytecode => "invalid bytecode",
             Self::Obscured => "operation does not return information about error state",
             Self::InvlSyscall => "invalid syscall number",

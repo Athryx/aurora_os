@@ -18,7 +18,7 @@ pub fn virt_to_phys(addr: usize) -> usize {
 }
 
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct PhysAddr(usize);
 
 impl PhysAddr {
@@ -55,7 +55,7 @@ impl PhysAddr {
 }
 
 #[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct VirtAddr(usize);
 
 impl VirtAddr {

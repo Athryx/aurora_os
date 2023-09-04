@@ -1,6 +1,7 @@
 use sys::CapFlags;
 
 use crate::alloc::HeapRef;
+use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::{Capability, StrongCapability};
 use crate::cap::drop_check::drop_check_pair;
 use crate::prelude::*;
@@ -13,9 +14,9 @@ pub fn drop_check_new(options: u32, allocator_id: usize, data: usize) -> KResult
 
     let _int_disable = IntDisable::new();
 
-    let current_process = cpu_local_data().current_process();
+    let cspace = CapabilitySpace::current();
 
-    let allocator = current_process.cap_map()
+    let allocator = cspace
         .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?
         .into_inner();
     let alloc_ref = HeapRef::from_arc(allocator);
@@ -25,18 +26,14 @@ pub fn drop_check_new(options: u32, allocator_id: usize, data: usize) -> KResult
     let drop_check = StrongCapability::new_flags(drop_check, flags);
     let reciever = StrongCapability::new_flags(reciever, flags);
 
-    let drop_check_id = current_process.cap_map()
-        .insert_drop_check(Capability::Strong(drop_check))?;
+    let drop_check_id = cspace.insert_drop_check(Capability::Strong(drop_check))?;
 
-    let reciever_id = match current_process.cap_map()
-        .insert_drop_check_reciever(Capability::Strong(reciever)) {
+    let reciever_id = match cspace.insert_drop_check_reciever(Capability::Strong(reciever)) {
             Ok(cap_id) => cap_id,
             Err(error) => {
                 // remove drop check id if inserting the reciever failed
                 // panic safety: this was just inserted
-                current_process.cap_map()
-                    .remove_drop_check(drop_check_id)
-                    .unwrap();
+                cspace.remove_drop_check(drop_check_id).unwrap();
 
                 return Err(error);
             }

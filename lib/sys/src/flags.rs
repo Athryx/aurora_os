@@ -53,6 +53,27 @@ impl From<CapCloneFlags> for CapFlags {
     }
 }
 
+
+bitflags! {
+    pub struct ThreadNewFlags: u32 {
+        const CREATE_CAPABILITY_SPACE = 1;
+        const THREAD_AUTOSTART = 1 << 1;
+    }
+}
+
+bitflags! {
+    pub struct ThreadSuspendFlags: u32 {
+        const SUSPEND_TIMEOUT = 1;
+    }
+}
+
+bitflags! {
+    pub struct ThreadDestroyFlags: u32 {
+        const DESTROY_OTHER = 1;
+    }
+}
+
+
 bitflags! {
     /// Used to specify access permissions on memory mappings
     pub struct MemoryMappingFlags: u32 {
@@ -65,13 +86,6 @@ bitflags! {
 impl Default for MemoryMappingFlags {
     fn default() -> Self {
         Self::READ | Self::WRITE
-    }
-}
-
-
-bitflags! {
-    pub struct ThreadDestroyFlags: u32 {
-        const DESTROY_OTHER = 1;
     }
 }
 

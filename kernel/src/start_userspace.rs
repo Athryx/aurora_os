@@ -5,8 +5,8 @@ use sys::{CapFlags, InitInfo, ProcessInitData, ProcessMemoryEntry};
 use elf::{ElfBytes, endian::NativeEndian, abi::{PT_LOAD, PF_R, PF_W, PF_X}};
 use aser::to_bytes_count_cap;
 
-use crate::{prelude::*, alloc::{root_alloc, HeapRef, root_alloc_page_ref, root_alloc_ref}, cap::{Capability, StrongCapability, memory::Memory}, process::{Spawner, PageMappingFlags, ThreadStartMode}};
-use crate::process::Process;
+use crate::{prelude::*, alloc::{root_alloc, root_alloc_page_ref, root_alloc_ref}, cap::{Capability, StrongCapability, memory::Memory, address_space::AddressSpace, capability_space::CapabilitySpace, WeakCapability}, sched::{ThreadGroup, Thread, ThreadStartMode}};
+use crate::vmem_manager::PageMappingFlags;
 use crate::container::Arc;
 
 const INITRD_MAGIC: u64 = 0x39f298aa4b92e836;
@@ -14,7 +14,7 @@ const EARLY_INIT_ENTRY_TYPE: u64 = 1;
 
 // hardcode these addressess to things which won't conflict
 const STACK_ADDRESS: usize = 0x100000000;
-const STACK_SIZE: usize = PAGE_SIZE * 16;
+const STACK_SIZE: Size = Size::from_pages(16);
 const STARTUP_DATA_ADDRESS: usize = 0x200000000;
 const INITRD_MAPPING_ADDRESS: usize = 0x300000000;
 
@@ -66,89 +66,85 @@ fn find_early_init_data(initrd: &[u8]) -> &[u8] {
 struct StackInfo {
     process_data_address: usize,
     process_data_size: usize,
-    startup_data_address: usize,
-    startup_data_size: usize,
+    namespace_data_address: usize,
+    namespace_data_size: usize,
 }
 
 /// Parses the initrd and creates the early init process, which is the first userspace process
 /// 
 /// This code is not very robust for handling errors, but it doesn't need to be since if error occurs os will need to panic anyways
 pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
-    // create process, and insert the needed capabilities
-    let process_weak = Process::new(
-        root_alloc_page_ref(),
+    // create first process context, and insert needed capabilities
+    let thread_group = Arc::new(
+        ThreadGroup::new(root_alloc_page_ref(), root_alloc_ref()),
         root_alloc_ref(),
-        String::from_str(HeapRef::heap(), "early_init")?,
     )?;
-
-    let spawner = Spawner::new(root_alloc_ref());
-    spawner.add_process(process_weak.inner().clone())?;
-
-    let process = process_weak.inner().upgrade().unwrap();
-
-    let process_capability = Capability::Weak(process_weak);
-    let spawner_capability = Capability::Strong(StrongCapability::new_flags(
-        Arc::new(spawner, root_alloc_ref())?,
-        CapFlags::READ | CapFlags::WRITE | CapFlags::PROD,
+    let thread_group_capability = Capability::Strong(StrongCapability::new_flags(
+        thread_group.clone(),
+        CapFlags::all(),
     ));
+
+    let address_space = Arc::new(
+        AddressSpace::new(root_alloc_page_ref(), root_alloc_ref())?,
+        root_alloc_ref(),
+    )?;
+    let address_space_capability = Capability::Strong(StrongCapability::new_flags(
+        address_space.clone(),
+        CapFlags::all(),
+    ));
+
+    let capability_space = Arc::new(
+        CapabilitySpace::new(root_alloc_ref()),
+        root_alloc_ref(),
+    )?;
+    let cspace_capability = Capability::Weak(WeakCapability::new_flags(
+        Arc::downgrade(&capability_space),
+        CapFlags::READ | CapFlags::PROD | CapFlags::WRITE,
+    ));
+
     let allocator_capability = Capability::Strong(StrongCapability::new_flags(
         root_alloc().clone(),
-        CapFlags::READ | CapFlags::WRITE | CapFlags::PROD,
+        CapFlags::all(),
     ));
 
-    let process_id = process.cap_map().insert_process(process_capability)?;
-    let spawner_id = process.cap_map().insert_spawner(spawner_capability)?;
-    let allocator_id = process.cap_map().insert_allocator(allocator_capability)?;
-
-    let mut startup_data = Vec::new(root_alloc_ref());
-
-    let process_init_data = ProcessInitData {
-        process_cap_id: process_id.into(),
-        allocator_cap_id: allocator_id.into(),
-        spawner_cap_id: spawner_id.into(),
-        // seed for aslr, we don't have rng at this point so it can't be random
-        aslr_seed: EARLY_INIT_ASLR_SEED,
-    };
-    startup_data.extend_from_slice(bytes_of(&process_init_data))?;
-
+    
+    // list of memory regions that have been mapped
+    let mut memory_regions = Vec::new(root_alloc_ref());
 
     // maps memomry in the userspace process and adds it to the mapped regions list
-    let mut map_memory = |address, size, flags| -> KResult<Arc<Memory>> {
+    let mut map_memory = |address, size: Size, flags| -> KResult<Arc<Memory>> {
         assert!(page_aligned(address));
-        assert!(page_aligned(size));
+        assert!(size.is_page_aligned());
 
         let memory = Arc::new(Memory::new(
             root_alloc_page_ref(),
             root_alloc_ref(),
-            size / PAGE_SIZE,
+            size.pages_rounded(),
         )?, root_alloc_ref())?;
 
         let memory_capability = StrongCapability::new_flags(
             memory.clone(),
-            CapFlags::READ | CapFlags::WRITE | CapFlags::PROD,
+            CapFlags::all(),
         );
 
-        let memory_id = process.cap_map().insert_memory(Capability::Strong(memory_capability))?;
-        let Capability::Strong(memory_capability) = process.cap_map().get_memory(memory_id)? else {
-            panic!("invalid capability returned")
-        };
+        let memory_id = capability_space.insert_memory(Capability::Strong(memory_capability))?;
 
-        process.map_memory(
-            memory_capability,
+        address_space.map_memory(
+            memory.clone(),
             VirtAddr::new(address),
-            Some(size / PAGE_SIZE),
+            Some(size),
             flags,
         )?;
 
         let region = ProcessMemoryEntry {
             memory_cap_id: memory_id.into(),
             map_address: address,
-            map_size: size,
+            map_size: size.bytes(),
             padding_start: 0,
             padding_end: 0,
         };
 
-        startup_data.extend_from_slice(bytes_of(&region))?;
+        memory_regions.push(region)?;
 
         Ok(memory)
     };
@@ -177,8 +173,11 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
             );
             let map_range = unaligned_map_range.as_aligned();
 
-            let memory = map_memory(map_range.as_usize(), map_range.size(), map_flags)
-                .expect("mapping memory failed");
+            let memory = map_memory(
+                map_range.as_usize(),
+                Size::from_bytes(map_range.size()),
+                map_flags,
+            ).expect("mapping memory failed");
 
 
             let section_data = elf_data.segment_data(&phdr).unwrap();
@@ -202,13 +201,13 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
 
     let startup_data_memory = map_memory(
         STARTUP_DATA_ADDRESS,
-        PAGE_SIZE,
+        Size::from_pages(1),
         PageMappingFlags::USER | PageMappingFlags::READ | PageMappingFlags::WRITE,
     ).expect("mapping startup data failed");
 
     let initrd_memory = map_memory(
         INITRD_MAPPING_ADDRESS,
-        align_up(initrd.len(), PAGE_SIZE),
+        Size::from_bytes(align_up(initrd.len(), PAGE_SIZE)),
         PageMappingFlags::USER | PageMappingFlags::READ | PageMappingFlags::WRITE,
     ).expect("failed to map initrd memory");
 
@@ -217,24 +216,64 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
     }
 
 
+    // create first thread
+    let rip = elf_data.ehdr.e_entry as usize;
+    let rsp = STACK_ADDRESS + STACK_SIZE.bytes() - size_of::<StackInfo>();
+    let thread_name = String::from_str(root_alloc_ref(), "early_init_thread")?;
+    let thread = ThreadGroup::create_thread(
+        &thread_group,
+        address_space,
+        capability_space.clone(),
+        thread_name,
+        ThreadStartMode::Suspended,
+        rip,
+        rsp,
+    )?;
+    let thread_capability = Capability::Weak(WeakCapability::new_flags(
+        Arc::downgrade(&thread),
+        CapFlags::READ | CapFlags::PROD | CapFlags::WRITE,
+    ));
+
+
+    // add all capabilities to capability space
+    let thread_group_id = capability_space.insert_thread_group(thread_group_capability)?.into();
+    let address_space_id = capability_space.insert_address_space(address_space_capability)?.into();
+    let capability_space_id = capability_space.insert_capability_space(cspace_capability)?.into();
+    let allocator_id = capability_space.insert_allocator(allocator_capability)?.into();
+    let thread_id = capability_space.insert_thread(thread_capability)?.into();
+    let process_init_data = ProcessInitData {
+        thread_group_id,
+        address_space_id,
+        capability_space_id,
+        allocator_id,
+        main_thread_id: thread_id,
+        aslr_seed: EARLY_INIT_ASLR_SEED,
+    };
+
+
+    // create startup data for early-init
+    let mut startup_data = Vec::new(root_alloc_ref());
+    startup_data.extend_from_slice(bytes_of(&process_init_data))?;
+    startup_data.extend_from_slice(cast_slice(&memory_regions))?;
+
+
     // append init info to startup data
     let init_info = InitInfo {
         initrd_address: INITRD_MAPPING_ADDRESS,
     };
 
-    let init_bytes: Vec<u8> = to_bytes_count_cap(&init_info)
+    let namespace_data: Vec<u8> = to_bytes_count_cap(&init_info)
         .expect("faield to serialize init info");
 
     let process_data_address = STARTUP_DATA_ADDRESS;
     let process_data_size = startup_data.len();
-    let startup_data_address = process_data_address + process_data_size;
+    let namespace_data_address = process_data_address + process_data_size;
+    let namespace_data_size = namespace_data.len();
 
-    startup_data.extend_from_slice(&init_bytes)?;
-
-    let startup_data_size = startup_data.len() - process_data_size;
+    startup_data.extend_from_slice(&namespace_data)?;
 
 
-    // write startup data to startup data meomry
+    // write startup data to startup data memory
     unsafe {
         startup_data_memory.inner_read().write(0, &startup_data);
     }
@@ -244,31 +283,23 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
     let stack_info = StackInfo {
         process_data_address,
         process_data_size,
-        startup_data_address,
-        startup_data_size,
+        namespace_data_address,
+        namespace_data_size,
     };
 
     unsafe {
         let stack_memory_inner = stack_memory.inner_read();
-        let stack_memory_size = stack_memory_inner.size();
+        let stack_memory_size = stack_memory_inner.size().bytes();
         stack_memory.inner_read().write(stack_memory_size - size_of::<StackInfo>(), bytes_of(&stack_info));
     }
 
 
     // start the first thread
-    let rip = elf_data.ehdr.e_entry as usize;
-    let rsp = STACK_ADDRESS + STACK_SIZE - size_of::<StackInfo>();
-    let thread_name = String::from_str(root_alloc_ref(), "early_init_thread")?;
-    eprintln!("starting first userspace process: {}", process.name());
+    eprintln!("starting first userspace process");
     eprintln!("rip: 0x{:x}", rip);
     eprintln!("rsp: 0x{:x}", rsp);
-
-    process.create_thread(
-        thread_name,
-        ThreadStartMode::Ready,
-        rip,
-        rsp,
-    ).expect("failed to create thread");
+    Thread::resume_suspended_thread(&thread)
+        .expect("failed to resume first thread");
 
     Ok(())
 }

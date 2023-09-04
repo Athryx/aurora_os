@@ -17,10 +17,14 @@ mod key;
 use key::*;
 mod memory;
 use memory::*;
-mod process;
-use process::*;
-mod spawner;
-use spawner::*;
+mod thread;
+use thread::*;
+mod thread_group;
+use thread_group::*;
+//mod process;
+//use process::*;
+//mod spawner;
+//use spawner::*;
 
 extern "C" {
     fn syscall_entry();
@@ -229,13 +233,13 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 			vals.a7,
 			vals.a8,
 		), vals),
-		PROCESS_NEW => sysret_1!(syscall_2!(process_new, vals), vals),
-		PROCESS_EXIT => sysret_0!(syscall_1!(process_exit, vals), vals),
-		THREAD_NEW => sysret_1!(syscall_3!(thread_new, vals), vals),
+		THREAD_GROUP_NEW => sysret_1!(syscall_2!(thread_group_new, vals), vals),
+		THREAD_GROUP_EXIT => sysret_0!(syscall_1!(thread_group_exit, vals), vals),
+		THREAD_NEW => sysret_2!(syscall_6!(thread_new, vals), vals),
 		THREAD_YIELD => sysret_0!(thread_yield(), vals),
-		THREAD_DESTROY => sysret_0!(syscall_2!(thread_destroy, vals), vals),
+		THREAD_DESTROY => sysret_0!(syscall_1!(thread_destroy, vals), vals),
 		THREAD_SUSPEND => sysret_0!(syscall_1!(thread_suspend, vals), vals),
-		THREAD_RESUME => sysret_0!(syscall_2!(thread_resume, vals), vals),
+		THREAD_RESUME => sysret_0!(syscall_1!(thread_resume, vals), vals),
 		CAP_CLONE => sysret_1!(syscall_3!(cap_clone, vals), vals),
 		CAP_DESTROY => sysret_0!(syscall_2!(cap_destroy, vals), vals),
 		MEMORY_MAP => sysret_1!(syscall_4!(memory_map, vals), vals),
@@ -251,8 +255,6 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		KEY_NEW => sysret_1!(syscall_1!(key_new, vals), vals),
 		KEY_ID => sysret_1!(syscall_1!(key_id, vals), vals),
 		DROP_CHECK_NEW => sysret_2!(syscall_2!(drop_check_new, vals), vals),
-		SPAWNER_NEW => sysret_1!(syscall_2!(spawner_new, vals), vals),
-		SPAWNER_KILL_ALL => sysret_0!(syscall_1!(spawner_kill_all, vals), vals),
         _ => vals.a1 = SysErr::InvlSyscall.num(),
     }
 }

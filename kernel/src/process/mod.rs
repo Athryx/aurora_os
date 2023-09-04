@@ -12,7 +12,7 @@ use crate::int::IPI_PROCESS_EXIT;
 use crate::int::apic::{Ipi, IpiDest};
 use crate::sched::{Tid, Thread, ThreadState, PostSwitchAction, thread_map, switch_current_thread_to};
 use crate::alloc::{PaRef, HeapRef, root_alloc_page_ref, root_alloc_ref};
-use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability, CapabilityMap, CapType, CapId};
+use crate::cap::{CapFlags, CapObject, StrongCapability, WeakCapability, CapabilitySpace, CapType, CapId};
 use crate::prelude::*;
 use crate::sched::kernel_stack::KernelStack;
 use crate::sync::IMutex;
@@ -144,7 +144,7 @@ pub struct Process {
 
     addr_space_data: IMutex<AddrSpaceData>,
     cr3_addr: PhysAddr,
-    cap_map: CapabilityMap,
+    cap_map: CapabilitySpace,
 }
 
 impl Process {
@@ -167,7 +167,7 @@ impl Process {
                     addr_space,
                     mapped_memory_capabilities: HashMap::new(allocer.clone()),
                 }),
-                cap_map: CapabilityMap::new(allocer.clone()),
+                cap_map: CapabilitySpace::new(allocer.clone()),
             }, allocer)?,
             CapFlags::READ | CapFlags::PROD | CapFlags::WRITE,
         );
@@ -202,7 +202,7 @@ impl Process {
     }
 
     /// Returns a reference to the capability map of this process
-    pub fn cap_map(&self) -> &CapabilityMap {
+    pub fn cap_map(&self) -> &CapabilitySpace {
         &self.cap_map
     }
 

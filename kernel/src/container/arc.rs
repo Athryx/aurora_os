@@ -57,6 +57,10 @@ impl<T: ?Sized> Arc<T> {
         &this.inner().data as *const T as *mut T
     }
 
+    pub fn ptr_eq(this: &Self, other: &Self) -> bool {
+        this.ptr.as_ptr() as *const () == other.ptr.as_ptr() as *const ()
+    }
+
     pub fn downgrade(this: &Self) -> Weak<T> {
         this.inner().weak.fetch_add(1, Ordering::Relaxed);
         unsafe { Weak::from_ptr(this.ptr.as_ptr()) }

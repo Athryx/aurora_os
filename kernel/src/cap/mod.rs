@@ -1,8 +1,8 @@
 use crate::container::{Arc, Weak};
 use crate::prelude::*;
 
-mod capability_map;
-pub use capability_map::*;
+pub mod address_space;
+pub mod capability_space;
 pub mod channel;
 pub mod drop_check;
 pub mod key;
@@ -78,6 +78,17 @@ pub struct WeakCapability<T: CapObject> {
 }
 
 impl<T: CapObject> WeakCapability<T> {
+    pub fn new(object: Weak<T>, id: CapId) -> Self {
+        WeakCapability {
+            object,
+            id,
+        }
+    }
+
+    pub fn new_flags(object: Weak<T>, flags: CapFlags) -> Self {
+        Self::new(object, CapId::null_flags(flags, true))
+    }
+
     pub fn inner(&self) -> &Weak<T> {
         &self.object
     }

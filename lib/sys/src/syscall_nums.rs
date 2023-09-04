@@ -2,8 +2,8 @@
 
 pub const PRINT_DEBUG: u32 = 0;
 
-pub const PROCESS_NEW: u32 = 1;
-pub const PROCESS_EXIT: u32 = 2;
+pub const THREAD_GROUP_NEW: u32 = 1;
+pub const THREAD_GROUP_EXIT: u32 = 2;
 pub const THREAD_NEW: u32 = 3;
 pub const THREAD_YIELD: u32 = 4;
 pub const THREAD_DESTROY: u32 = 5;
@@ -32,6 +32,3 @@ pub const KEY_NEW: u32 = 38;
 pub const KEY_ID: u32 = 39;
 
 pub const DROP_CHECK_NEW: u32 = 40;
-
-pub const SPAWNER_NEW: u32 = 46;
-pub const SPAWNER_KILL_ALL: u32 = 47;
