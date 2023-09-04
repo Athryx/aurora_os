@@ -13,12 +13,13 @@ pub const THREAD_RESUME: u32 = 7;
 pub const CAP_CLONE: u32 = 8;
 pub const CAP_DESTROY: u32 = 9;
 
-pub const MEMORY_MAP: u32 = 11;
-pub const MEMORY_UNMAP: u32 = 12;
-pub const MEMORY_UPDATE_MAPPING: u32 = 13;
-pub const MEMORY_NEW: u32 = 14;
-pub const MEMORY_GET_SIZE: u32 = 15;
-pub const MEMORY_RESIZE: u32 = 16;
+pub const ADDRESS_SPACE_NEW: u32 = 11;
+pub const MEMORY_MAP: u32 = 12;
+pub const MEMORY_UNMAP: u32 = 13;
+pub const MEMORY_UPDATE_MAPPING: u32 = 14;
+pub const MEMORY_NEW: u32 = 15;
+pub const MEMORY_GET_SIZE: u32 = 16;
+pub const MEMORY_RESIZE: u32 = 17;
 
 pub const CHANNEL_NEW: u32 = 27;
 pub const CHANNEL_TRY_SEND: u32 = 28;

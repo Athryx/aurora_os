@@ -1,6 +1,7 @@
 use sys::{MemoryResizeFlags, MemoryMapFlags, MemoryUpdateMappingFlags};
 
 use crate::alloc::{PaRef, HeapRef};
+use crate::cap::address_space::AddressSpace;
 use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::{StrongCapability, Capability};
 use crate::cap::{CapFlags, memory::Memory};
@@ -9,6 +10,32 @@ use crate::prelude::*;
 use crate::arch::x64::IntDisable;
 use crate::container::Arc;
 use super::options_weak_autodestroy;
+
+pub fn address_space_new(options: u32, allocator_id: usize) -> KResult<usize> {
+    let weak_auto_destroy = options_weak_autodestroy(options);
+
+    let _int_disable = IntDisable::new();
+
+    let cspace = CapabilitySpace::current();
+
+    let allocator = cspace
+        .get_allocator_with_perms(allocator_id, CapFlags::PROD, weak_auto_destroy)?
+        .into_inner();
+    let page_allocator = PaRef::from_arc(allocator.clone());
+    let heap_allocator = HeapRef::from_arc(allocator);
+
+    let address_space = StrongCapability::new_flags(
+        Arc::new(
+            AddressSpace::new(page_allocator, heap_allocator.clone())?,
+            heap_allocator,
+        )?,
+        CapFlags::all(),
+    );
+
+    let cap_id = cspace.insert_address_space(Capability::Strong(address_space))?;
+
+    Ok(cap_id.into())
+}
 
 /// Allocate a memory capability at least `pages` big
 /// 
