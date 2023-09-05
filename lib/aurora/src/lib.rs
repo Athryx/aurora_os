@@ -9,7 +9,7 @@ extern crate alloc;
 
 use aser::{from_bytes, AserError};
 use bit_utils::Size;
-use sys::{CapId, Process, Allocator, Spawner, Memory};
+use sys::{CapId, ThreadGroup, Allocator, Memory, AddressSpace, CapabilitySpace};
 pub use sys::{ProcessInitData, ProcessMemoryEntry, Capability, process_data_from_slice};
 use thiserror_no_std::Error;
 
@@ -24,7 +24,7 @@ pub mod collections;
 pub mod debug_print;
 pub mod env;
 mod prelude;
-pub mod process;
+//pub mod process;
 mod sync;
 
 static THIS_CONTEXT: Once<Context> = Once::new();
@@ -53,18 +53,21 @@ impl TryFrom<ProcessInitData> for Context {
     type Error = InitError;
 
     fn try_from(value: ProcessInitData) -> Result<Self, Self::Error> {
-        let process_id = CapId::try_from(value.process_cap_id).ok_or(InitError::InvalidCapId)?;
-        let allocator_id = CapId::try_from(value.allocator_cap_id).ok_or(InitError::InvalidCapId)?;
-        let spawner_id = CapId::try_from(value.spawner_cap_id).ok_or(InitError::InvalidCapId)?;
+        let thread_group_id = CapId::try_from(value.thread_group_id).ok_or(InitError::InvalidCapId)?;
+        let address_space_id = CapId::try_from(value.address_space_id).ok_or(InitError::InvalidCapId)?;
+        let capability_space_id = CapId::try_from(value.capability_space_id).ok_or(InitError::InvalidCapId)?;
+        let allocator_id = CapId::try_from(value.allocator_id).ok_or(InitError::InvalidCapId)?;
 
-        let process = Process::from_cap_id(process_id).ok_or(InitError::InvalidCapId)?;
+        let thread_group = ThreadGroup::from_cap_id(thread_group_id).ok_or(InitError::InvalidCapId)?;
+        let address_space = AddressSpace::from_cap_id(address_space_id).ok_or(InitError::InvalidCapId)?;
+        let capability_space = CapabilitySpace::from_cap_id(capability_space_id).ok_or(InitError::InvalidCapId)?;
         let allocator = Allocator::from_cap_id(allocator_id).ok_or(InitError::InvalidCapId)?;
-        let spawner = Spawner::from_cap_id(spawner_id).ok_or(InitError::InvalidCapId)?;
 
         Ok(Context {
-            process,
+            thread_group,
+            address_space,
+            capability_space,
             allocator,
-            spawner,
         })
     }
 }

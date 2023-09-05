@@ -5,7 +5,7 @@ use crate::container::Arc;
 use crate::prelude::*;
 
 use super::cap_allocator::CapAllocatorWrapper;
-use super::fixed_page_allocator::{FixedPageAllocator};
+use super::fixed_page_allocator::FixedPageAllocator;
 use super::pmem_manager::PmemManager;
 use super::{zm, CapAllocator};
 

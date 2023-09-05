@@ -1,4 +1,3 @@
-use core::sync::atomic::Ordering;
 use core::slice;
 
 use crate::alloc::{HeapRef, PaRef};
@@ -178,7 +177,7 @@ impl ThreadGroup {
         while let Some(child) = thread_list.pop() {
             match child {
                 ThreadGroupChild::Thread(thread) => {
-                    thread.is_alive.store(false, Ordering::Release);
+                    thread.set_state(ThreadState::Dead);
                     if thread.is_current_thread() {
                         kill_self = true;
                     }

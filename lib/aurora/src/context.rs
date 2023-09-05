@@ -1,21 +1,22 @@
 use serde::{Serialize, Deserialize};
-use sys::{Process, Allocator, Spawner, Capability, KResult, cap_clone, ProcessTarget, CapFlags};
+use sys::{ThreadGroup, AddressSpace, CapabilitySpace, Allocator, Capability, KResult, cap_clone, CspaceTarget, CapFlags};
 
 use crate::this_context;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug)]
 pub struct Context {
-    pub process: Process,
+    pub thread_group: ThreadGroup,
+    pub address_space: AddressSpace,
+    pub capability_space: CapabilitySpace,
     pub allocator: Allocator,
-    pub spawner: Spawner,
 }
 
 impl Context {
-    pub fn process_target(&self) -> ProcessTarget {
+    /*pub fn cspace_target(&self) -> CspaceTarget {
         if self.is_current_process() {
-            ProcessTarget::Current
+            CspaceTarget::Current
         } else {
-            ProcessTarget::Other(self.process)
+            CspaceTarget::Other(self.process)
         }
     }
 
@@ -37,5 +38,5 @@ impl Context {
         } else {
             Ok(None)
         }
-    }
+    }*/
 }

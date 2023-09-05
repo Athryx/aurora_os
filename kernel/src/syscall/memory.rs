@@ -139,7 +139,8 @@ pub fn memory_map(
     let weak_auto_destroy = options_weak_autodestroy(options);
     let addr = VirtAddr::try_new_aligned(addr)?;
 
-    let map_flags = PageMappingFlags::from_bits_truncate((options & 0b111) as usize);
+    let map_flags = PageMappingFlags::from_bits_truncate((options & 0b111) as usize)
+        | PageMappingFlags::USER;
     let other_flags = MemoryMapFlags::from_bits_truncate(options);
 
     let max_size = if other_flags.contains(MemoryMapFlags::MAX_SIZE) {

@@ -1,3 +1,7 @@
+# Bugs
+
+- thread_group drop causes gp exception
+
 # Implementation Details
 
 ## Specific
@@ -30,19 +34,11 @@
 # Api / Overall Design
 
 - improve memory mapping api
-    - don't require strong reference
-    - don't require cap to be in that same process
     - maybe don't have 1 mapping restriction on resize in place
     - add support to memory mapping syscalls that allow mapping at some offset into the memory capability
     - extend memory_update_mapping to support moving the base address and changing mapping flags
     - maybe merge memory_resize and memory_update_mapping syscalls
-- seperate process into its different components
-    - address space
-    - capability space
-    - group of threads (or maybe just make thread a capability?)
 - figure out if weak capabilities are even needed
     - their original intent was so you can send your capability to another process and still have control over when its dropped
     - probably just remove weak auto destroy though, and make destroying invalid weaks the default behavior
-- clean up ownership of capabilities in userspace
-    - it can be hard to reason about
-    - this is just changing sys library, not the kernel
+- clean up handling of weak capabilities in userspace

@@ -6,7 +6,7 @@ use aser::Value;
 use elf::{ElfBytes, ParseError};
 use elf::endian::NativeEndian;
 use serde::Serialize;
-use sys::{Allocator, Spawner, Process, CapFlags, SysErr};
+use sys::{Allocator, CapFlags, SysErr};
 use thiserror_no_std::Error;
 
 use crate::{prelude::*, this_context};
@@ -57,8 +57,6 @@ impl From<&ArgsBuilder> for Args {
 pub struct Command {
     process_data: ProcessDataSource,
     args: ArgsBuilder,
-    allocator: Allocator,
-    spawner: Spawner,
 }
 
 impl Command {
@@ -68,8 +66,6 @@ impl Command {
         Command {
             process_data: ProcessDataSource::Bytes(bytes),
             args: ArgsBuilder::default(),
-            allocator: current_context.allocator,
-            spawner: current_context.spawner,
         }
     }
 
@@ -104,11 +100,11 @@ impl Command {
 
         let exe_data = self.process_data.bytes();
 
-        spawn_process(exe_data, namespace, self.allocator, self.spawner)
+        spawn_process(exe_data, namespace)
     }
 }
 
-fn spawn_process(exe_data: &[u8], namespace: Namespace, allocator: Allocator, spawner: Spawner) -> Result<Process, ProcessError> {
+fn spawn_process(exe_data: &[u8], namespace: Namespace) -> Result<Process, ProcessError> {
     let aslr_seed = gen_aslr_seed();
 
     let process = Process::new(CapFlags::all(), allocator, spawner)?;

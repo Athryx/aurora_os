@@ -1,4 +1,4 @@
-use core::sync::atomic::{AtomicUsize, Ordering, AtomicBool};
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::cap::CapObject;
 use crate::cap::capability_space::CapabilitySpace;
@@ -61,8 +61,6 @@ pub struct Thread {
     name: String,
     status: AtomicUsize,
     wake_reason: IMutex<WakeReason>,
-    // TODO: figure out if this is needed
-    pub is_alive: AtomicBool,
     // this has to be atomic usize because it is written to in assembly
     pub rsp: AtomicUsize,
     kernel_stack: KernelStack,
@@ -84,7 +82,6 @@ impl Thread {
             name,
             status: AtomicUsize::new(ThreadState::Suspended.to_status(0)),
             wake_reason: IMutex::new(WakeReason::None),
-            is_alive: AtomicBool::new(true),
             rsp: AtomicUsize::new(rsp),
             kernel_stack,
             thread_group,
@@ -115,6 +112,14 @@ impl Thread {
                 Some(state.to_status(old_status) + GENERATION_STEP_SIZE)
             },
         ).unwrap();
+    }
+
+    pub fn get_state(&self) -> ThreadState {
+        ThreadState::from_usize(self.status.load(Ordering::Acquire) & THREAD_STATE_MASK)
+    }
+
+    pub fn is_alive(&self) -> bool {
+        self.get_state() != ThreadState::Dead
     }
 
     /// Gets the wake reason of this thread
@@ -148,8 +153,6 @@ impl Thread {
 
     pub fn destroy_suspended_thread(thread: &Arc<Thread>) -> KResult<()> {
         if thread.transition_state(ThreadState::Suspended, ThreadState::Dead) {
-            thread.is_alive.store(false, Ordering::Release);
-
             let Some(thread_group) = thread.thread_group.upgrade() else {
                 return Ok(())
             };

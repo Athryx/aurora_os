@@ -4,7 +4,7 @@ use rand_core::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use thiserror_no_std::Error;
 use bit_utils::{Size, PAGE_SIZE, LOWER_HALF_END, KERNEL_RESERVED_START, HIGHER_HALF_START};
-use sys::{Memory, AutoDrop, MemoryMappingFlags, CapFlags, SysErr, MemoryResizeFlags};
+use sys::{Memory, MemoryMappingFlags, CapFlags, SysErr, MemoryResizeFlags};
 
 use crate::context::Context;
 use crate::prelude::*;
@@ -49,7 +49,7 @@ pub struct RegionPadding {
     pub end: Size,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug)]
 pub struct MappedRegion {
     pub(crate) memory_cap: Option<Memory>,
     pub(crate) address: usize,
@@ -92,13 +92,13 @@ pub trait MappedRegionStorage: Deref<Target = [MappedRegion]> {
 /// Stores the mapped regions in a memory capability
 pub struct MemoryCapStorage {
     /// Memory capability that stores the region list
-    memory_cap: Memory,
+    memory: Memory,
     /// Pointer to region list
     data: NonNull<MappedRegion>,
     /// Number of elements in the region lsit
     len: usize,
     /// Total number of elements that the region list has capacity to store
-    cap: usize,
+    capacity: usize,
 }
 
 impl MemoryCapStorage {
@@ -110,25 +110,25 @@ impl MemoryCapStorage {
         let map_position = (aslr_rng.next_u64() as usize) % available_map_positons;
         let map_address = HIGHER_HALF_START + map_position * PAGE_SIZE;
 
-        let memory_cap = Memory::new(
+        let memory = Memory::new(
             CapFlags::READ | CapFlags::PROD | CapFlags::WRITE,
-            this_context().allocator,
+            &this_context().allocator,
             Size::from_pages(1),
         ).or(Err(AddrSpaceError::RegionListOom))?;
 
-        this_context().process
+        this_context().address_space
             .map_memory(
-                memory_cap,
+                &memory,
                 map_address,
                 None,
                 MemoryMappingFlags::READ | MemoryMappingFlags::WRITE,
             ).or(Err(AddrSpaceError::RegionListOom))?;
         
         Ok(MemoryCapStorage {
-            memory_cap,
+            capacity: memory.size().bytes() / size_of::<MappedRegion>(),
+            memory,
             data: NonNull::new(map_address as *mut MappedRegion).unwrap(),
             len: 0,
-            cap: memory_cap.size().bytes() / size_of::<MappedRegion>(),
         })
     }
 }
@@ -137,27 +137,27 @@ impl MemoryCapStorage {
     /// Doubles the size of the region list to allow space for more entries
     fn try_grow(&mut self) -> Result<(), AddrSpaceError> {
         // because of max region size, this should not overflow
-        let new_size = self.memory_cap.size() * 2;
+        let new_size = self.memory.size() * 2;
 
         if new_size > REGION_LIST_MAX_SIZE {
             return Err(AddrSpaceError::RegionListMaxSizeExceeded);
         }
 
-        this_context().process
+        this_context().address_space
             .resize_memory(
-                &mut self.memory_cap,
+                &mut self.memory,
                 new_size,
                 MemoryResizeFlags::IN_PLACE | MemoryResizeFlags::GROW_MAPPING
             ).or(Err(AddrSpaceError::RegionListOom))?;
 
-        self.cap = new_size.bytes() / size_of::<MappedRegion>();
+        self.capacity = new_size.bytes() / size_of::<MappedRegion>();
 
         Ok(())
     }
 
     /// Ensures the region list has space for 1 more element
     fn ensure_capacity(&mut self) -> Result<(), AddrSpaceError> {
-        if self.len == self.cap {
+        if self.len == self.capacity {
             self.try_grow()
         } else {
             Ok(())
@@ -218,6 +218,17 @@ impl MappedRegionStorage for MemoryCapStorage {
     }
 }
 
+impl Drop for MemoryCapStorage {
+    fn drop(&mut self) {
+        for i in 0..self.len {
+            unsafe {
+                // safety: any values at index less then i are valid for reading
+                ptr::drop_in_place(self.off(i));
+            }
+        }
+    }
+}
+
 impl MappedRegionStorage for Vec<MappedRegion> {
     fn len(&self) -> usize {
         self.len()
@@ -233,15 +244,19 @@ impl MappedRegionStorage for Vec<MappedRegion> {
 }
 
 
-pub type LocalAddrSpaceManager = AddrSpaceManager<MemoryCapStorage>;
-pub type RemoteAddrSpaceManager = AddrSpaceManager<Vec<MappedRegion>>;
+pub type LocalAddrSpaceManager = AddrSpaceManager<'static, MemoryCapStorage>;
+pub type RemoteAddrSpaceManager<'a> = AddrSpaceManager<'a, Vec<MappedRegion>>;
 
 /// Manages memory that is mapped into address space
-pub struct AddrSpaceManager<T: MappedRegionStorage> {
+pub struct AddrSpaceManager<'a, T: MappedRegionStorage> {
     memory_regions: T,
+    /// Used by iter free regions, this is the region at the end
+    /// 
+    /// This needs to be stored here for lifetimes to work
+    end_region: MappedRegion,
     aslr_rng: ChaCha20Rng,
     /// This will be the context where memory is mapped and unmapped
-    context: Context,
+    context: &'a Context,
 }
 
 impl LocalAddrSpaceManager {
@@ -251,6 +266,12 @@ impl LocalAddrSpaceManager {
 
         let mut out = AddrSpaceManager {
             memory_regions: MemoryCapStorage::new(&mut aslr_rng)?,
+            end_region: MappedRegion {
+                memory_cap: None,
+                address: MAX_MAP_ADDR,
+                size: Size::default(),
+                padding: RegionPadding::default(),
+            },
             aslr_rng,
             context: this_context().clone(),
         };
@@ -261,11 +282,17 @@ impl LocalAddrSpaceManager {
     }
 }
 
-impl RemoteAddrSpaceManager {
+impl<'a> RemoteAddrSpaceManager<'a> {
     /// Creates an AddrSpaceManager for a different process to manage its address space
-    pub fn new_remote(aslr_seed: [u8; 32], context: Context) -> Result<Self, AddrSpaceError> {
+    pub fn new_remote(aslr_seed: [u8; 32], context: &'a Context) -> Result<Self, AddrSpaceError> {
         let mut out = AddrSpaceManager {
             memory_regions: Vec::new(),
+            end_region: MappedRegion {
+                memory_cap: None,
+                address: MAX_MAP_ADDR,
+                size: Size::default(),
+                padding: RegionPadding::default(),
+            },
             aslr_rng: ChaCha20Rng::from_seed(aslr_seed),
             context,
         };
@@ -276,18 +303,28 @@ impl RemoteAddrSpaceManager {
     }
 }
 
-impl<T: MappedRegionStorage> AddrSpaceManager<T> {
+impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
+    /*fn get(&self, index: usize) -> Option<&MappedRegion> {
+        
+    }*/
+
     /// Inserts the region so it will be in address space order
+    /// 
+    /// # Returns
+    /// 
+    /// Returns the index of there the region was inserted
     /// 
     /// # Panics
     /// 
     /// panics if the regions start address is the same as another regions address
     /// 
     /// this does not check for any other type of overlap though, this is assumed to be already checked
-    pub(crate) fn insert_region(&mut self, region: MappedRegion) -> Result<(), AddrSpaceError> {
+    pub(crate) fn insert_region(&mut self, region: MappedRegion) -> Result<usize, AddrSpaceError> {
         let index = self.binary_search_address(region.address).unwrap_err();
 
-        self.memory_regions.insert(index, region)
+        self.memory_regions.insert(index, region)?;
+
+        Ok(index)
     }
 
     fn remove_region(&mut self, address: usize) -> Result<MappedRegion, AddrSpaceError> {
@@ -310,18 +347,9 @@ impl<T: MappedRegionStorage> AddrSpaceManager<T> {
 
     /// Returns an iteratore over all the free regions
     fn iter_free_regions<'a>(&'a self) -> impl Iterator<Item = (usize, Size)> + 'a {
-        // dummy end region to count the parts after the last real region
-        let end_region = MappedRegion {
-            memory_cap: None,
-            address: MAX_MAP_ADDR,
-            size: Size::default(),
-            padding: RegionPadding::default(),
-        };
-
         let mut prev_addr = 0;
         self.memory_regions.iter()
-            .copied()
-            .chain(core::iter::once(end_region))
+            .chain(core::iter::once(&self.end_region))
             .map(move |region| {
                 let out = (prev_addr, Size::from_bytes(region.start_address() - prev_addr));
                 prev_addr = region.end_address();
@@ -405,7 +433,7 @@ impl<T: MappedRegionStorage> AddrSpaceManager<T> {
 }
 
 /// Arguments for mapping memory in the address apce manager
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Default)]
 pub struct MapMemoryArgs {
     /// Memory capability to map, or None for an ananamous mapping
     pub memory: Option<Memory>,
@@ -432,25 +460,28 @@ pub struct MapMemoryResult {
     pub size: Size,
 }
 
-impl<T: MappedRegionStorage> AddrSpaceManager<T> {
+impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
     /// Maps memory into the address space, see [`MapMemoryArgs`] for more details
     // FIXME: check if padding goes below zero or above max userspace address, or non canonical address
     pub fn map_memory(&mut self, args: MapMemoryArgs) -> Result<MapMemoryResult, AddrSpaceError> {
         let padding = args.padding;
 
-        let (memory, memory_auto_drop, size) = match args.memory {
-            Some(memory) => (Some(memory), None, memory.size()),
+        let (memory, size) = match args.memory {
+            Some(memory) => {
+                let memory_size = memory.size();
+                (Some(memory), memory_size)
+            },
             None => {
                 if let Some(size) = args.size {
                     let memory = Memory::new(
                         CapFlags::READ | CapFlags::WRITE | CapFlags::PROD,
-                        self.context.allocator,
+                        &self.context.allocator,
                         size
                     ).or(Err(AddrSpaceError::AnanamousMappingOom))?;
 
-                    (Some(memory), Some(AutoDrop::from(memory)), size)
+                    (Some(memory), size)
                 } else {
-                    (None, None, Size::default())
+                    (None, Size::default())
                 }
             }
         };
@@ -484,18 +515,13 @@ impl<T: MappedRegionStorage> AddrSpaceManager<T> {
             padding: args.padding,
         };
 
-        self.insert_region(region)?;
+        let region_index = self.insert_region(region)?;
+        let region = self.memory_regions.get(region_index).unwrap();
 
-        if let Some(memory) = memory {
-            let (map_capability, remote_auto_drop) = if let Some(new_capability) = self.context.clone_capability_to(memory)? {
-                (new_capability, Some(AutoDrop::new_in_process(new_capability, self.context.process_target())))
-            } else {
-                (memory, None)
-            };
-
+        if let Some(memory) = &region.memory_cap {
             // TODO: have a way to not specify max size pages
-            let result = self.context.process
-                .map_memory(map_capability, address, Some(size), args.flags)
+            let result = self.context.address_space
+                .map_memory(&memory, address, Some(size), args.flags)
                 .map_err(|err| AddrSpaceError::MemorySyscallError(err));
 
             if let Err(err) = result {
@@ -503,14 +529,6 @@ impl<T: MappedRegionStorage> AddrSpaceManager<T> {
                 self.remove_region(address).unwrap();
 
                 return Err(err);
-            }
-
-            // no more errors can occur at this point, don't need to drop remote memory capability anymore
-            match remote_auto_drop {
-                // if memory was copied to new process, don't drop the new memory
-                Some(auto_drop) => auto_drop.forget(),
-                // memory was not moved to new process, don't forget the current memory
-                None => core::mem::forget(memory_auto_drop),
             }
         }
 
@@ -521,20 +539,17 @@ impl<T: MappedRegionStorage> AddrSpaceManager<T> {
     }
 
     /// Gets the memory capability currently in use by the given mapping, or None if none is in use
-    pub fn get_mapping_capability(&mut self, address: usize) -> Result<Option<Memory>, AddrSpaceError> {
-        Ok(self.get_region(address)?.memory_cap)
+    pub fn get_mapping_capability(&self, address: usize) -> Result<Option<&Memory>, AddrSpaceError> {
+        Ok(self.get_region(address)?.memory_cap.as_ref())
     }
 
     /// Unmaps the given memory and drops the memory capability
     pub unsafe fn unmap_memory(&mut self, address: usize) -> Result<(), AddrSpaceError> {
         let region = self.remove_region(address)?;
 
-        if let Some(memory) = region.memory_cap {
-            self.context.process.unmap_memory(memory)
+        if region.memory_cap.is_some() {
+            self.context.address_space.unmap_memory(address)
                 .expect("failed to unmap previously mapped memory");
-
-            // FIXME: drop memory capability
-            todo!();
         }
 
         Ok(())
@@ -557,4 +572,4 @@ impl<T: MappedRegionStorage> AddrSpaceManager<T> {
     }
 }
 
-unsafe impl<T: MappedRegionStorage> Send for AddrSpaceManager<T> {}
+unsafe impl<T: MappedRegionStorage> Send for AddrSpaceManager<'_, T> {}

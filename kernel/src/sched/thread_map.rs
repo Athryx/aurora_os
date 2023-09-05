@@ -1,5 +1,3 @@
-use core::sync::atomic::Ordering;
-
 use crate::alloc::HeapRef;
 use crate::container::{Arc, Weak, Vec};
 use crate::sync::IMutex;
@@ -34,7 +32,7 @@ impl ThreadMap {
                 continue;
             };
 
-            if !thread.is_alive.load(Ordering::Acquire) {
+            if !thread.is_alive() {
                 continue;
             }
 

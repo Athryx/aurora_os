@@ -61,7 +61,7 @@ pub fn timer_handler() {
 
 /// Called when an ipi_exit ipi occurs, and potentialy exits the current thread
 pub fn exit_handler() {
-    if cpu_local_data().current_thread().is_alive.load(Ordering::Acquire) {
+    if !cpu_local_data().current_thread().is_alive() {
         switch_current_thread_to(
             ThreadState::Dead,
             IntDisable::new(),
