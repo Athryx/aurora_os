@@ -177,7 +177,7 @@ impl ThreadGroup {
         while let Some(child) = thread_list.pop() {
             match child {
                 ThreadGroupChild::Thread(thread) => {
-                    thread.set_state(ThreadState::Dead);
+                    thread.set_dead();
                     if thread.is_current_thread() {
                         kill_self = true;
                     }

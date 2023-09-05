@@ -71,10 +71,8 @@ pub const IRQ_SECONDARY_ATA: u8 = IRQ_BASE + 15;
 
 pub const IRQ_APIC_TIMER: u8 = 48;
 
-pub const INT_SCHED: u8 = 128;
-
-pub const IPI_PROCESS_EXIT: u8 = 129;
-pub const IPI_PANIC: u8 = 130;
+pub const IPI_PROCESS_EXIT: u8 = 128;
+pub const IPI_PANIC: u8 = 129;
 
 // This is where spurious interrupts are sent to, no one listens
 // NOTE: on some processors, according to intel manuals, bits 0-3 of the spurious vector register are always 0,

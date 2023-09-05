@@ -92,7 +92,7 @@ fn init(boot_info_addr: usize) -> KResult<()> {
 
     syscall::init();
 
-    // initislise the scheduler
+    // initialise the scheduler
     sched::init();
     sched::init_kernel_context().expect("failed to initialize kernel context");
     sched::init_cpu_local(*INIT_STACK)?;
