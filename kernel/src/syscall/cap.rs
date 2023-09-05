@@ -20,7 +20,7 @@ pub fn cap_clone(
 
     let _int_disable = IntDisable::new();
 
-    let src_cspace = if flags.contains(CapCloneFlags::SRC_PROCESS_SELF) {
+    let src_cspace = if flags.contains(CapCloneFlags::SRC_CSPACE_SELF) {
         CapabilitySpace::current()
     } else {
         CapabilitySpace::current()
@@ -28,7 +28,7 @@ pub fn cap_clone(
             .into_inner()
     };
 
-    let dst_cspace = if flags.contains(CapCloneFlags::DST_PROCESS_SELF) {
+    let dst_cspace = if flags.contains(CapCloneFlags::DST_CSPACE_SELF) {
         CapabilitySpace::current()
     } else {
         CapabilitySpace::current()
@@ -90,7 +90,7 @@ pub fn cap_destroy(
 
     let _int_disable = IntDisable::new();
 
-    let cspace = if flags.contains(CapDestroyFlags::PROCESS_SELF) {
+    let cspace = if flags.contains(CapDestroyFlags::CSPACE_SELF) {
         CapabilitySpace::current()
     } else {
         CapabilitySpace::current()

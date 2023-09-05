@@ -7,13 +7,14 @@ use crate::{
     CapFlags,
     KResult,
     ChannelSyncFlags,
+    CspaceTarget,
     syscall,
     sysret_1,
 };
 use crate::syscall_nums::*;
-use super::{Capability, Allocator, MessageBuffer, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
+use super::{Capability, Allocator, MessageBuffer, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Channel(CapId);
 
 impl Capability for Channel {
@@ -33,7 +34,7 @@ impl Capability for Channel {
 }
 
 impl Channel {
-    pub fn new(flags: CapFlags, allocator: Allocator) -> KResult<Self> {
+    pub fn new(flags: CapFlags, allocator: &Allocator) -> KResult<Self> {
         unsafe {
             sysret_1!(syscall!(
                 CHANNEL_NEW,
@@ -113,5 +114,11 @@ impl Channel {
                 timeout.unwrap_or_default()
             )).map(Size::from_bytes)
         }
+    }
+}
+
+impl Drop for Channel {
+    fn drop(&mut self) {
+        let _ = cap_destroy(CspaceTarget::Current, self.0);
     }
 }

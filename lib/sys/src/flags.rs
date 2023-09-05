@@ -16,16 +16,16 @@ bitflags! {
         /// If true, the old capability is destroyed and only the new one remains
         const DESTROY_SRC_CAP = 1 << 5;
         /// The src process is the current process
-        const SRC_PROCESS_SELF = 1 << 6;
+        const SRC_CSPACE_SELF = 1 << 6;
         /// The dst process is the current process
-        const DST_PROCESS_SELF = 1 << 7;
+        const DST_CSPACE_SELF = 1 << 7;
     }
 }
 
 bitflags! {
     pub struct CapDestroyFlags: u32 {
         /// Destroy the capability from the current process rather than the target process passed in
-        const PROCESS_SELF = 1;
+        const CSPACE_SELF = 1;
     }
 }
 

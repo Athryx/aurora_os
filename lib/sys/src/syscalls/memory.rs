@@ -6,14 +6,15 @@ use crate::{
     CapType,
     CapFlags,
     KResult,
+    CspaceTarget,
     syscall,
     sysret_1,
     sysret_2,
 };
 use crate::syscall_nums::*;
-use super::{Capability, Allocator, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
+use super::{Capability, Allocator, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct Memory {
     id: CapId,
     /// Size of memory
@@ -44,7 +45,7 @@ impl Capability for Memory {
 }
 
 impl Memory {
-    pub fn new(flags: CapFlags, allocator: Allocator, size: Size) -> KResult<Self> {
+    pub fn new(flags: CapFlags, allocator: &Allocator, size: Size) -> KResult<Self> {
         unsafe {
             sysret_2!(syscall!(
                 MEMORY_NEW,
@@ -80,5 +81,11 @@ impl Memory {
 
     pub fn size(&self) -> Size {
         self.size
+    }
+}
+
+impl Drop for Memory {
+    fn drop(&mut self) {
+        let _ = cap_destroy(CspaceTarget::Current, self.id);
     }
 }

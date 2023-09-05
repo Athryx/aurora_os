@@ -4,18 +4,22 @@ use bit_utils::Size;
 
 use crate::{syscall_nums::*, CapId, CapType, CapFlags, KResult, CapCloneFlags, CapDestroyFlags};
 
+mod address_space;
+pub use address_space::*;
 mod allocator;
 pub use allocator::*;
+mod capability_space;
+pub use capability_space::*;
 mod channel;
 pub use channel::*;
 mod key;
 pub use key::*;
 mod memory;
 pub use memory::*;
-mod process;
-pub use process::*;
-mod spawner;
-pub use spawner::*;
+mod thread;
+pub use thread::*;
+mod thread_group;
+pub use thread_group::*;
 
 // need to use rcx because rbx is reserved by llvm
 // FIXME: ugly
@@ -281,68 +285,26 @@ pub trait Capability {
     }
 }
 
-/// Automatically drops the wrapped capability when this capability is dropped
-pub struct AutoDrop<T: Capability + Copy> {
-    /// Which process the capability is in
-    process: ProcessTarget,
-    capability: T,
-}
-
-impl<T: Capability + Copy> AutoDrop<T> {
-    pub fn new_in_process(capability: T, process: ProcessTarget) -> Self {
-        AutoDrop {
-            process,
-            capability,
-        }
-    }
-
-    pub fn capability(&self) -> T {
-        self.capability
-    }
-
-    pub fn forget(self) {
-        core::mem::forget(self)
-    }
-
-    pub fn into_inner(self) -> T {
-        let out = self.capability;
-        self.forget();
-        out
-    }
-}
-
-impl<T: Capability + Copy> From<T> for AutoDrop<T> {
-    fn from(value: T) -> Self {
-        Self::new_in_process(value, ProcessTarget::Current)
-    }
-}
-
-impl<T: Capability + Copy> Drop for AutoDrop<T> {
-    fn drop(&mut self) {
-        let _ = cap_destroy(self.process, self.capability);
-    }
-}
-
 /// Specifies which process an operation should be performed on
 #[derive(Debug, Clone, Copy)]
-pub enum ProcessTarget {
+pub enum CspaceTarget<'a> {
     /// Perform it on the current process
     Current,
     /// Perform it on another process
-    Other(Process),
+    Other(&'a CapabilitySpace),
 }
 
 macro_rules! make_cap_fn {
     ($fn_name:ident, $make_weak:expr, $destroy_src_cap:expr) => {
         pub fn $fn_name<T: Capability>(
-            dst_process: ProcessTarget,
-            src_process: ProcessTarget,
+            dst_cspace: CspaceTarget,
+            src_cspace: CspaceTarget,
             cap: T,
             new_flags: CapFlags,
         ) -> KResult<T> {
             let cap_id = cap_clone_inner(
-                dst_process,
-                src_process,
+                dst_cspace,
+                src_cspace,
                 cap.cap_id(),
                 new_flags,
                 $make_weak,
@@ -360,8 +322,8 @@ make_cap_fn!(cap_clone_weak, true, false);
 make_cap_fn!(cap_move_weak, true, true);
 
 fn cap_clone_inner(
-    dst_process: ProcessTarget,
-    src_process: ProcessTarget,
+    dst_cspace: CspaceTarget,
+    src_cspace: CspaceTarget,
     cap_id: CapId,
     new_flags: CapFlags,
     make_weak: bool,
@@ -390,61 +352,61 @@ fn cap_clone_inner(
         flags |= CapCloneFlags::DESTROY_SRC_CAP;
     }
 
-    let src_process_id = match src_process {
-        ProcessTarget::Current => {
-            flags |= CapCloneFlags::SRC_PROCESS_SELF;
+    let src_cspace_id = match src_cspace {
+        CspaceTarget::Current => {
+            flags |= CapCloneFlags::SRC_CSPACE_SELF;
             0
         },
-        ProcessTarget::Other(process) => process.as_usize(),
+        CspaceTarget::Other(cspace) => cspace.as_usize(),
     };
 
-    let dst_process_id = match dst_process {
-        ProcessTarget::Current => {
-            flags |= CapCloneFlags::DST_PROCESS_SELF;
+    let dst_cspace_id = match dst_cspace {
+        CspaceTarget::Current => {
+            flags |= CapCloneFlags::DST_CSPACE_SELF;
             0
         },
-        ProcessTarget::Other(process) => process.as_usize(),
+        CspaceTarget::Other(cspace) => cspace.as_usize(),
     };
 
     unsafe {
         sysret_1!(syscall!(
             CAP_CLONE,
             flags.bits() | WEAK_AUTO_DESTROY,
-            dst_process_id,
-            src_process_id,
+            dst_cspace_id,
+            src_cspace_id,
             usize::from(cap_id)
         )).map(|num| CapId::try_from(num).expect(INVALID_CAPID_MESSAGE))
     }
 }
 
-pub fn cap_destroy<T: Capability>(
-    process: ProcessTarget,
-    capability: T,
+fn cap_destroy(
+    cspace: CspaceTarget,
+    capability_id: CapId,
 ) -> KResult<()> {
-    let (process_id, flags) = match process {
-        ProcessTarget::Current => (0, CapDestroyFlags::PROCESS_SELF),
-        ProcessTarget::Other(process_id) => (process_id.as_usize(), CapDestroyFlags::empty()),
+    let (cspace_id, flags) = match cspace {
+        CspaceTarget::Current => (0, CapDestroyFlags::CSPACE_SELF),
+        CspaceTarget::Other(cspace) => (cspace.as_usize(), CapDestroyFlags::empty()),
     };
 
     unsafe {
         sysret_0!(syscall!(
             CAP_DESTROY,
             flags.bits() | WEAK_AUTO_DESTROY,
-            process_id,
-            capability.as_usize()
+            cspace_id,
+            usize::from(capability_id)
         ))
     }
 }
 
 /// Used for sending and recieving events
 #[derive(Debug, Clone, Copy)]
-pub struct MessageBuffer {
-    pub memory: Memory,
+pub struct MessageBuffer<'a> {
+    pub memory: &'a Memory,
     pub offset: Size,
     pub size: Size,
 }
 
-impl MessageBuffer {
+impl MessageBuffer<'_> {
     pub fn is_readable(&self) -> bool {
         self.memory.cap_id().flags().contains(CapFlags::READ)
     }

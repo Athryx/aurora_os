@@ -1,4 +1,3 @@
-
 use serde::{Serialize, Deserialize};
 
 use crate::{
@@ -9,14 +8,14 @@ use crate::{
 use super::{Capability, cap_destroy};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Allocator(CapId);
+pub struct CapabilitySpace(CapId);
 
-impl Capability for Allocator {
-    const TYPE: CapType = CapType::Allocator;
+impl Capability for CapabilitySpace {
+    const TYPE: CapType = CapType::CapabilitySpace;
 
     fn from_cap_id(cap_id: CapId) -> Option<Self> {
-        if cap_id.cap_type() == CapType::Allocator {
-            Some(Allocator(cap_id))
+        if cap_id.cap_type() == CapType::CapabilitySpace {
+            Some(CapabilitySpace(cap_id))
         } else {
             None
         }
@@ -27,7 +26,7 @@ impl Capability for Allocator {
     }
 }
 
-impl Drop for Allocator {
+impl Drop for CapabilitySpace {
     fn drop(&mut self) {
         let _ = cap_destroy(CspaceTarget::Current, self.0);
     }

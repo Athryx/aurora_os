@@ -3,24 +3,24 @@ use serde::{Serialize, Deserialize};
 use crate::{
     CapId,
     CapType,
-    CapFlags,
     KResult,
     CspaceTarget,
     syscall,
+    sysret_0,
     sysret_1,
 };
 use crate::syscall_nums::*;
 use super::{Capability, Allocator, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Key(CapId);
+pub struct ThreadGroup(CapId);
 
-impl Capability for Key {
-    const TYPE: CapType = CapType::Key;
+impl Capability for ThreadGroup {
+    const TYPE: CapType = CapType::ThreadGroup;
 
     fn from_cap_id(cap_id: CapId) -> Option<Self> {
-        if cap_id.cap_type() == CapType::Key {
-            Some(Key(cap_id))
+        if cap_id.cap_type() == CapType::ThreadGroup {
+            Some(ThreadGroup(cap_id))
         } else {
             None
         }
@@ -31,21 +31,24 @@ impl Capability for Key {
     }
 }
 
-impl Key {
-    pub fn new(flags: CapFlags, allocator: &Allocator) -> KResult<Self> {
-        unsafe {
+impl ThreadGroup {
+    pub fn new_child_group(&self, allocator: &Allocator) -> KResult<Self> {
+        let child_cap_id = unsafe {
             sysret_1!(syscall!(
-                KEY_NEW,
-                flags.bits() as u32 | WEAK_AUTO_DESTROY,
+                THREAD_GROUP_NEW,
+                WEAK_AUTO_DESTROY,
+                self.as_usize(),
                 allocator.as_usize()
-            )).map(|num| Key(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
-        }
+            ))?
+        };
+
+        Ok(ThreadGroup(CapId::try_from(child_cap_id).expect(INVALID_CAPID_MESSAGE)))
     }
 
-    pub fn key_id(&self) -> KResult<usize> {
+    pub fn exit(&self) -> KResult<()> {
         unsafe {
-            sysret_1!(syscall!(
-                KEY_ID,
+            sysret_0!(syscall!(
+                THREAD_GROUP_EXIT,
                 WEAK_AUTO_DESTROY,
                 self.as_usize()
             ))
@@ -53,7 +56,7 @@ impl Key {
     }
 }
 
-impl Drop for Key {
+impl Drop for ThreadGroup {
     fn drop(&mut self) {
         let _ = cap_destroy(CspaceTarget::Current, self.0);
     }
