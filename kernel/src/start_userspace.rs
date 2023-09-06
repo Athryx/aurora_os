@@ -1,7 +1,7 @@
 use core::mem::size_of;
 
 use bytemuck::{Pod, Zeroable, from_bytes, cast_slice, bytes_of};
-use sys::{CapFlags, InitInfo, ProcessInitData, ProcessMemoryEntry};
+use sys::{CapFlags, InitInfo, ProcessInitData, ProcessMemoryEntry, StackInfo};
 use elf::{ElfBytes, endian::NativeEndian, abi::{PT_LOAD, PF_R, PF_W, PF_X}};
 use aser::to_bytes_count_cap;
 
@@ -59,15 +59,6 @@ fn find_early_init_data(initrd: &[u8]) -> &[u8] {
     }
 
     panic!("could not find early init program in initrd");
-}
-
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-#[repr(C)]
-struct StackInfo {
-    process_data_address: usize,
-    process_data_size: usize,
-    namespace_data_address: usize,
-    namespace_data_size: usize,
 }
 
 /// Parses the initrd and creates the early init process, which is the first userspace process

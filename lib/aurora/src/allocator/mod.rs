@@ -14,6 +14,7 @@ use bit_utils::{PAGE_SIZE, log2_up_const, align_up, align_down, align_of, Size, 
 use bit_utils::container::{LinkedList, ListNode, ListNodeData, CursorMut};
 
 use crate::addr_space;
+use crate::allocator::addr_space::MapMemoryResult;
 use addr_space::MapMemoryArgs;
 use crate::sync::Mutex;
 
@@ -111,23 +112,26 @@ impl HeapZone {
     unsafe fn new(size: usize) -> Option<MemOwner<Self>> {
         assert!(size >= size_of::<Self>(), "requested heapzone size is not big enough");
 
-        let map_result = addr_space()
+        let MapMemoryResult {
+            address,
+            size,
+            ..
+        } = addr_space()
             .map_memory(MapMemoryArgs {
                 size: Some(Size::from_bytes(size)),
                 ..Default::default()
             }).ok()?;
 
-        let size = map_result.size.bytes();
-        let ptr = map_result.address as *mut HeapZone;
+        let ptr = address as *mut HeapZone;
 
         let mut out = HeapZone {
             list_node_data: ListNodeData::default(),
-            size,
-            free_space: Cell::new(size - INITIAL_CHUNK_SIZE),
+            size: size.bytes(),
+            free_space: Cell::new(size.bytes() - INITIAL_CHUNK_SIZE),
             list: LinkedList::new(),
         };
 
-        let node = unsafe { Node::new(map_result.address + INITIAL_CHUNK_SIZE, size - INITIAL_CHUNK_SIZE) };
+        let node = unsafe { Node::new(address + INITIAL_CHUNK_SIZE, size.bytes() - INITIAL_CHUNK_SIZE) };
         out.list.push(node);
 
         unsafe {

@@ -283,6 +283,13 @@ pub trait Capability {
     fn as_usize(&self) -> usize {
         self.cap_id().into()
     }
+
+    fn into_cap_id(self) -> CapId
+        where Self: Sized {
+        let cap_id = self.cap_id();
+        core::mem::forget(self);
+        cap_id
+    }
 }
 
 /// Specifies which process an operation should be performed on
@@ -294,8 +301,8 @@ pub enum CspaceTarget<'a> {
     Other(&'a CapabilitySpace),
 }
 
-macro_rules! make_cap_fn {
-    ($fn_name:ident, $make_weak:expr, $destroy_src_cap:expr) => {
+macro_rules! make_cap_fn_move {
+    ($fn_name:ident, $make_weak:expr) => {
         pub fn $fn_name<T: Capability>(
             dst_cspace: CspaceTarget,
             src_cspace: CspaceTarget,
@@ -308,7 +315,32 @@ macro_rules! make_cap_fn {
                 cap.cap_id(),
                 new_flags,
                 $make_weak,
-                $destroy_src_cap,
+                true,
+            )?;
+
+            // old cap was destroyed by syscall
+            core::mem::forget(cap);
+
+            Ok(T::from_cap_id(cap_id).expect("invalid capid returned by kernel"))
+        }        
+    };
+}
+
+macro_rules! make_cap_fn_clone {
+    ($fn_name:ident, $make_weak:expr) => {
+        pub fn $fn_name<T: Capability>(
+            dst_cspace: CspaceTarget,
+            src_cspace: CspaceTarget,
+            cap: &T,
+            new_flags: CapFlags,
+        ) -> KResult<T> {
+            let cap_id = cap_clone_inner(
+                dst_cspace,
+                src_cspace,
+                cap.cap_id(),
+                new_flags,
+                $make_weak,
+                false,
             )?;
 
             Ok(T::from_cap_id(cap_id).expect("invalid capid returned by kernel"))
@@ -316,10 +348,10 @@ macro_rules! make_cap_fn {
     };
 }
 
-make_cap_fn!(cap_clone, false, false);
-make_cap_fn!(cap_move, false, true);
-make_cap_fn!(cap_clone_weak, true, false);
-make_cap_fn!(cap_move_weak, true, true);
+make_cap_fn_move!(cap_move, true);
+make_cap_fn_move!(cap_move_weak, false);
+make_cap_fn_clone!(cap_clone, true);
+make_cap_fn_clone!(cap_clone_weak, false);
 
 fn cap_clone_inner(
     dst_cspace: CspaceTarget,

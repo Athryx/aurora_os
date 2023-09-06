@@ -2,11 +2,15 @@ use core::{ptr::NonNull, ptr, ops::Deref, mem::size_of};
 
 use rand_core::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
+use sys::AddressSpace;
+use sys::Allocator;
+use sys::CspaceTarget;
+use sys::cap_clone;
 use thiserror_no_std::Error;
 use bit_utils::{Size, PAGE_SIZE, LOWER_HALF_END, KERNEL_RESERVED_START, HIGHER_HALF_START};
 use sys::{Memory, MemoryMappingFlags, CapFlags, SysErr, MemoryResizeFlags};
 
-use crate::context::Context;
+use crate::addr_space;
 use crate::prelude::*;
 use crate::this_context;
 
@@ -249,14 +253,16 @@ pub type RemoteAddrSpaceManager<'a> = AddrSpaceManager<'a, Vec<MappedRegion>>;
 
 /// Manages memory that is mapped into address space
 pub struct AddrSpaceManager<'a, T: MappedRegionStorage> {
-    memory_regions: T,
+    pub(crate) memory_regions: T,
     /// Used by iter free regions, this is the region at the end
     /// 
     /// This needs to be stored here for lifetimes to work
     end_region: MappedRegion,
     aslr_rng: ChaCha20Rng,
-    /// This will be the context where memory is mapped and unmapped
-    context: &'a Context,
+    /// Allocator used to allocate memory
+    allocator: &'a Allocator,
+    /// Address space where memory is mapped
+    address_space: &'a AddressSpace,
 }
 
 impl LocalAddrSpaceManager {
@@ -273,7 +279,8 @@ impl LocalAddrSpaceManager {
                 padding: RegionPadding::default(),
             },
             aslr_rng,
-            context: this_context().clone(),
+            allocator: &this_context().allocator,
+            address_space: &this_context().address_space,
         };
 
         out.reserve_null_page()?;
@@ -283,8 +290,8 @@ impl LocalAddrSpaceManager {
 }
 
 impl<'a> RemoteAddrSpaceManager<'a> {
-    /// Creates an AddrSpaceManager for a different process to manage its address space
-    pub fn new_remote(aslr_seed: [u8; 32], context: &'a Context) -> Result<Self, AddrSpaceError> {
+    /// Creates an AddrSpaceManager for a different address space to manage its address space
+    pub fn new_remote(aslr_seed: [u8; 32], allocator: &'a Allocator, address_space: &'a AddressSpace) -> Result<Self, AddrSpaceError> {
         let mut out = AddrSpaceManager {
             memory_regions: Vec::new(),
             end_region: MappedRegion {
@@ -294,7 +301,8 @@ impl<'a> RemoteAddrSpaceManager<'a> {
                 padding: RegionPadding::default(),
             },
             aslr_rng: ChaCha20Rng::from_seed(aslr_seed),
-            context,
+            allocator,
+            address_space,
         };
 
         out.reserve_null_page()?;
@@ -455,9 +463,10 @@ pub struct MapMemoryArgs {
 }
 
 #[derive(Debug, Clone, Copy)]
-pub struct MapMemoryResult {
+pub struct MapMemoryResult<'a> {
     pub address: usize,
     pub size: Size,
+    pub memory: Option<&'a Memory>,
 }
 
 impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
@@ -474,8 +483,8 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
             None => {
                 if let Some(size) = args.size {
                     let memory = Memory::new(
-                        CapFlags::READ | CapFlags::WRITE | CapFlags::PROD,
-                        &self.context.allocator,
+                        CapFlags::all(),
+                        self.allocator,
                         size
                     ).or(Err(AddrSpaceError::AnanamousMappingOom))?;
 
@@ -520,7 +529,7 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
 
         if let Some(memory) = &region.memory_cap {
             // TODO: have a way to not specify max size pages
-            let result = self.context.address_space
+            let result = self.address_space
                 .map_memory(&memory, address, Some(size), args.flags)
                 .map_err(|err| AddrSpaceError::MemorySyscallError(err));
 
@@ -535,6 +544,8 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
         Ok(MapMemoryResult {
             address,
             size,
+            // can't use region here because borrow checker issues
+            memory: self.memory_regions.get(region_index).unwrap().memory_cap.as_ref(),
         })
     }
 
@@ -548,7 +559,7 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
         let region = self.remove_region(address)?;
 
         if region.memory_cap.is_some() {
-            self.context.address_space.unmap_memory(address)
+            self.address_space.unmap_memory(address)
                 .expect("failed to unmap previously mapped memory");
         }
 
@@ -569,6 +580,68 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
         })?;
 
         Ok(())
+    }
+}
+
+#[derive(Debug)]
+pub struct LocalRemoteMapResult {
+    pub remote_address: usize,
+    /// If there was no actual memory mapped in the remote address space, nothing will be mapped inthe local address space
+    pub local_address: Option<usize>,
+    pub size: Size,
+}
+
+impl Drop for LocalRemoteMapResult {
+    fn drop(&mut self) {
+        if let Some(address) = self.local_address {
+            unsafe {
+                addr_space().unmap_memory(address)
+                    .expect("failed to unmap memory");
+            }
+        }
+    }
+}
+
+impl RemoteAddrSpaceManager<'_> {
+    pub fn map_memory_remote_and_local(&mut self, args: MapMemoryArgs) -> Result<LocalRemoteMapResult, AddrSpaceError> {
+        let MapMemoryResult {
+            address: remote_address,
+            size,
+            memory,
+        } = self.map_memory(args)?;
+
+        if let Some(memory) = memory {
+            let memory = cap_clone(CspaceTarget::Current, CspaceTarget::Current, memory, CapFlags::all())?;
+
+            let mut local_address_space = addr_space();
+            let map_result = local_address_space.map_memory(MapMemoryArgs {
+                memory: Some(memory),
+                size: Some(size),
+                flags: MemoryMappingFlags::READ | MemoryMappingFlags::WRITE,
+                ..Default::default()
+            });
+
+            match map_result {
+                Ok(local_mapping) => Ok(LocalRemoteMapResult {
+                    remote_address,
+                    local_address: Some(local_mapping.address),
+                    size,
+                }),
+                Err(error) => {
+                    unsafe {
+                        // panic safety: this memory was just mapped
+                        self.unmap_memory(remote_address).unwrap();
+                    }
+                    Err(error)
+                },
+            }
+        } else {
+            Ok(LocalRemoteMapResult {
+                remote_address,
+                local_address: None,
+                size,
+            })
+        }
     }
 }
 

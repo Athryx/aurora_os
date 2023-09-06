@@ -24,7 +24,7 @@ pub mod collections;
 pub mod debug_print;
 pub mod env;
 mod prelude;
-//pub mod process;
+pub mod process;
 mod sync;
 
 static THIS_CONTEXT: Once<Context> = Once::new();

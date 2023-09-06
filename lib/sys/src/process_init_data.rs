@@ -7,6 +7,15 @@ use core::mem::size_of;
 
 use bytemuck::{Pod, Zeroable, PodCastError, try_from_bytes, try_cast_slice};
 
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+#[repr(C)]
+pub struct StackInfo {
+    pub process_data_address: usize,
+    pub process_data_size: usize,
+    pub namespace_data_address: usize,
+    pub namespace_data_size: usize,
+}
+
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct ProcessInitData {
@@ -23,8 +32,11 @@ pub struct ProcessInitData {
 pub struct ProcessMemoryEntry {
     pub memory_cap_id: usize,
     pub map_address: usize,
+    /// Mapping size of memory in bytes
     pub map_size: usize,
+    /// Start padding in bytes
     pub padding_start: usize,
+    /// End padding in bytes
     pub padding_end: usize,
 }
 
