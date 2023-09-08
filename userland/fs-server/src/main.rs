@@ -2,7 +2,7 @@
 
 extern crate std;
 
-use aurora::dprintln;
+use std::prelude::*;
 
 fn main() {
     dprintln!("hello fs");

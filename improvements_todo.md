@@ -1,7 +1,5 @@
 # Bugs
 
-- thread_group drop causes gp exception
-
 # Implementation Details
 
 ## Specific

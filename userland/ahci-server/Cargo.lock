@@ -292,6 +292,7 @@ dependencies = [
  "bytemuck",
  "lazy_static",
  "serde",
+ "spin 0.9.8",
 ]
 
 [[package]]

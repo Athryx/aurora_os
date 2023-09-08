@@ -21,7 +21,6 @@ use env::{Namespace, THIS_NAMESPACE};
 mod allocator;
 mod context;
 pub mod collections;
-pub mod debug_print;
 pub mod env;
 pub mod prelude;
 pub mod process;

@@ -157,10 +157,10 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
                 visitor.visit_borrowed_bytes(self.take_bytes(num_bytes)?)
             },
 
-            DataType::SequenceStart => visitor.visit_seq(SequenceDeserializer::from(self)),
+            DataType::SequenceStart => visitor.visit_seq(SequenceDeserializer::try_from(self)?),
             DataType::SequenceEnd => Err(AserError::UnexpectedTerminator),
 
-            DataType::MapStart => visitor.visit_map(MapDeserializer::from(self)),
+            DataType::MapStart => visitor.visit_map(MapDeserializer::try_from(self)?),
             DataType::MapEnd => Err(AserError::UnexpectedTerminator),
 
             DataType::Variant => visitor.visit_enum(EnumDeserializer {
@@ -194,12 +194,30 @@ struct SequenceDeserializer<'a, 'de: 'a> {
     finished: bool,
 }
 
-impl<'a, 'de: 'a> From<&'a mut Deserializer<'de>> for SequenceDeserializer<'a, 'de> {
-    fn from(deserializer: &'a mut Deserializer<'de>) -> Self {
-        SequenceDeserializer {
+impl SequenceDeserializer<'_, '_> {
+    fn check_if_finished(&mut self) -> Result<(), AserError> {
+        if self.deserializer.peek_data_type()? == DataType::SequenceEnd {
+            // take end byte
+            self.deserializer.take_data_type().unwrap();
+            self.finished = true;
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a, 'de: 'a> TryFrom<&'a mut Deserializer<'de>> for SequenceDeserializer<'a, 'de> {
+    type Error = AserError;
+
+    fn try_from(deserializer: &'a mut Deserializer<'de>) -> Result<Self, Self::Error> {
+        let mut out = SequenceDeserializer {
             deserializer,
             finished: false,
-        }
+        };
+
+        out.check_if_finished()?;
+
+        Ok(out)
     }
 }
 
@@ -215,11 +233,7 @@ impl<'a, 'de> SeqAccess<'de> for SequenceDeserializer<'a, 'de> {
 
         let out = seed.deserialize(&mut *self.deserializer).map(Some);
 
-        if self.deserializer.peek_data_type()? == DataType::SequenceEnd {
-            // take end byte
-            self.deserializer.take_data_type().unwrap();
-            self.finished = true;
-        }
+        self.check_if_finished()?;
 
         out
     }
@@ -230,12 +244,30 @@ struct MapDeserializer<'a, 'de: 'a> {
     finished: bool,
 }
 
-impl<'a, 'de: 'a> From<&'a mut Deserializer<'de>> for MapDeserializer<'a, 'de> {
-    fn from(deserializer: &'a mut Deserializer<'de>) -> Self {
-        MapDeserializer {
+impl MapDeserializer<'_, '_> {
+    fn check_if_finished(&mut self) -> Result<(), AserError> {
+        if self.deserializer.peek_data_type()? == DataType::MapEnd {
+            // take end byte
+            self.deserializer.take_data_type().unwrap();
+            self.finished = true;
+        }
+
+        Ok(())
+    }
+}
+
+impl<'a, 'de: 'a> TryFrom<&'a mut Deserializer<'de>> for MapDeserializer<'a, 'de> {
+    type Error = AserError;
+
+    fn try_from(deserializer: &'a mut Deserializer<'de>) -> Result<Self, Self::Error> {
+        let mut out = MapDeserializer {
             deserializer,
             finished: false,
-        }
+        };
+
+        out.check_if_finished()?;
+
+        Ok(out)
     }
 }
 
@@ -257,11 +289,7 @@ impl<'a, 'de> MapAccess<'de> for MapDeserializer<'a, 'de> {
         V: de::DeserializeSeed<'de> {
         let out = seed.deserialize(&mut *self.deserializer);
 
-        if self.deserializer.peek_data_type()? == DataType::MapEnd {
-            // take end byte
-            self.deserializer.take_data_type().unwrap();
-            self.finished = true;
-        }
+        self.check_if_finished()?;
 
         out
     }

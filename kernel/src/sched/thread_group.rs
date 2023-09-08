@@ -153,6 +153,8 @@ impl ThreadGroup {
 
         cpu_local_data().local_apic().send_ipi(Ipi::To(IpiDest::AllExcludeThis, IPI_PROCESS_EXIT));
 
+        drop(this);
+
         if kill_self {
             switch_current_thread_to(
                 ThreadState::Dead,

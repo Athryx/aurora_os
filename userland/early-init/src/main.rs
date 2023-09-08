@@ -90,7 +90,7 @@ pub extern "C" fn _rust_startup(
         .expect("failed to start fs server");
 
 
-    let tmp = Test::D {
+    /*let tmp = Test::D {
         bruh: 8,
         a: false,
         hi: 12309470182309128,
@@ -106,7 +106,7 @@ pub extern "C" fn _rust_startup(
     let value2 = aser::Value::from_serialize(&tmp);
     dprintln!("value from test {:?}", value2);
     let test2: Test = value.into_deserialize().unwrap();
-    dprintln!("test from value {:?}", test2);
+    dprintln!("test from value {:?}", test2);*/
 
     loop { core::hint::spin_loop(); }
 }
