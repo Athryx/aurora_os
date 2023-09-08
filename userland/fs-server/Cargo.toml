@@ -8,6 +8,7 @@ edition = "2021"
 
 [dependencies]
 std = { path = "../../lib/std" }
+aurora = { path = "../../lib/aurora" }
 
 [panic.dev]
 panic = "abort"

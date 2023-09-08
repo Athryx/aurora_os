@@ -11,7 +11,7 @@ extern "C" fn rust_eh_personality() {}
 extern "C" fn rust_begin_panic(info: &PanicInfo) -> ! {
 	dprintln!("{}", info);
 
-	loop { core::hint::spin_loop(); }
+	aurora::process::exit();
 }
 
 /*#[panic_handler]

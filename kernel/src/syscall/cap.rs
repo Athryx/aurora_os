@@ -1,5 +1,6 @@
 use sys::{KResult, CapId, SysErr, CapCloneFlags, CapFlags, CapType, CapDestroyFlags};
 
+use crate::cap::capability_space::CapCloneWeakness;
 use crate::prelude::*;
 use crate::{arch::x64::IntDisable, cap::capability_space::CapabilitySpace};
 
@@ -14,6 +15,16 @@ pub fn cap_clone(
     let weak_auto_destroy = options_weak_autodestroy(options);
     let flags = CapCloneFlags::from_bits_truncate(options);
     let new_cap_perms = CapFlags::from(flags);
+
+    let cap_weakness = if flags.contains(CapCloneFlags::CHANGE_CAP_WEAKNESS) {
+        if flags.contains(CapCloneFlags::MAKE_WEAK) {
+            CapCloneWeakness::MakeWeak
+        } else {
+            CapCloneWeakness::MakeStrong
+        }
+    } else {
+        CapCloneWeakness::KeepSame
+    };
 
     let old_cap = CapId::try_from(cap_id)
         .ok_or(SysErr::InvlId)?;
@@ -43,7 +54,7 @@ pub fn cap_clone(
                 &src_cspace,
                 old_cap,
                 new_cap_perms,
-                !flags.contains(CapCloneFlags::MAKE_WEAK),
+                cap_weakness,
                 flags.contains(CapCloneFlags::DESTROY_SRC_CAP),
                 weak_auto_destroy,
             )?

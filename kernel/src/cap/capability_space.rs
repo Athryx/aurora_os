@@ -55,6 +55,13 @@ impl CapabilitySpace {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapCloneWeakness {
+    KeepSame,
+    MakeStrong,
+    MakeWeak,
+}
+
 macro_rules! generate_cap_methods {
     ($map:ty, $cap_type:ty, $cap_map:ident, $cap_name:ident) => {
         paste! {
@@ -78,26 +85,6 @@ macro_rules! generate_cap_methods {
                 pub fn [<remove_ $cap_name>](&self, cap_id: CapId) -> KResult<Capability<$cap_type>> {
                     self.$cap_map.lock().remove(&cap_id)
                         .ok_or(SysErr::InvlId)
-                }
-
-                pub fn [<get_strong_ $cap_name _with_perms>](
-                    &self,
-                    cap_id: usize,
-                    required_perms: CapFlags,
-                ) -> KResult<StrongCapability<$cap_type>> {
-                    let map = self.$cap_map.lock();
-
-                    let cap_id = CapId::try_from(cap_id).ok_or(SysErr::InvlId)?;
-                    let cap = map.get(&cap_id).ok_or(SysErr::InvlId)?;
-
-                    if !cap.flags().contains(required_perms) {
-                        return Err(SysErr::InvlPerm)
-                    }
-
-                    match cap {
-                        Capability::Strong(cap) => Ok(cap.clone()),
-                        Capability::Weak(_) => Err(SysErr::InvlWeak),
-                    }
                 }
 
                 pub fn [<get_ $cap_name _with_perms>](
@@ -134,35 +121,6 @@ macro_rules! generate_cap_methods {
                     }
                 }
 
-                pub fn [<get_strong_ $cap_name>](
-                    &self,
-                    cap_id: usize,
-                    weak_auto_destroy: bool,
-                ) -> KResult<StrongCapability<$cap_type>> {
-                    let mut map = self.$cap_map.lock();
-
-                    let cap_id = CapId::try_from(cap_id).ok_or(SysErr::InvlId)?;
-                    let cap = map.get(&cap_id).ok_or(SysErr::InvlId)?;
-
-                    match cap {
-                        Capability::Strong(cap) => Ok(cap.clone()),
-                        Capability::Weak(cap) => {
-                            let strong = cap.upgrade();
-
-                            match strong {
-                                Some(cap_strong) => Ok(cap_strong),
-                                None => {
-                                    if weak_auto_destroy {
-                                        map.remove(&cap_id);
-                                    }
-
-                                    Err(SysErr::InvlWeak)
-                                }
-                            }
-                        },
-                    }
-                }
-
                 pub fn [<get_ $cap_name>](&self, cap_id: CapId) -> KResult<Capability<$cap_type>> {
                     let map = self.$cap_map.lock();
 
@@ -176,11 +134,17 @@ macro_rules! generate_cap_methods {
                     src: &Self,
                     cap_id: CapId,
                     new_perms: CapFlags,
-                    make_strong_cap: bool,
+                    cap_weakness: CapCloneWeakness,
                     destroy_old_cap: bool,
                     weak_auto_destroy: bool,
                 ) -> KResult<CapId> {
                     let capability = src.[<get_ $cap_name>](cap_id)?;
+                    
+                    let make_strong_cap = match cap_weakness {
+                        CapCloneWeakness::KeepSame => !capability.is_weak(),
+                        CapCloneWeakness::MakeStrong => true,
+                        CapCloneWeakness::MakeWeak => false,
+                    };
 
                     let new_flags_capid = CapId::null_flags(capability.flags() & new_perms, !make_strong_cap);
 
@@ -217,8 +181,8 @@ macro_rules! generate_cap_methods {
                     let new_cap_id = dst.[<insert_ $cap_name>](new_capability)?;
 
                     if destroy_old_cap {
-                        // panic safety: this capability is already checked to exist
-                        src.[<remove_ $cap_name>](cap_id).unwrap();
+                        // ignore this error, if it occurs it means someone else has already destroyed the capability
+                        let _ = src.[<remove_ $cap_name>](cap_id);
                     }
 
                     Ok(new_cap_id)

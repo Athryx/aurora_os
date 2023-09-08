@@ -11,6 +11,7 @@ use core::fmt::Display;
 #[cfg(feature = "alloc")]
 use alloc::string::{String, ToString};
 
+use sys::{CspaceTarget, CapId, cap_clone_inner, CapFlags, SysErr, CapabilityWeakness};
 use thiserror_no_std::Error;
 use num_enum::{TryFromPrimitive, IntoPrimitive};
 
@@ -148,4 +149,63 @@ enum DataType {
     VariantValue = 29,
     /// Followed by 16 bit index into capability array
     Capability = 30,
+}
+
+#[derive(Debug, Error)]
+pub enum AserCloneCapsError {
+    #[error("Tried to clone an invalid capability")]
+    InvalidCapabilityId,
+    #[error("Undexpected end of input")]
+    EndOfInput,
+
+    #[error("An error was returned by as sytem call: {0}")]
+    SysErr(#[from] SysErr),
+}
+
+type CloneCapsResult<T> = core::result::Result<T, AserCloneCapsError>;
+
+fn get_usize(data: &[u8], index: usize) -> CloneCapsResult<usize> {
+    let bytes = data.get(index..(index + 8))
+        .ok_or(AserCloneCapsError::EndOfInput)?;
+
+    Ok(usize::from_le_bytes(bytes.try_into().unwrap()))
+}
+
+fn set_usize(data: &mut [u8], index: usize, num: usize) -> CloneCapsResult<()> {
+    let bytes = num.to_le_bytes();
+
+    let data = data.get_mut(index..(index + 8))
+        .ok_or(AserCloneCapsError::EndOfInput)?;
+
+    data.copy_from_slice(&bytes);
+
+    Ok(())
+}
+
+/// Clones all the capabilities in the serialized aser data to the given capability space
+/// 
+/// Updates the capability ids in the array to be the new ids
+// FIXME: make this remove capabilities transfered on failure
+pub fn clone_caps_to_cspace(cspace: CspaceTarget, data: &mut [u8]) -> CloneCapsResult<()> {
+    let cap_count = get_usize(data, 0)?;
+
+    for i in 1..(cap_count + 1) {
+        let cap = get_usize(data, i)?;
+        let cap_id = CapId::try_from(cap)
+            .ok_or(AserCloneCapsError::InvalidCapabilityId)?;
+
+        let new_cap_id = cap_clone_inner(
+            cspace,
+            CspaceTarget::Current,
+            cap_id,
+            CapFlags::all(),
+            CapabilityWeakness::Current,
+            false,
+        )?;
+
+        // panic safety: this index was just accessed
+        set_usize(data, i, new_cap_id.into()).unwrap();
+    }
+
+    Ok(())
 }

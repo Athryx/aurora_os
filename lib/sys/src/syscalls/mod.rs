@@ -301,8 +301,19 @@ pub enum CspaceTarget<'a> {
     Other(&'a CapabilitySpace),
 }
 
+/// Specifies the new weakness of the capability
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CapabilityWeakness {
+    /// Keep weakness unchanged
+    Current,
+    /// Make strong capability
+    Strong,
+    /// Make weak capability
+    Weak,
+}
+
 macro_rules! make_cap_fn_move {
-    ($fn_name:ident, $make_weak:expr) => {
+    ($fn_name:ident, $weakness:expr) => {
         pub fn $fn_name<T: Capability>(
             dst_cspace: CspaceTarget,
             src_cspace: CspaceTarget,
@@ -314,7 +325,7 @@ macro_rules! make_cap_fn_move {
                 src_cspace,
                 cap.cap_id(),
                 new_flags,
-                $make_weak,
+                $weakness,
                 true,
             )?;
 
@@ -348,17 +359,19 @@ macro_rules! make_cap_fn_clone {
     };
 }
 
-make_cap_fn_move!(cap_move, true);
-make_cap_fn_move!(cap_move_weak, false);
-make_cap_fn_clone!(cap_clone, true);
-make_cap_fn_clone!(cap_clone_weak, false);
+make_cap_fn_move!(cap_move, CapabilityWeakness::Current);
+make_cap_fn_move!(cap_move_strong, CapabilityWeakness::Strong);
+make_cap_fn_move!(cap_move_weak, CapabilityWeakness::Weak);
+make_cap_fn_clone!(cap_clone, CapabilityWeakness::Current);
+make_cap_fn_clone!(cap_clone_strong, CapabilityWeakness::Strong);
+make_cap_fn_clone!(cap_clone_weak, CapabilityWeakness::Weak);
 
-fn cap_clone_inner(
+pub fn cap_clone_inner(
     dst_cspace: CspaceTarget,
     src_cspace: CspaceTarget,
     cap_id: CapId,
     new_flags: CapFlags,
-    make_weak: bool,
+    weakness: CapabilityWeakness,
     destroy_src_cap: bool,
 ) -> KResult<CapId> {
     let mut flags = CapCloneFlags::empty();
@@ -376,8 +389,14 @@ fn cap_clone_inner(
         flags |= CapCloneFlags::UPGRADE;
     }
 
-    if make_weak {
-        flags |= CapCloneFlags::MAKE_WEAK;
+    match weakness {
+        CapabilityWeakness::Current => (),
+        CapabilityWeakness::Strong => {
+            flags |= CapCloneFlags::CHANGE_CAP_WEAKNESS;
+        },
+        CapabilityWeakness::Weak => {
+            flags |= CapCloneFlags::CHANGE_CAP_WEAKNESS | CapCloneFlags::MAKE_WEAK;
+        },
     }
 
     if destroy_src_cap {

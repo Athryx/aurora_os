@@ -3,7 +3,7 @@ use core::mem::size_of;
 use crate::allocator::addr_space::{RemoteAddrSpaceManager, AddrSpaceError, MapMemoryArgs, RegionPadding};
 use crate::env::{Args, Namespace};
 
-use aser::{Value, to_bytes_count_cap, AserError};
+use aser::{Value, to_bytes_count_cap, AserError, AserCloneCapsError};
 use bit_utils::{align_down, PAGE_SIZE, align_up, Size};
 use elf::abi::{PT_LOAD, PF_R, PF_W, PF_X};
 use elf::{ElfBytes, ParseError};
@@ -19,7 +19,14 @@ use crate::collections::HashMap;
 const DEFAULT_STACK_SIZE: Size = Size::from_pages(64);
 const DEFAULT_STACK_PADDING: Size = Size::from_pages(1024);
 
-#[derive(Error)]
+/// Terminates the current process
+pub fn exit() -> ! {
+    let _ = this_context().thread_group.exit();
+
+    loop { core::hint::spin_loop(); }
+}
+
+#[derive(Debug, Error)]
 pub enum ProcessError {
     #[error("System error: {0}")]
     SysErr(#[from] SysErr),
@@ -33,6 +40,8 @@ pub enum ProcessError {
     AddrSpaceError(#[from] AddrSpaceError),
     #[error("Failed to serialize new process namespace: {0}")]
     SerializetionError(#[from] AserError),
+    #[error("Failed to transfer capabilities in namespace to new process: {0}")]
+    TransferCapError(#[from] AserCloneCapsError),
 }
 
 /// Where the elf data to launc hthe process is comming from
@@ -181,7 +190,7 @@ fn spawn_process(exe_data: &[u8], namespace: &Namespace) -> Result<Child, Proces
     let rsp = stack.remote_address + stack.size.bytes() - size_of::<StackInfo>();
 
 
-    let namespace_data: Vec<u8> = to_bytes_count_cap(&namespace)?;
+    let mut namespace_data: Vec<u8> = to_bytes_count_cap(&namespace)?;
 
     let startup_data_size = calc_process_startup_data_size(
         &manager,
@@ -222,6 +231,7 @@ fn spawn_process(exe_data: &[u8], namespace: &Namespace) -> Result<Child, Proces
     let main_thread_id = cap_clone(dst_cspace, CspaceTarget::Current, &thread, CapFlags::all())?
         .into_cap_id()
         .into();
+    aser::clone_caps_to_cspace(dst_cspace, &mut namespace_data)?;
 
     let process_init_data = ProcessInitData {
         thread_group_id,

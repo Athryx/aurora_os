@@ -11,14 +11,20 @@ bitflags! {
         const PROD = 1 << 1;
         const WRITE = 1 << 2;
         const UPGRADE = 1 << 3;
+        /// If true, MAKE_WEAK flag is used to determine if strong or weak cap is made
+        /// 
+        /// If not set, capability weakness remains unchanged
+        const CHANGE_CAP_WEAKNESS = 1 << 4;
         /// If true, a weak capability is made, otherwise a strong capability is made
-        const MAKE_WEAK = 1 << 4;
+        /// 
+        /// Has no effect if CHANGE_CAP_WEAKNESS is not set
+        const MAKE_WEAK = 1 << 5;
         /// If true, the old capability is destroyed and only the new one remains
-        const DESTROY_SRC_CAP = 1 << 5;
+        const DESTROY_SRC_CAP = 1 << 6;
         /// The src process is the current process
-        const SRC_CSPACE_SELF = 1 << 6;
+        const SRC_CSPACE_SELF = 1 << 7;
         /// The dst process is the current process
-        const DST_CSPACE_SELF = 1 << 7;
+        const DST_CSPACE_SELF = 1 << 8;
     }
 }
 

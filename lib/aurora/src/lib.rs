@@ -23,7 +23,7 @@ mod context;
 pub mod collections;
 pub mod debug_print;
 pub mod env;
-mod prelude;
+pub mod prelude;
 pub mod process;
 mod sync;
 

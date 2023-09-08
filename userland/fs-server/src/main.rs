@@ -2,5 +2,8 @@
 
 extern crate std;
 
+use aurora::dprintln;
+
 fn main() {
+    dprintln!("hello fs");
 }

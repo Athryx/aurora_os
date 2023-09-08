@@ -12,9 +12,12 @@ use alloc::vec::Vec;
 
 use serde::{Serialize, Deserialize};
 
-use aurora::dprintln;
+use aurora::prelude::*;
+use aurora::process::Command;
 use aser::from_bytes;
 use sys::InitInfo;
+
+mod initrd;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
@@ -75,6 +78,18 @@ pub extern "C" fn _rust_startup(
         .expect("failed to deserialize init data");
 
     dprintln!("early-init started");
+
+
+    // safety: we trust the kernel to give us a pointer to a valid initrd
+    let initrd_info = unsafe {
+        initrd::parse_initrd(init_info.initrd_address)
+    };
+
+    dprintln!("starting fs server...");
+    let fs_server = Command::from_bytes(initrd_info.fs_server.into())
+        .spawn()
+        .expect("failed to start fs server");
+
 
     let tmp = Test::D {
         bruh: 8,
