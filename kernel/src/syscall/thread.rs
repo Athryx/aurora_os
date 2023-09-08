@@ -82,8 +82,8 @@ pub fn thread_new(
         Err(error) => {
             // remove the new capability space we just created if creating the thread fails
             if let Some(cspace_id) = new_cspace_cap_id {
-                // panic safety: this should not fail because we just inserted new capability space
-                cspace.remove_capability_space(cspace_id).unwrap();
+                // ignore error, someone else could have removed cspace
+                let _ = cspace.remove_capability_space(cspace_id);
             }
 
             return Err(error);
@@ -102,8 +102,8 @@ pub fn thread_new(
         Err(error) => {
             // remove the new capability space we just created if inserting the thread fails
             if let Some(cspace_id) = new_cspace_cap_id {
-                // panic safety: this should not fail because we just inserted new capability space
-                cspace.remove_capability_space(cspace_id).unwrap();
+                // ignore error, someone else could have removed cspace
+                let _ = cspace.remove_capability_space(cspace_id);
             }
 
             // remove thread from thread group

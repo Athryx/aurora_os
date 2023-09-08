@@ -177,6 +177,7 @@ fn spawn_process(exe_data: &[u8], namespace: &Namespace) -> Result<Child, Proces
         }
     }
 
+
     // map stack in this process and new process
     let stack = manager.map_memory_remote_and_local(MapMemoryArgs {
         size: Some(DEFAULT_STACK_SIZE),

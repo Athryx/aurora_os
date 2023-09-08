@@ -1,10 +1,9 @@
 use sys::CapFlags;
 
 use crate::arch::x64::IntDisable;
-use crate::cap::{WeakCapability, Capability};
+use crate::cap::{Capability, StrongCapability};
 use crate::cap::capability_space::CapabilitySpace;
 use crate::alloc::{HeapRef, PaRef};
-use crate::container::Arc;
 use crate::prelude::*;
 use crate::sched::ThreadGroup;
 use super::options_weak_autodestroy;
@@ -29,12 +28,12 @@ pub fn thread_group_new(options: u32, parent_group_id: usize, allocator_id: usiz
     let new_thread_group = parent_group
         .create_child_thread_group(pa_ref, heap_ref)?;
 
-    let thread_group_capability = WeakCapability::new_flags(
-        Arc::downgrade(&new_thread_group),
+    let thread_group_capability = StrongCapability::new_flags(
+        new_thread_group,
         CapFlags::all(),
     );
 
-    let threadad_group_cap_id = cspace.insert_thread_group(Capability::Weak(thread_group_capability))?;
+    let threadad_group_cap_id = cspace.insert_thread_group(Capability::Strong(thread_group_capability))?;
 
     Ok(threadad_group_cap_id.into())
 }
