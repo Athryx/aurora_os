@@ -114,8 +114,8 @@ impl MemoryCapStorage {
         let map_position = (aslr_rng.next_u64() as usize) % available_map_positons;
         let map_address = HIGHER_HALF_START + map_position * PAGE_SIZE;
 
-        let memory = Memory::new(
-            CapFlags::READ | CapFlags::PROD | CapFlags::WRITE,
+        let mut memory = Memory::new(
+            CapFlags::all(),
             &this_context().allocator,
             Size::from_pages(1),
         ).or(Err(AddrSpaceError::RegionListOom))?;
@@ -127,9 +127,9 @@ impl MemoryCapStorage {
                 None,
                 MemoryMappingFlags::READ | MemoryMappingFlags::WRITE,
             ).or(Err(AddrSpaceError::RegionListOom))?;
-        
+
         Ok(MemoryCapStorage {
-            capacity: memory.size().bytes() / size_of::<MappedRegion>(),
+            capacity: memory.size()?.bytes() / size_of::<MappedRegion>(),
             memory,
             data: NonNull::new(map_address as *mut MappedRegion).unwrap(),
             len: 0,
@@ -141,7 +141,7 @@ impl MemoryCapStorage {
     /// Doubles the size of the region list to allow space for more entries
     fn try_grow(&mut self) -> Result<(), AddrSpaceError> {
         // because of max region size, this should not overflow
-        let new_size = self.memory.size() * 2;
+        let new_size = self.memory.size()? * 2;
 
         if new_size > REGION_LIST_MAX_SIZE {
             return Err(AddrSpaceError::RegionListMaxSizeExceeded);
@@ -476,12 +476,14 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
         let padding = args.padding;
 
         let (memory, size) = match args.memory {
-            Some(memory) => {
-                let memory_size = memory.size();
+            Some(mut memory) => {
+                let memory_size = memory.size()?;
                 (Some(memory), memory_size)
             },
             None => {
                 if let Some(size) = args.size {
+                    let size = size.as_aligned();
+
                     let memory = Memory::new(
                         CapFlags::all(),
                         self.allocator,

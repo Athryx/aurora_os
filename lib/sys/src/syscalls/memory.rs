@@ -17,8 +17,8 @@ use super::{Capability, Allocator, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Memory {
     id: CapId,
-    /// Size of memory
-    pub(super) size: Size,
+    /// Size of memory, None if not known
+    pub(super) size: Option<Size>,
 }
 
 impl Capability for Memory {
@@ -26,12 +26,10 @@ impl Capability for Memory {
 
     fn from_cap_id(cap_id: CapId) -> Option<Self> {
         if cap_id.cap_type() == CapType::Memory {
-            let mut out = Self {
+            let out = Self {
                 id: cap_id,
-                size: Size::default(),
+                size: None,
             };
-
-            out.refresh_size().ok()?;
 
             Some(out)
         } else {
@@ -56,7 +54,7 @@ impl Memory {
                 0 as usize
             )).map(|(cap_id, size)| Memory {
                 id: CapId::try_from(cap_id).expect(INVALID_CAPID_MESSAGE),
-                size: Size::from_pages(size),
+                size: Some(Size::from_pages(size)),
             })
         }
     }
@@ -68,7 +66,7 @@ impl Memory {
     /// The new size of the memory in pages
     pub fn refresh_size(&mut self) -> KResult<Size> {
         // panic safety: from_pages can panic, but syscall should not return invalid number of pages
-        self.size = unsafe {
+        let size = unsafe {
             Size::from_pages(sysret_1!(syscall!(
                 MEMORY_GET_SIZE,
                 WEAK_AUTO_DESTROY,
@@ -76,11 +74,16 @@ impl Memory {
             ))?)
         };
 
-        Ok(self.size)
+        self.size = Some(size);
+
+        Ok(size)
     }
 
-    pub fn size(&self) -> Size {
-        self.size
+    pub fn size(&mut self) -> KResult<Size> {
+        match self.size {
+            Some(size) => Ok(size),
+            None => self.refresh_size()
+        }
     }
 }
 

@@ -13,7 +13,7 @@ use alloc::vec::Vec;
 use serde::{Serialize, Deserialize};
 
 use aurora::prelude::*;
-use aurora::process::Command;
+use aurora::process::{exit, Command};
 use aser::from_bytes;
 use sys::InitInfo;
 
@@ -23,7 +23,7 @@ mod initrd;
 fn panic(info: &PanicInfo) -> ! {
     dprintln!("{}", info);
 
-    loop { core::hint::spin_loop(); }
+    exit();
 }
 
 #[naked]
@@ -78,7 +78,6 @@ pub extern "C" fn _rust_startup(
         .expect("failed to deserialize init data");
 
     dprintln!("early-init started");
-
 
     // safety: we trust the kernel to give us a pointer to a valid initrd
     let initrd_info = unsafe {

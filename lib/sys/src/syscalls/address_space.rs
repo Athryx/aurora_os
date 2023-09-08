@@ -116,7 +116,7 @@ impl AddressSpace {
         }?;
 
         // panic safety: from_pages can panic, but syscall should not return invalid number of pages
-        memory.size = Size::from_pages(new_size);
+        memory.size = Some(Size::from_pages(new_size));
 
         Ok(new_size)
     }

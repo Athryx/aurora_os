@@ -42,6 +42,10 @@ impl Size {
         align_up(self.0, PAGE_SIZE)
     }
 
+    pub const fn as_aligned(self) -> Self {
+        Size(self.bytes_aligned())
+    }
+
     pub fn pages(self) -> Option<usize> {
         if page_aligned(self.0) {
             Some(self.0 / PAGE_SIZE)

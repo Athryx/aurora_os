@@ -218,7 +218,7 @@ macro_rules! sysret_5 {
 #[no_mangle]
 extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 	if syscall_num != PRINT_DEBUG {
-		eprintln!("recieved syscall num: {}", syscall_num);
+		eprintln!("syscall: {} ({})", syscall_name(syscall_num), syscall_num);
 	}
 
     match syscall_num {

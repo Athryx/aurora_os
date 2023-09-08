@@ -274,7 +274,7 @@ fn spawn_process(exe_data: &[u8], namespace: &Namespace) -> Result<Child, Proces
     unsafe {
         core::ptr::copy_nonoverlapping(
             startup_data.as_ptr(),
-            startup_data_mapping.remote_address as *mut u8,
+            startup_data_mapping.local_address.unwrap() as *mut u8,
             startup_data.len(),
         );
     }
@@ -288,8 +288,9 @@ fn spawn_process(exe_data: &[u8], namespace: &Namespace) -> Result<Child, Proces
         namespace_data_size: namespace_data.len(),
     };
 
+    let local_rsp = stack.local_address.unwrap() + stack.size.bytes() - size_of::<StackInfo>();
     unsafe {
-        core::ptr::write(rsp as *mut StackInfo, stack_info);
+        core::ptr::write(local_rsp as *mut StackInfo, stack_info);
     }
 
     thread.resume()?;
