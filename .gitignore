@@ -2,7 +2,6 @@ kernel/kernel.iso
 disk.img
 *.bin
 boot/initrd
-initrd/initrd
 *target/
 *.vim/
-userland/sysroot
+userland/initrd
