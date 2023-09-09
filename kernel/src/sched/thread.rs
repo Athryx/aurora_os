@@ -54,6 +54,7 @@ pub enum WakeReason {
     MsgSendRecv {
         msg_size: usize,
     },
+    EventRecieved,
 }
 
 #[derive(Debug)]

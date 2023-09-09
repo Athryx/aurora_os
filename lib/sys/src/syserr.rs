@@ -20,10 +20,11 @@ pub enum SysErr {
     InvlVirtAddr = 10,
     InvlAlign = 11,
     Overflow = 12,
-    InvlBytecode = 13,
-    Obscured = 14,
-    InvlSyscall = 15,
-    Unknown = 16,
+    OutOfCapacity = 13,
+    InvlBytecode = 14,
+    Obscured = 15,
+    InvlSyscall = 16,
+    Unknown = 17,
 }
 
 impl SysErr {
@@ -55,6 +56,7 @@ impl SysErr {
             Self::InvlVirtAddr => "non canonical address",
             Self::InvlAlign => "invalid alignment",
             Self::Overflow => "supplied syscall values caused an integer overflow or underflow",
+            Self::OutOfCapacity => "not enough capacity available in some container",
             Self::InvlBytecode => "invalid bytecode",
             Self::Obscured => "operation does not return information about error state",
             Self::InvlSyscall => "invalid syscall number",

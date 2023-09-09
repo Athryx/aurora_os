@@ -3,7 +3,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 use paste::paste;
 use sys::CapType;
 
-use crate::event::UserspaceBuffer;
+use crate::event::{UserspaceBuffer, EventPool};
 use crate::sched::{ThreadGroup, Thread};
 use crate::{prelude::*, alloc::HeapRef};
 use crate::container::HashMap;
@@ -25,6 +25,7 @@ pub struct CapabilitySpace {
     address_space_map: InnerCapMap<AddressSpace>,
     capability_space_map: InnerCapMap<Self>,
     memory_map: InnerCapMap<Memory>,
+    event_pool_map: InnerCapMap<EventPool>,
     key_map: InnerCapMap<Key>,
     channel_map: InnerCapMap<Channel>,
     allocator_map: InnerCapMap<CapAllocator>,
@@ -41,6 +42,7 @@ impl CapabilitySpace {
             address_space_map: IMutex::new(HashMap::new(allocator.clone())),
             capability_space_map: IMutex::new(HashMap::new(allocator.clone())),
             memory_map: IMutex::new(HashMap::new(allocator.clone())),
+            event_pool_map: IMutex::new(HashMap::new(allocator.clone())),
             key_map: IMutex::new(HashMap::new(allocator.clone())),
             channel_map: IMutex::new(HashMap::new(allocator.clone())),
             allocator_map: IMutex::new(HashMap::new(allocator.clone())),
@@ -197,6 +199,7 @@ generate_cap_methods!(CapabilitySpace, ThreadGroup, thread_group_map, thread_gro
 generate_cap_methods!(CapabilitySpace, AddressSpace, address_space_map, address_space);
 generate_cap_methods!(CapabilitySpace, CapabilitySpace, capability_space_map, capability_space);
 generate_cap_methods!(CapabilitySpace, Memory, memory_map, memory);
+generate_cap_methods!(CapabilitySpace, EventPool, event_pool_map, event_pool);
 generate_cap_methods!(CapabilitySpace, Key, key_map, key);
 generate_cap_methods!(CapabilitySpace, Channel, channel_map, channel);
 generate_cap_methods!(CapabilitySpace, CapAllocator, allocator_map, allocator);

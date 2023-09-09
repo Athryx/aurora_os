@@ -4,7 +4,7 @@ use sys::{CapType, MemoryResizeFlags};
 
 use crate::alloc::{HeapRef, PaRef};
 use crate::prelude::*;
-use crate::sync::IMutex;
+use crate::sync::{IMutex, IMutexGuard};
 use crate::vmem_manager::{VirtAddrSpace, PageMappingFlags};
 use crate::container::{Arc, HashMap};
 
@@ -230,6 +230,13 @@ impl AddressSpace {
             Err(SysErr::InvlOp)
         }
     }
+
+    /// Used to get dirrect access to inner address space
+    /// 
+    /// This shouldn't be used usually, only event pool uses it
+    pub fn inner(&self) -> IMutexGuard<AddressSpaceInner> {
+        self.inner.lock()
+    }
 }
 
 impl CapObject for AddressSpace {
@@ -246,8 +253,8 @@ struct AddrSpaceMapping {
 }
 
 #[derive(Debug)]
-struct AddressSpaceInner {
-    addr_space: VirtAddrSpace,
+pub struct AddressSpaceInner {
+    pub addr_space: VirtAddrSpace,
     /// A map between thr address of a mapping and the details of what is mappoed
     mappings: HashMap<VirtAddr, AddrSpaceMapping>,
     /// Which address the memory with the given id is mapped at

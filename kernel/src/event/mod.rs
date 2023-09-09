@@ -4,10 +4,10 @@ use crate::container::Arc;
 use crate::sched::{ThreadRef, thread_map, WakeReason};
 use crate::container::Weak;
 use crate::cap::memory::Memory;
-use event_pool::BoundedEventPool;
 
 mod broadcast_event_emitter;
 mod event_pool;
+pub use event_pool::*;
 mod message_capacity;
 mod queue_event_emitter;
 
@@ -94,9 +94,7 @@ pub struct ThreadListenerRef {
 }
 
 #[derive(Debug)]
-pub enum EventPoolListenerRef {
-    BoundedEventPool(Weak<BoundedEventPool>),
-}
+pub enum EventPoolListenerRef {}
 
 #[derive(Debug)]
 pub enum EventListenerRef {
