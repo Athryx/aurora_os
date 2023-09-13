@@ -80,7 +80,7 @@ pub fn channel_try_send(
         CapFlags::READ,
     )?;
 
-    channel.try_send(&buffer)
+    channel.try_send(&buffer).map(Size::bytes)
 }
 
 pub fn channel_sync_send(
@@ -105,7 +105,7 @@ pub fn channel_sync_send(
     )?;
 
     match channel.sync_send(buffer) {
-        SendRecvResult::Success(write_size) => Ok(write_size),
+        SendRecvResult::Success(write_size) => Ok(write_size.bytes()),
         SendRecvResult::Error(error) => Err(error),
         SendRecvResult::Block => {
             drop(channel);
@@ -125,7 +125,7 @@ pub fn channel_sync_send(
 
             let _int_disable = IntDisable::new();
             match cpu_local_data().current_thread().wake_reason() {
-                WakeReason::MsgSendRecv { msg_size } => Ok(msg_size),
+                WakeReason::MsgSendRecv { msg_size } => Ok(msg_size.bytes()),
                 WakeReason::Timeout => Err(SysErr::OkTimeout),
                 _ => unreachable!(),
             }
@@ -151,7 +151,7 @@ pub fn channel_try_recv(
         CapFlags::WRITE,
     )?;
     
-    channel.try_recv(&buffer)
+    channel.try_recv(&buffer).map(Size::bytes)
 }
 
 pub fn channel_sync_recv(
@@ -176,7 +176,7 @@ pub fn channel_sync_recv(
     )?;
 
     match channel.sync_recv(buffer) {
-        SendRecvResult::Success(write_size) => Ok(write_size),
+        SendRecvResult::Success(write_size) => Ok(write_size.bytes()),
         SendRecvResult::Error(error) => Err(error),
         SendRecvResult::Block => {
             drop(channel);
@@ -196,7 +196,7 @@ pub fn channel_sync_recv(
 
             let _int_disable = IntDisable::new();
             match cpu_local_data().current_thread().wake_reason() {
-                WakeReason::MsgSendRecv { msg_size } => Ok(msg_size),
+                WakeReason::MsgSendRecv { msg_size } => Ok(msg_size.bytes()),
                 WakeReason::Timeout => Err(SysErr::OkTimeout),
                 _ => unreachable!(),
             }

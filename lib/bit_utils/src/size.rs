@@ -1,9 +1,9 @@
-use derive_more::{Add, Sub, Mul, Div};
+use derive_more::{Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Div, DivAssign};
 use serde::{Serialize, Deserialize};
 
 use crate::{PAGE_SIZE, page_aligned, align_up};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Add, Sub, Mul, Div, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Div, DivAssign, Serialize, Deserialize)]
 pub struct Size(usize);
 
 impl Size {

@@ -1,5 +1,5 @@
 use crate::{prelude::*, alloc::HeapRef};
-use super::{EventListenerRef, EventPoolListenerRef, UserspaceBuffer};
+use super::{EventListenerRef, EventPoolListenerRef};
 
 #[derive(Debug)]
 pub struct BroadcastEventEmitter {

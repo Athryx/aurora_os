@@ -20,7 +20,7 @@ struct ChannelInner {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SendRecvResult {
     /// A message of the given size in bytes was successfully sent or recieved without needing to block
-    Success(usize),
+    Success(Size),
     /// No message could be sent or recieved immediately, so the calling thread must block
     Block,
     /// An error occured
@@ -54,7 +54,7 @@ impl Channel {
     /// 
     /// Ok(number of bytes written) on success,
     /// Err if there was a nobody waiting to recieve the message
-    pub fn try_send(&self, buffer: &UserspaceBuffer) -> Result<usize, SysErr> {
+    pub fn try_send(&self, buffer: &UserspaceBuffer) -> Result<Size, SysErr> {
         let mut inner = self.inner();
 
         loop {
@@ -83,19 +83,16 @@ impl Channel {
     /// 
     /// Ok(number of bytes recieved) on success,
     /// Err if there was a nobody waiting to send the message
-    pub fn try_recv(&self, buffer: &UserspaceBuffer) -> Result<usize, SysErr> {
+    pub fn try_recv(&self, buffer: &UserspaceBuffer) -> Result<Size, SysErr> {
         let mut inner = self.inner();
 
         loop {
             let sender = inner.sender_queue.pop_front()
                 .ok_or(SysErr::OkUnreach)?;
 
-            let Some(write_size) = (unsafe {
+            // TODO: detect if sender emmory capability is dropped
+            let write_size = unsafe {
                 buffer.copy_channel_message_from_buffer(0, sender.data.event_buffer())
-            }) else {
-                // this sender is no longer valid, retry on next listner
-                unsafe { sender.drop_in_place(&mut self.allocator.clone()); }
-                continue;
             };
 
             sender.data.acknowledge_send(write_size);
@@ -180,12 +177,9 @@ impl Channel {
                 return SendRecvResult::Block;
             };
 
-            let Some(write_size) = (unsafe {
+            // TODO: detect if sender memory capability is dropped
+            let write_size = unsafe {
                 buffer.copy_channel_message_from_buffer(0, sender.data.event_buffer())
-            }) else {
-                // this sender is no longer valid, retry on next listner
-                unsafe { sender.drop_in_place(&mut self.allocator.clone()); }
-                continue;
             };
 
             sender.data.acknowledge_send(write_size);

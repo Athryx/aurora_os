@@ -1,9 +1,10 @@
-use core::cmp::min;
+use sys::CapId;
+use bit_utils::Size;
 
-use crate::container::Arc;
-use crate::sched::{ThreadRef, thread_map, WakeReason};
+use crate::prelude::*;
+use crate::sched::{ThreadRef, WakeReason};
 use crate::container::Weak;
-use crate::cap::memory::Memory;
+use crate::cap::memory::{Memory, MemoryCopySrc, MemoryWriter};
 
 mod broadcast_event_emitter;
 mod event_pool;
@@ -31,59 +32,63 @@ impl UserspaceBuffer {
     /// 
     /// # Returns
     /// 
-    /// Number of bytes written, or none if the memory capability has been dropped
+    /// Number of bytes written
     /// 
     /// # Safety
     /// 
     /// Must not overwrite things that userspace is not expecting to be overwritten
-    pub unsafe fn write(&self, offset: usize, data: &[u8]) -> Option<usize> {
-        let memory = self.memory.upgrade()?;
-
-        if offset >= self.buffer_size {
-            return Some(0);
-        }
-
-        let cap_offset = self.offset + offset;
-        let write_size = min(data.len(), self.buffer_size - offset);
+    pub unsafe fn copy_from<T: MemoryCopySrc>(&self, src: &T) -> Size {
+        let Some(memory) = self.memory.upgrade() else {
+            return Size::zero();
+        };
 
         let memory_lock = memory.inner_read();
 
         unsafe {
-            Some(memory_lock.write(cap_offset,&data[..write_size]))
+            memory_lock.copy_from(self.offset..(self.offset + self.buffer_size), src)
         }
     }
 
-    /// Similar to [`write`], but gets the data to write from another userspace buffer instead of a slice
-    pub unsafe fn copy_from_buffer(&self, offset: usize, src: &UserspaceBuffer) -> Option<usize> {
-        let dst_memory = self.memory.upgrade()?;
-        let src_memory = self.memory.upgrade()?;
-
-
-        if offset >= self.buffer_size {
-            return Some(0);
-        }
-
-        let dst_offset = self.offset + offset;
-        let write_size = min(src.buffer_size, self.buffer_size - offset);
-
-        let dst_lock = dst_memory.inner_read();
-        let src_lock = src_memory.inner_read();
-
-        unsafe {
-            Some(dst_lock.copy_from_memory(
-                dst_offset,
-                &src_lock,
-                src.offset..(src.offset + write_size)
-            ))
-        }
-    }
-
-    /// Like [`copy_from_buffer`], but also copies capabiltiesbased on the data in the src buffer
+    /// Like [`copy_from_buffer`], but also copies capabilties based on the data in the src buffer
     // FIXME: actually implement copying capabilities
-    pub unsafe fn copy_channel_message_from_buffer(&self, offset: usize, src: &UserspaceBuffer) -> Option<usize> {
+    pub unsafe fn copy_channel_message_from_buffer(&self, offset: usize, src: &UserspaceBuffer) -> Size {
         unsafe {
-            self.copy_from_buffer(offset, src)
+            self.copy_from(src)
         }
+    }
+}
+
+impl MemoryCopySrc for UserspaceBuffer {
+    fn size(&self) -> usize {
+        self.buffer_size
+    }
+
+    unsafe fn copy_to(&self, writer: &mut MemoryWriter) -> Size {
+        let Some(memory) = self.memory.upgrade() else {
+            return Size::zero()
+        };
+
+        let memory_lock = memory.inner_read();
+
+        let region_iterator = memory_lock.iter_mapped_regions(
+            VirtAddr::new(0),
+            Size::from_bytes(self.offset),
+            Size::from_bytes(self.buffer_size),
+        );
+
+        let mut write_size = Size::zero();
+        for (vrange, _) in region_iterator {
+            let write_result = unsafe {
+                writer.write_region(vrange.as_unaligned())
+            };
+            write_size += write_result.write_size;
+
+            if write_result.end_reached {
+                break;
+            }
+        }
+
+        write_size
     }
 }
 
@@ -94,7 +99,10 @@ pub struct ThreadListenerRef {
 }
 
 #[derive(Debug)]
-pub enum EventPoolListenerRef {}
+pub struct EventPoolListenerRef {
+    pub event_pool: Weak<EventPool>,
+    event_source_capid: CapId,
+}
 
 #[derive(Debug)]
 pub enum EventListenerRef {
@@ -128,11 +136,11 @@ impl EventListenerRef {
     /// # Returns
     /// 
     /// The number of bytes written, or None if the write failed
-    pub fn write_channel_message(&self, src: &UserspaceBuffer) -> Option<usize> {
+    pub fn write_channel_message(&self, src: &UserspaceBuffer) -> Option<Size> {
         match self {
             EventListenerRef::Thread(listener) => {
                 let write_size = unsafe {
-                    listener.event_buffer.copy_channel_message_from_buffer(0, src)?
+                    listener.event_buffer.copy_channel_message_from_buffer(0, src)
                 };
 
                 if !listener.thread.move_to_ready_list(WakeReason::MsgSendRecv { msg_size: write_size }) {
@@ -160,7 +168,7 @@ pub enum EventSenderRef {
 
 impl EventSenderRef {
     /// Notifies the event sender that the event has been handled
-    pub fn acknowledge_send(&self, write_size: usize) {
+    pub fn acknowledge_send(&self, write_size: Size) {
         match self {
             EventSenderRef::Thread(sender) => {
                 sender.thread.move_to_ready_list(

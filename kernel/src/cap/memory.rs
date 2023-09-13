@@ -17,91 +17,61 @@ struct AllocationEntry {
     offset: usize,
 }
 
-/// An iterator over the virtual memory mappings that need to be made to map a given section of a memory cpaability
-#[derive(Debug, Clone)]
-pub struct MappedRegionsIterator<'a> {
-    base_addr: VirtAddr,
-    start_range_offset: usize,
-    end_range_offset: usize,
-    allocations: &'a [AllocationEntry],
+static NEXT_MEMORY_ID: AtomicUsize = AtomicUsize::new(0);
 
-    index: usize,
-    current_offset: usize,
+/// A capability that represents memory that can be mapped into a process
+#[derive(Debug)]
+pub struct Memory {
+    id: MemoryId,
+    inner: IrwLock<MemoryInner>,
 }
 
-impl MappedRegionsIterator<'_> {
-    pub fn without_unaligned_start(mut self) -> Self {
-        if self.start_range_offset == 0 && self.index == 0 {
-            self.start_range_offset = 0;
-            self.index = 1;
-        }
-        self
-    }
-
-    pub fn without_unaligned_end(mut self) -> Self {
-        self.end_range_offset = 0;
-        self
-    }
-
-    /// Gets the virt range mapping for the entire first range, regardless of start offset
-    pub fn get_entire_first_maping_range(&self) -> AVirtRange {
-        let allocation = self.allocations[0].allocation;
-
-        AVirtRange::new(self.base_addr - self.start_range_offset, allocation.size())
-    }
-
-    /// Gets the setion of the first mapping which is excluded by the start offset
-    pub fn get_first_mapping_exluded_range(&self) -> AVirtRange {
-        AVirtRange::new(self.base_addr - self.start_range_offset, self.start_range_offset)
-    }
-}
-
-impl Iterator for MappedRegionsIterator<'_> {
-    type Item = (AVirtRange, PhysAddr);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.allocations.len() {
-            return None;
+impl Memory {
+    /// Returns an error is pages is size 0
+    pub fn new(mut page_allocator: PaRef, heap_allocator: HeapRef, pages: usize) -> KResult<Self> {
+        if pages == 0 {
+            return Err(SysErr::InvlArgs);
         }
 
-        let allocation = self.allocations[self.index].allocation;
+        let first_allocation = page_allocator.alloc(
+            PageLayout::from_size_align(pages * PAGE_SIZE, PAGE_SIZE)
+                .expect("could not create page layout for Memory capability"),
+        ).ok_or(SysErr::OutOfMem)?;
 
-        let (virt_range, phys_addr) = if self.allocations.len() == 1 {
-            // there is only 1 entry, we need to consider both start and end offset
-            let range_addr = self.base_addr;
-            let range_size = allocation.size() - self.start_range_offset - self.end_range_offset;
-            let virt_range = AVirtRange::new(range_addr, range_size);
+        let mut allocations = Vec::new(heap_allocator);
+        allocations.push(AllocationEntry {
+            allocation: first_allocation,
+            offset: 0,
+        })?;
 
-            let phys_addr = allocation.addr().to_phys() + self.start_range_offset;
-
-            (virt_range, phys_addr)
-        } else if self.index == 0 {
-            let virt_range = AVirtRange::new(self.base_addr, allocation.size() - self.start_range_offset);
-            let phys_addr = allocation.addr().to_phys() + self.start_range_offset;
-
-            (virt_range, phys_addr)
-        } else if self.index == self.allocations.len() - 1 {
-            let virt_range = AVirtRange::new(self.base_addr + self.current_offset, allocation.size() - self.end_range_offset);
-
-            (virt_range, allocation.addr().to_phys())
-        } else {
-            (
-                AVirtRange::new(self.base_addr + self.current_offset, allocation.size()),
-                allocation.addr().to_phys(),
-            )
+        let inner = MemoryInner {
+            allocations,
+            size: first_allocation.size(),
+            page_allocator,
+            map_ref_count: 0,
         };
 
-        self.index += 1;
-        self.current_offset += virt_range.size();
-
-        Some((virt_range, phys_addr))
+        Ok(Memory {
+            id: MemoryId::from(NEXT_MEMORY_ID.fetch_add(1, Ordering::Relaxed)),
+            inner: IrwLock::new(inner),
+        })
     }
 
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let size = self.allocations.len() - self.index;
-
-        (size, Some(size))
+    pub fn id(&self) -> MemoryId {
+        self.id
     }
+
+    pub fn inner_read(&self) -> IrwLockReadGuard<MemoryInner> {
+        self.inner.read()
+    }
+
+    pub fn inner_write(&self) -> IrwLockWriteGuard<MemoryInner> {
+        self.inner.write()
+    }
+}
+
+impl CapObject for Memory {
+    const TYPE: CapType = CapType::Memory;
 }
 
 #[derive(Debug)]
@@ -338,125 +308,40 @@ impl MemoryInner {
         }
     }
 
-    /// Writes all the zones from the iterator into this memory capability starting at offset `offset`
-    /// 
-    /// # Safety
-    /// 
-    /// Must not write to any memory used by anything else, or a place that userspace doesn't expect
-    /// The src memory must point to valid memory and must not overlap with the copy destination
-    pub unsafe fn write_inner<T: Iterator<Item = UVirtRange>>(&self, mut offset: usize, zones: T) -> usize {
-        let Some(mut index) = self.allocation_index_of_offset(offset) else {
-            return 0;
+    pub unsafe fn copy_from<T: MemoryCopySrc + ?Sized>(&self, range: impl RangeBounds<usize>, src: &T) -> Size {
+        let Some(mut writer) = self.create_memory_writer(range) else {
+            return Size::zero();
         };
 
-        let mut total_write_size = 0;
-
-        for zone in zones {
-            let mut src_offset = 0;
-            let mut dest_offset = offset - self.allocations[index].offset;
-
-            loop {
-                let mut allocation = self.allocations[index].allocation;
-    
-                let write_size = min(zone.size() - src_offset, allocation.size() - dest_offset);
-    
-                // when src offset is set, it is ensured to be less than the size of the zone
-                let src_ptr = unsafe { zone.addr().as_ptr::<u8>().add(src_offset) };
-                // safety: allocation_index_of_offset already checks offset is valid
-                let dest_ptr = unsafe { allocation.as_mut_ptr::<u8>().add(dest_offset) };
-
-                // safety: caller must ensure that this memory capability only stores userspace data expecting to be written to
-                unsafe {
-                    ptr::copy_nonoverlapping(src_ptr, dest_ptr, write_size);
-                }
-    
-                total_write_size += write_size;
-                offset += write_size;
-
-                if src_offset + write_size == zone.size() {
-                    // finished consuming src zone and maybe destination zone, move onto next src zone
-                    break;
-                } else {
-                    // finished consuming only destination zone
-                    index += 1;
-
-                    dest_offset = 0;
-                    src_offset += write_size;
-                }
-    
-                if index >= self.allocations.len() {
-                    // no more space left to write data
-                    return total_write_size;
-                }
-            }
-        }
-
-        total_write_size
-    }
-
-    /// Writes the data at the given offset in the memory capability
-    /// 
-    /// If the write is out of bounds of this memory capability, only the in bounds part is written
-    /// 
-    /// # Returns
-    /// 
-    /// the number of bytes written
-    /// 
-    /// # Safety
-    /// 
-    /// Must not write to any memory used by anything else, or a place that userspace doesn't expect
-    pub unsafe fn write(&self, offset: usize, data: &[u8]) -> usize {
-        // safety: data points to valid data because it is a reference
         unsafe {
-            self.write_inner(offset, core::iter::once(UVirtRange::new(
-                VirtAddr::new(data.as_ptr() as usize),
-                data.len(),
-            )))
+            src.copy_to(&mut writer)
         }
     }
 
-    /// Writes the bytes from at `src_range` offset into `src` from `src` to `self` starting at `dest_offset`
-    /// 
-    /// If the write is out of bounds of this memory capability, only the in bounds part is written
-    /// 
-    /// # Returns
-    /// 
-    /// the number of bytes written
-    /// 
-    /// # Safety
-    /// 
-    /// Must not write to any memory used by anything else, or a place that userspace doesn't expect
-    pub unsafe fn copy_from_memory(&self, dest_offset: usize, src: &MemoryInner, src_range: impl RangeBounds<usize>) -> usize {
+    pub fn create_memory_writer(&self, range: impl RangeBounds<usize>) -> Option<MemoryWriter> {
         // start byte inclusive
-        let src_start = match src_range.start_bound() {
+        let start = match range.start_bound() {
             Bound::Included(n) => *n,
             Bound::Excluded(n) => n + 1,
             Bound::Unbounded => 0,
         };
 
         // end byte exclusive
-        let src_end = match src_range.end_bound() {
+        let end = match range.end_bound() {
             Bound::Included(n) => n + 1,
             Bound::Excluded(n) => *n,
-            Bound::Unbounded => src.size,
+            Bound::Unbounded => self.size,
         };
 
-        // no mapping is performed
-        if src_start >= src_end {
-            return 0;
-        }
-
-        let src_size = src_end - src_start;
-
-        let region_iterator = src.iter_mapped_regions(
-            VirtAddr::new(0),
-            Size::from_bytes(src_start),
-            Size::from_bytes(src_size),
-        ).map(|(aligned_range, _)| aligned_range.as_unaligned());
-
-        // safety: the regions are valid for reading because they are from a valid memory capability
-        unsafe {
-            self.write_inner(dest_offset, region_iterator)
+        if end > self.size || start >= end {
+            None
+        } else {
+            Some(MemoryWriter {
+                memory: self,
+                alloc_entry_index: self.allocation_index_of_offset(start)?,
+                offset: start,
+                end_offset: end,
+            })
         }
     }
 
@@ -479,59 +364,200 @@ impl MemoryInner {
     }
 }
 
-static NEXT_MEMORY_ID: AtomicUsize = AtomicUsize::new(0);
+/// An object that serves as a source for copying into a memory capability
+pub trait MemoryCopySrc {
+    /// Size that could be written from this src
+    fn size(&self) -> usize;
 
-/// A capability that represents memory that can be mapped into a process
-#[derive(Debug)]
-pub struct Memory {
-    id: MemoryId,
-    inner: IrwLock<MemoryInner>,
+    /// Returns the number of bytes written
+    unsafe fn copy_to(&self, writer: &mut MemoryWriter) -> Size;
 }
 
-impl Memory {
-    /// Returns an error is pages is size 0
-    pub fn new(mut page_allocator: PaRef, heap_allocator: HeapRef, pages: usize) -> KResult<Self> {
-        if pages == 0 {
-            return Err(SysErr::InvlArgs);
+impl MemoryCopySrc for [u8] {
+    fn size(&self) -> usize {
+        self.len()
+    }
+
+    unsafe fn copy_to(&self, writer: &mut MemoryWriter) -> Size {
+        let src_range = UVirtRange::new(
+            VirtAddr::new(self.as_ptr() as usize),
+            self.len(),
+        );
+        
+        unsafe {
+            writer.write_region(src_range).write_size
+        }
+    }
+}
+
+/// Used to copy data into a memory capability
+/// 
+/// Users of `MemoryWriter` should repeatedly call [`write_region`]
+pub struct MemoryWriter<'a> {
+    memory: &'a MemoryInner,
+    /// current index of allocation entry
+    alloc_entry_index: usize,
+    offset: usize,
+    end_offset: usize,
+}
+
+impl MemoryWriter<'_> {
+    fn remaining_write_capacity(&self) -> usize {
+        self.end_offset - self.offset
+    }
+
+    fn current_alloc_entry(&self) -> AllocationEntry {
+        self.memory.allocations[self.alloc_entry_index]
+    }
+
+    /// Writes the given zone into this writer
+    /// 
+    /// # Safety
+    /// 
+    /// Must not write to any memory used by anything else, or a place that userspace doesn't expect
+    pub unsafe fn write_region(&mut self, virt_range: UVirtRange) -> WriteResult {
+        let mut src_offset = 0;
+
+        let mut dest_offset = self.offset - self.current_alloc_entry().offset;
+
+        // amount written in this call of write_region
+        let mut amount_written = 0;
+
+        loop {
+            if self.remaining_write_capacity() == 0 {
+                return WriteResult {
+                    write_size: Size::from_bytes(amount_written),
+                    end_reached: true,
+                };
+            }
+
+            let mut allocation = self.current_alloc_entry().allocation;
+
+            let write_size = min(virt_range.size() - src_offset, allocation.size() - dest_offset);
+            let write_size = min(write_size, self.remaining_write_capacity());
+
+            // when src offset is set, it is ensured to be less than the size of the zone
+            let src_ptr = unsafe { virt_range.addr().as_ptr::<u8>().add(src_offset) };
+            // safety: allocation_index_of_offset already checks offset is valid
+            let dest_ptr = unsafe { allocation.as_mut_ptr::<u8>().add(dest_offset) };
+
+            // safety: caller must ensure that this memory capability only stores userspace data expecting to be written to
+            // TODO: get a version of copy_nonoverlapping that is safe, because we don't really care
+            // if data is copied wrong when overalapping, that is userspaces problem
+            unsafe {
+                ptr::copy(src_ptr, dest_ptr, write_size);
+            }
+
+            amount_written += write_size;
+            self.offset += write_size;
+
+            if src_offset + write_size == virt_range.size() {
+                // finished copying everything from memory zone
+                return WriteResult {
+                    write_size: Size::from_bytes(amount_written),
+                    end_reached: self.remaining_write_capacity() == 0,
+                };
+            } else {
+                // finished consuming current alloc entry
+                self.alloc_entry_index += 1;
+
+                dest_offset = 0;
+                src_offset += write_size;
+            }
+        }
+    }
+}
+
+/// Represents result of calling [`write_region`]
+#[derive(Debug, Clone, Copy)]
+pub struct WriteResult {
+    pub write_size: Size,
+    pub end_reached: bool,
+}
+
+/// An iterator over the virtual memory mappings that need to be made to map a given section of a memory cpaability
+#[derive(Debug, Clone)]
+pub struct MappedRegionsIterator<'a> {
+    base_addr: VirtAddr,
+    start_range_offset: usize,
+    end_range_offset: usize,
+    allocations: &'a [AllocationEntry],
+
+    index: usize,
+    current_offset: usize,
+}
+
+impl MappedRegionsIterator<'_> {
+    pub fn without_unaligned_start(mut self) -> Self {
+        if self.start_range_offset == 0 && self.index == 0 {
+            self.start_range_offset = 0;
+            self.index = 1;
+        }
+        self
+    }
+
+    pub fn without_unaligned_end(mut self) -> Self {
+        self.end_range_offset = 0;
+        self
+    }
+
+    /// Gets the virt range mapping for the entire first range, regardless of start offset
+    pub fn get_entire_first_maping_range(&self) -> AVirtRange {
+        let allocation = self.allocations[0].allocation;
+
+        AVirtRange::new(self.base_addr - self.start_range_offset, allocation.size())
+    }
+
+    /// Gets the setion of the first mapping which is excluded by the start offset
+    pub fn get_first_mapping_exluded_range(&self) -> AVirtRange {
+        AVirtRange::new(self.base_addr - self.start_range_offset, self.start_range_offset)
+    }
+}
+
+impl Iterator for MappedRegionsIterator<'_> {
+    type Item = (AVirtRange, PhysAddr);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index >= self.allocations.len() {
+            return None;
         }
 
-        let first_allocation = page_allocator.alloc(
-            PageLayout::from_size_align(pages * PAGE_SIZE, PAGE_SIZE)
-                .expect("could not create page layout for Memory capability"),
-        ).ok_or(SysErr::OutOfMem)?;
+        let allocation = self.allocations[self.index].allocation;
 
-        let mut allocations = Vec::new(heap_allocator);
-        allocations.push(AllocationEntry {
-            allocation: first_allocation,
-            offset: 0,
-        })?;
+        let (virt_range, phys_addr) = if self.allocations.len() == 1 {
+            // there is only 1 entry, we need to consider both start and end offset
+            let range_addr = self.base_addr;
+            let range_size = allocation.size() - self.start_range_offset - self.end_range_offset;
+            let virt_range = AVirtRange::new(range_addr, range_size);
 
-        let inner = MemoryInner {
-            allocations,
-            size: first_allocation.size(),
-            page_allocator,
-            map_ref_count: 0,
+            let phys_addr = allocation.addr().to_phys() + self.start_range_offset;
+
+            (virt_range, phys_addr)
+        } else if self.index == 0 {
+            let virt_range = AVirtRange::new(self.base_addr, allocation.size() - self.start_range_offset);
+            let phys_addr = allocation.addr().to_phys() + self.start_range_offset;
+
+            (virt_range, phys_addr)
+        } else if self.index == self.allocations.len() - 1 {
+            let virt_range = AVirtRange::new(self.base_addr + self.current_offset, allocation.size() - self.end_range_offset);
+
+            (virt_range, allocation.addr().to_phys())
+        } else {
+            (
+                AVirtRange::new(self.base_addr + self.current_offset, allocation.size()),
+                allocation.addr().to_phys(),
+            )
         };
 
-        Ok(Memory {
-            id: MemoryId::from(NEXT_MEMORY_ID.fetch_add(1, Ordering::Relaxed)),
-            inner: IrwLock::new(inner),
-        })
+        self.index += 1;
+        self.current_offset += virt_range.size();
+
+        Some((virt_range, phys_addr))
     }
 
-    pub fn id(&self) -> MemoryId {
-        self.id
-    }
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let size = self.allocations.len() - self.index;
 
-    pub fn inner_read(&self) -> IrwLockReadGuard<MemoryInner> {
-        self.inner.read()
+        (size, Some(size))
     }
-
-    pub fn inner_write(&self) -> IrwLockWriteGuard<MemoryInner> {
-        self.inner.write()
-    }
-}
-
-impl CapObject for Memory {
-    const TYPE: CapType = CapType::Memory;
 }

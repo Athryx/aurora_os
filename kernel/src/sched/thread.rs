@@ -52,7 +52,7 @@ pub enum WakeReason {
     Timeout,
     /// Thread was woken up after sending or recieving a message from a channel
     MsgSendRecv {
-        msg_size: usize,
+        msg_size: Size,
     },
     EventRecieved,
 }

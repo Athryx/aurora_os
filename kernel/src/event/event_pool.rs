@@ -3,7 +3,7 @@ use core::cmp::{max, min};
 use sys::{CapId, CapType};
 
 use crate::alloc::{PaRef, HeapRef};
-use crate::cap::memory::MemoryInner;
+use crate::cap::memory::{MemoryInner, MemoryCopySrc};
 use crate::prelude::*;
 use crate::sched::{ThreadRef, WakeReason};
 use crate::sync::IMutex;
@@ -79,7 +79,7 @@ impl EventPool {
 
         // safety: the write buffer is not mapped
         unsafe {
-            inner.write_buffer.write_event_from_userspace(event_capid, event_data)?;
+            inner.write_buffer.write_event(event_capid, event_data)?;
         }
 
         inner.wake_listener();
@@ -223,55 +223,28 @@ impl EventBuffer {
     /// # Safety
     /// 
     /// This event buffer must not be mapped
-    pub unsafe fn write_event(&mut self, event_capid: CapId, event_data: &[u8]) -> KResult<()> {
-        let write_size = size_of::<usize>() + event_data.len();
+    pub unsafe fn write_event<T: MemoryCopySrc + ?Sized>(&mut self, event_capid: CapId, event_data: &T) -> KResult<()> {
+        let write_size = size_of::<usize>() + align_up(event_data.size(), size_of::<usize>());
         let mut memory = self.memory.inner_write();
 
         unsafe {
             self.ensure_capacity(&mut memory, write_size)?;
         }
 
-        unsafe {
-            memory.write(self.current_event_offset, &usize::from(event_capid).to_le_bytes());
-        }
-        self.current_event_offset += size_of::<usize>();
+        // panic safety: ensure capacity ensures this shouldn't fail
+        let mut writer = memory.create_memory_writer(self.current_event_offset..)
+            .unwrap();
 
-        unsafe {
-            memory.write(self.current_event_offset, event_data);
-        }
-        self.current_event_offset += align_up(event_data.len(), size_of::<usize>());
+        let capid_data = usize::from(event_capid).to_le_bytes();
 
-        Ok(())
-    }
-    /// Writes the event into this buffer from the userspace buffer
-    /// 
-    /// # Safety
-    /// 
-    /// This event buffer must not be mapped
-    pub unsafe fn write_event_from_userspace(&mut self, event_capid: CapId, event_data: &UserspaceBuffer) -> KResult<()> {
-        let other_memory = event_data.memory.upgrade()
-            .ok_or(SysErr::InvlWeak)?;
+        self.current_event_offset += unsafe {
+            capid_data.copy_to(&mut writer).bytes()
+        };
 
-        let write_size = size_of::<usize>() + event_data.buffer_size;
-        let mut memory = self.memory.inner_write();
-
-        unsafe {
-            self.ensure_capacity(&mut memory, write_size)?;
-        }
-
-        unsafe {
-            memory.write(self.current_event_offset, &usize::from(event_capid).to_le_bytes());
-        }
-        self.current_event_offset += size_of::<usize>();
-
-        unsafe {
-            memory.copy_from_memory(
-                self.current_event_offset,
-                &other_memory.inner_read(),
-                event_data.offset..(event_data.offset + event_data.buffer_size),
-            );
-        }
-        self.current_event_offset += align_up(event_data.buffer_size, size_of::<usize>());
+        let write_size = unsafe {
+            event_data.copy_to(&mut writer).bytes()
+        };
+        self.current_event_offset += align_up(write_size, size_of::<usize>());
 
         Ok(())
     }
