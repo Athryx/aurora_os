@@ -136,6 +136,16 @@
                 "file": "Kernel Events.md"
               }
             }
+          },
+          {
+            "id": "4252be6d545f42d9",
+            "type": "leaf",
+            "state": {
+              "type": "all-properties",
+              "state": {
+                "sortOrder": "frequency"
+              }
+            }
           }
         ]
       }

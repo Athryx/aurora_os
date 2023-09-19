@@ -54,7 +54,10 @@ pub enum WakeReason {
     MsgSendRecv {
         msg_size: Size,
     },
-    EventRecieved,
+    /// The event pool this thread was waiting on recieved an event
+    EventPoolEventRecieved {
+        event_range: UVirtRange,
+    },
 }
 
 #[derive(Debug)]

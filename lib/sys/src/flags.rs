@@ -117,6 +117,13 @@ bitflags! {
 }
 
 bitflags! {
+    /// Used by event_pool_await syscall
+    pub struct EventPoolAwaitFlags: u32 {
+        const TIMEOUT = 1;
+    }
+}
+
+bitflags! {
     /// Used by `chennel_sync_send` and `channel_sync_recv`
     pub struct ChannelSyncFlags: u32 {
         const TIMEOUT = 1;

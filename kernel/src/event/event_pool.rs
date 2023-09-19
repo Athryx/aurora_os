@@ -3,6 +3,7 @@ use core::cmp::{max, min};
 use sys::{CapId, CapType};
 
 use crate::alloc::{PaRef, HeapRef};
+use crate::cap::address_space::{MappingId, AddressSpaceInner};
 use crate::cap::memory::{MemoryInner, MemoryCopySrc};
 use crate::prelude::*;
 use crate::sched::{ThreadRef, WakeReason};
@@ -11,20 +12,22 @@ use crate::container::{Arc, Weak};
 use crate::cap::{CapObject, address_space::AddressSpace, memory::Memory};
 use crate::vmem_manager::PageMappingFlags;
 
-use super::UserspaceBuffer;
-
-#[derive(Debug)]
-pub struct EventPool {
-    inner: IMutex<EventPoolInner>,
-}
-
 /// Communicates to calling thread what it needs to do after calling [`await_event`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AwaitStatus {
     /// There were events in the event pool and they have now been mapped
-    Success,
+    Success {
+        event_range: UVirtRange,
+    },
     /// There were no events in the event pool and the thread must block
     Block,
+}
+
+#[derive(Debug)]
+pub struct EventPool {
+    inner: IMutex<EventPoolInner>,
+    id: MappingId,
+    max_size: Size,
 }
 
 impl EventPool {
@@ -37,7 +40,17 @@ impl EventPool {
                 map_size: None,
                 write_buffer: EventBuffer::new(page_allocator, heap_allocator, max_size)?,
             }),
+            id: MappingId::new(),
+            max_size,
         })
+    }
+
+    pub fn id(&self) -> MappingId {
+        self.id
+    }
+
+    pub fn max_size(&self) -> Size {
+        self.max_size
     }
 
     pub fn await_event(&self) -> KResult<AwaitStatus> {
@@ -49,9 +62,9 @@ impl EventPool {
         }
 
         if inner.has_unprocessed_events() {
-            inner.swap_buffers()?;
+            let event_range = inner.swap_buffers()?;
 
-            Ok(AwaitStatus::Success)
+            Ok(AwaitStatus::Success { event_range })
         } else {
             // wait for event to arrive
             let thread_ref = ThreadRef::future_ref(&cpu_local_data().current_thread());
@@ -61,7 +74,7 @@ impl EventPool {
         }
     }
 
-    pub fn write_event(&self, event_capid: CapId, event_data: &[u8]) -> KResult<()> {
+    pub fn write_event<T: MemoryCopySrc + ?Sized>(&self, event_capid: CapId, event_data: &T) -> KResult<()> {
         let mut inner = self.inner.lock();
 
         // safety: the write buffer is not mapped
@@ -69,20 +82,35 @@ impl EventPool {
             inner.write_buffer.write_event(event_capid, event_data)?;
         }
 
-        inner.wake_listener();
-
-        Ok(())
+        inner.wake_listener()
     }
 
-    pub fn write_event_from_userspace(&self, event_capid: CapId, event_data: &UserspaceBuffer) -> KResult<()> {
+    pub fn set_mapping_data(&self, address_space: Weak<AddressSpace>, address: VirtAddr) -> KResult<()> {
         let mut inner = self.inner.lock();
 
-        // safety: the write buffer is not mapped
-        unsafe {
-            inner.write_buffer.write_event(event_capid, event_data)?;
-        }
+        if inner.mapping.is_some() {
+            // event pool is already mapped
+            Err(SysErr::InvlOp)
+        } else {
+            inner.mapping = Some(EventPoolMapping {
+                address_space,
+                mapped_address: address,
+            });
 
-        inner.wake_listener();
+            Ok(())
+        }
+    }
+
+    /// Unmaps the event pool from the address space it is currently mapped in memory
+    pub fn unmap(&self) -> KResult<()> {
+        let mut inner = self.inner.lock();
+
+        let (addr_space, _) = inner.get_mapping_info()
+            .ok_or(SysErr::InvlOp)?;
+
+        inner.unmap_mapped_buffer(&mut addr_space.inner())?;
+
+        inner.mapping = None;
 
         Ok(())
     }
@@ -110,38 +138,32 @@ impl EventPoolInner {
         self.write_buffer.current_event_offset > 0
     }
 
-    fn wake_listener(&mut self) {
+    /// If a thread is waiting on this event pool, wakes that thread and swaps buffers
+    fn wake_listener(&mut self) -> KResult<()> {
         if let Some(thread) = self.waiting_thread.take() {
-            thread.move_to_ready_list(WakeReason::EventRecieved);
+            let event_range = self.swap_buffers()?;
+            thread.move_to_ready_list(WakeReason::EventPoolEventRecieved { event_range });
         }
+
+        Ok(())
     }
 
     /// Swaps the buffers so unprocessed events can be processed
-    fn swap_buffers(&mut self) -> KResult<()> {
+    /// 
+    /// Returns a virt range representing the new memory range of valid events
+    fn swap_buffers(&mut self) -> KResult<UVirtRange> {
         let (addr_space, map_addr) = self.get_mapping_info()
             .ok_or(SysErr::InvlOp)?;
 
         let mut addr_space_inner = addr_space.inner();
 
-        // unmap olf mapped buffer
-        if let Some(map_size) = self.map_size {
-            let memory_inner = self.mapped_buffer.memory.inner_read();
-
-            for (virt_range, _) in memory_inner.iter_mapped_regions(
-                map_addr,
-                Size::zero(),
-                map_size,
-            ) {
-                // this should not fail because we ensure that memory was already mapped
-                addr_space_inner.addr_space.unmap_memory(virt_range)
-                    .expect("failed to unmap memory that szhould have been mapped");
-            }
-        }
-        self.mapped_buffer.current_event_offset = 0;
+        // unmap old mapped buffer
+        self.unmap_mapped_buffer(&mut addr_space_inner)?;
 
         // map new memory
         let memory_inner = self.write_buffer.memory.inner_read();
-        let new_map_size = Size::from_bytes(self.write_buffer.current_event_offset).as_aligned();
+        let event_size = Size::from_bytes(self.write_buffer.current_event_offset);
+        let new_map_size = event_size.as_aligned();
 
         addr_space_inner.addr_space.map_many(
             memory_inner.iter_mapped_regions(
@@ -156,6 +178,32 @@ impl EventPoolInner {
         self.map_size = Some(new_map_size);
 
         core::mem::swap(&mut self.mapped_buffer, &mut self.write_buffer);
+
+        Ok(UVirtRange::new(map_addr, event_size.bytes()))
+    }
+
+    /// Unmaps the currently mapped buffer if it is mapped
+    /// 
+    /// Must pass in the locked address space for the current event pool mapping
+    fn unmap_mapped_buffer(&mut self, addr_space: &mut AddressSpaceInner) -> KResult<()> {
+        let map_addr = self.mapping.as_ref()
+            .ok_or(SysErr::InvlOp)?.mapped_address;
+
+        // map size will be some only if buffer is currently mapped
+        if let Some(map_size) = self.map_size {
+            let memory_inner = self.mapped_buffer.memory.inner_read();
+
+            for (virt_range, _) in memory_inner.iter_mapped_regions(
+                map_addr,
+                Size::zero(),
+                map_size,
+            ) {
+                // this should not fail because we ensure that memory was already mapped
+                addr_space.addr_space.unmap_memory(virt_range)
+                    .expect("failed to unmap memory that szhould have been mapped");
+            }
+        }
+        self.mapped_buffer.current_event_offset = 0;
 
         Ok(())
     }

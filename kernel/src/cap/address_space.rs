@@ -1,15 +1,27 @@
 use core::cmp::min;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 use sys::{CapType, MemoryResizeFlags};
 
 use crate::alloc::{HeapRef, PaRef};
+use crate::consts;
+use crate::event::EventPool;
 use crate::prelude::*;
 use crate::sync::{IMutex, IMutexGuard};
 use crate::vmem_manager::{VirtAddrSpace, PageMappingFlags};
 use crate::container::{Arc, HashMap};
 
-use super::memory::MemoryId;
 use super::{CapObject, memory::{Memory, MemoryInner}};
+
+crate::make_id_type!(MappingId);
+
+static NEXT_MAPPING_ID: AtomicUsize = AtomicUsize::new(0);
+
+impl MappingId {
+    pub fn new() -> Self {
+        MappingId::from(NEXT_MAPPING_ID.fetch_add(1, Ordering::Relaxed))
+    }
+}
 
 #[derive(Debug)]
 pub struct AddressSpace {
@@ -25,7 +37,7 @@ impl AddressSpace {
             cr3: addr_space.cr3_addr(),
             inner: IMutex::new(AddressSpaceInner {
                 addr_space,
-                mappings: HashMap::new(heap_allocator.clone()),
+                mappings: Vec::new(heap_allocator.clone()),
                 memory_id_map_addr: HashMap::new(heap_allocator),
             }),
         })
@@ -72,12 +84,11 @@ impl AddressSpace {
             return Err(SysErr::InvlArgs);
         }
 
-        addr_space_inner.insert_mapping(addr, memory.id(), AddrSpaceMapping {
+        addr_space_inner.insert_mapping(memory.id(), AddrSpaceMapping::Memory(MemoryMapping {
             memory: memory.clone(),
-            addr,
-            size: mapping_size,
+            map_range: AVirtRange::new(addr, mapping_size.bytes()),
             flags,
-        })?;
+        }))?;
 
         let map_result = addr_space_inner.addr_space.map_many(
             memory_inner.iter_mapped_regions(
@@ -115,19 +126,28 @@ impl AddressSpace {
             return Err(SysErr::InvlVirtAddr);
         };
 
-        let mut memory_inner = mapping.memory.inner_write();
+        match mapping {
+            AddrSpaceMapping::Memory(memory_mapping) => {
+                let mut memory_inner = memory_mapping.memory.inner_write();
+                let map_range = memory_mapping.map_range;
 
-        for (virt_range, _) in memory_inner.iter_mapped_regions(
-            mapping.addr,
-            Size::zero(),
-            mapping.size,
-        ) {
-            // this should not fail because we ensure that memory was already mapped
-            addr_space_inner.addr_space.unmap_memory(virt_range)
-                .expect("failed to unmap memory that should have been mapped");
+                for (virt_range, _) in memory_inner.iter_mapped_regions(
+                    map_range.addr(),
+                    Size::zero(),
+                    Size::from_bytes(map_range.size()),
+                ) {
+                    // this should not fail because we ensure that memory was already mapped
+                    addr_space_inner.addr_space.unmap_memory(virt_range)
+                        .expect("failed to unmap memory that should have been mapped");
+                }
+
+                memory_inner.map_ref_count -= 1;
+            },
+            AddrSpaceMapping::EventPool(event_pool_mapping) => {
+                event_pool_mapping.event_pool.unmap()
+                    .expect("event pool was not mapped in this address space");
+            },
         }
-
-        memory_inner.map_ref_count -= 1;
 
         Ok(())
     }
@@ -145,13 +165,17 @@ impl AddressSpace {
     pub fn update_memory_mapping(&self, addr: VirtAddr, max_size: Option<Size>) -> KResult<Size> {
         let mut addr_space_inner = self.inner.lock();
 
-        let mapping = addr_space_inner.mappings.get(&addr)
+        let mapping = addr_space_inner.get_mapping_from_address(addr)
             .ok_or(SysErr::InvlVirtAddr)?
             .clone();
 
-        let mut memory_inner = mapping.memory.inner_write();
+        let AddrSpaceMapping::Memory(memory_mapping) = mapping else {
+            return Err(SysErr::InvlOp);
+        };
 
-        addr_space_inner.update_memory_mapping_inner(&mapping, &mut memory_inner, max_size)        
+        let mut memory_inner = memory_mapping.memory.inner_write();
+
+        addr_space_inner.update_memory_mapping_inner(&memory_mapping, &mut memory_inner, max_size)        
     }
 
     /// Resizes the specified memory capability specified by `memory` to be the size of `new_size_pages`
@@ -192,6 +216,10 @@ impl AddressSpace {
                 .ok_or(SysErr::InvlOp)?
                 .clone();
 
+            let AddrSpaceMapping::Memory(memory_mapping) = mapping else {
+                return Err(SysErr::InvlOp);
+            };
+
             if new_size > old_size {
                 unsafe {
                     memory_inner.resize_in_place(new_size.pages_rounded())?;
@@ -200,7 +228,7 @@ impl AddressSpace {
                 let memory_size = memory_inner.size();
                 if flags.contains(MemoryResizeFlags::GROW_MAPPING) {
                     addr_space_inner.update_memory_mapping_inner(
-                        &mapping,
+                        &memory_mapping,
                         &mut memory_inner,
                         Some(memory_size)
                     )?;
@@ -209,9 +237,9 @@ impl AddressSpace {
                 Ok(memory_size)
             } else if new_size < old_size {
                 // shrink memory
-                if mapping.size > new_size {
+                if memory_mapping.map_range.size() > new_size.bytes() {
                     addr_space_inner.update_memory_mapping_inner(
-                        &mapping,
+                        &memory_mapping,
                         &mut memory_inner,
                         Some(new_size)
                     )?;
@@ -231,6 +259,28 @@ impl AddressSpace {
         }
     }
 
+    /// Maps the event pool in this address space at the given address
+    pub fn map_event_pool(this: &Arc<AddressSpace>, address: VirtAddr, event_pool: Arc<EventPool>) -> KResult<()> {
+        let mut addr_space_inner = this.inner.lock();
+
+        addr_space_inner.insert_mapping(
+            event_pool.id(),
+            AddrSpaceMapping::EventPool(EventPoolMapping {
+                event_pool: event_pool.clone(),
+                map_range: AVirtRange::new(address, event_pool.max_size().bytes()),
+            }),
+        )?;
+
+        if let Err(error) = event_pool.set_mapping_data(Arc::downgrade(this), address) {
+            // panic safety: mapping was just created earlier
+            addr_space_inner.remove_mapping_from_address(address).unwrap();
+
+            Err(error)
+        } else {
+            Ok(())
+        }
+    }
+
     /// Used to get dirrect access to inner address space
     /// 
     /// This shouldn't be used usually, only event pool uses it
@@ -243,34 +293,99 @@ impl CapObject for AddressSpace {
     const TYPE: CapType = CapType::AddressSpace;
 }
 
+/// Stores details about memory mapped in the address space
+#[derive(Debug, Clone)]
+struct MemoryMapping {
+    memory: Arc<Memory>,
+    flags: PageMappingFlags,
+    map_range: AVirtRange,
+}
+
+/// Stores details about an event pool mapped in the address space
+#[derive(Debug, Clone)]
+struct EventPoolMapping {
+    event_pool: Arc<EventPool>,
+    map_range: AVirtRange,
+}
+
 /// Represents where in the address space a capability was mapped
 #[derive(Debug, Clone)]
-struct AddrSpaceMapping {
-    memory: Arc<Memory>,
-    addr: VirtAddr,
-    size: Size,
-    flags: PageMappingFlags,
+enum AddrSpaceMapping {
+    Memory(MemoryMapping),
+    EventPool(EventPoolMapping),
+}
+
+impl AddrSpaceMapping {
+    fn map_id(&self) -> MappingId {
+        match self {
+            Self::Memory(memory) => memory.memory.id(),
+            Self::EventPool(event_pool) => event_pool.event_pool.id(),
+        }
+    }
+
+    fn map_range(&self) -> AVirtRange {
+        match self {
+            Self::Memory(memory) => memory.map_range,
+            Self::EventPool(event_pool) => event_pool.map_range,
+        }
+    }
+
+    fn size(&self) -> Size {
+        Size::from_bytes(self.map_range().size())
+    }
 }
 
 #[derive(Debug)]
 pub struct AddressSpaceInner {
     pub addr_space: VirtAddrSpace,
-    /// A map between thr address of a mapping and the details of what is mappoed
-    mappings: HashMap<VirtAddr, AddrSpaceMapping>,
+    /// A sorted list of all the mappings in this address space
+    mappings: Vec<AddrSpaceMapping>,
     /// Which address the memory with the given id is mapped at
-    memory_id_map_addr: HashMap<MemoryId, VirtAddr>,
+    memory_id_map_addr: HashMap<MappingId, VirtAddr>,
 }
 
 impl AddressSpaceInner {
+    /// Returns Some(index) if the given virt range in the virtual address space is not occupied
+    /// 
+    /// The index is the place where the virt_range can be inserted to maintain ordering in the list
+    fn get_mapping_insert_index(&self, range: AVirtRange) -> Option<usize> {
+        // can't map anything beyond the kernel region
+        if range.end_usize() > *consts::KERNEL_VMA {
+            return None;
+        }
+
+        match self.mappings.binary_search_by_key(&range.addr(), |mapping| mapping.map_range().addr()) {
+            // If we find the address it is occupied
+            Ok(_) => None,
+            Err(index) => {
+                if (index == 0 || self.mappings[index - 1].map_range().end_addr() <= range.addr())
+                    && (index == self.mappings.len() || range.end_addr() <= self.mappings[index].map_range().addr()) {
+                    Some(index)
+                } else {
+                    None
+                }
+            },
+        }
+    }
+
+    /// Gets the index of the mapping starting at `address`, returns None if such a mapping does not exist
+    fn get_mapping_index(&self, address: VirtAddr) -> Option<usize> {
+        self.mappings
+            .binary_search_by_key(&address, |mapping| mapping.map_range().addr())
+            .ok()
+    }
+
     fn insert_mapping(
         &mut self,
-        address: VirtAddr,
-        memory_id: MemoryId,
+        memory_id: MappingId,
         mapping: AddrSpaceMapping,
     ) -> KResult<()> {
-        self.memory_id_map_addr.insert(memory_id, address)?;
+        let insert_index = self.get_mapping_insert_index(mapping.map_range())
+            .ok_or(SysErr::InvlMemZone)?;
 
-        if let Err(error) = self.mappings.insert(address, mapping) {
+        self.memory_id_map_addr.insert(memory_id, mapping.map_range().addr())?;
+
+        if let Err(error) = self.mappings.insert(insert_index, mapping) {
             // panic safety: this was just inserted
             self.memory_id_map_addr.remove(&memory_id).unwrap();
             Err(error)
@@ -280,37 +395,52 @@ impl AddressSpaceInner {
     }
 
     fn remove_mapping_from_address(&mut self, address: VirtAddr) -> Option<AddrSpaceMapping> {
-        let mapping = self.mappings.remove(&address)?;
-        self.memory_id_map_addr.remove(&mapping.memory.id())
+        let mapping = self.mappings.remove(
+            self.get_mapping_index(address)?,
+        );
+
+        self.memory_id_map_addr.remove(&mapping.map_id())
             .expect("mapping id was not present in memory");
 
         Some(mapping)
     }
 
-    fn remove_mapping_from_id(&mut self, memory_id: MemoryId) -> Option<AddrSpaceMapping> {
+    fn remove_mapping_from_id(&mut self, memory_id: MappingId) -> Option<AddrSpaceMapping> {
         let mapping_addr = self.memory_id_map_addr.remove(&memory_id)?;
-        self.mappings.remove(&mapping_addr)
+        
+        Some(self.mappings.remove(
+            self.get_mapping_index(mapping_addr)?
+        ))
     }
 
-    fn get_mapping_from_id(&self, memory_id: MemoryId) -> Option<&AddrSpaceMapping> {
+    fn get_mapping_from_address(&self, address: VirtAddr) -> Option<&AddrSpaceMapping> {
+        self.mappings.get(
+            self.get_mapping_index(address)?
+        )
+    }
+
+    fn get_mapping_from_id(&self, memory_id: MappingId) -> Option<&AddrSpaceMapping> {
         let mapping_addr = self.memory_id_map_addr.get(&memory_id)?;
-        self.mappings.get(&mapping_addr)
+
+        self.mappings.get(
+            self.get_mapping_index(*mapping_addr)?
+        )
     }
 
     fn update_memory_mapping_inner(
         &mut self,
-        mapping: &AddrSpaceMapping,
+        mapping: &MemoryMapping,
         memory_inner: &mut MemoryInner,
         max_size: Option<Size>,
     ) -> KResult<Size> {
-        let old_size = mapping.size;
-        let new_size = max_size.unwrap_or(mapping.size);
+        let old_size = Size::from_bytes(mapping.map_range.size());
+        let new_size = max_size.unwrap_or(old_size);
         if new_size.is_zero() {
             return Err(SysErr::InvlArgs);
         }
     
         if new_size > old_size {
-            let new_base_addr = mapping.addr + old_size.bytes();
+            let new_base_addr = mapping.map_range.addr() + old_size.bytes();
 
             let mapping_iter = memory_inner.iter_mapped_regions(
                 new_base_addr,
@@ -338,7 +468,7 @@ impl AddressSpaceInner {
                 Ok(new_size)
             }
         } else if new_size < old_size {
-            let unmap_base_addr = mapping.addr + new_size.bytes();
+            let unmap_base_addr = mapping.map_range.addr() + new_size.bytes();
 
             let mapping_iter = memory_inner.iter_mapped_regions(
                 unmap_base_addr,

@@ -13,6 +13,8 @@ mod debug;
 use debug::*;
 mod drop_check;
 use drop_check::*;
+mod event_pool;
+use event_pool::*;
 mod key;
 use key::*;
 mod memory;
@@ -21,10 +23,6 @@ mod thread;
 use thread::*;
 mod thread_group;
 use thread_group::*;
-//mod process;
-//use process::*;
-//mod spawner;
-//use spawner::*;
 
 extern "C" {
     fn syscall_entry();
@@ -248,6 +246,9 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		MEMORY_NEW => sysret_2!(syscall_2!(memory_new, vals), vals),
 		MEMORY_GET_SIZE => sysret_1!(syscall_1!(memory_get_size, vals), vals),
 		MEMORY_RESIZE => sysret_1!(syscall_3!(memory_resize, vals), vals),
+		EVENT_POOL_NEW => sysret_1!(syscall_2!(event_pool_new, vals), vals),
+		EVENT_POOL_MAP => sysret_0!(syscall_3!(event_pool_map, vals), vals),
+		EVENT_POOL_AWAIT => sysret_2!(syscall_2!(event_pool_await, vals), vals),
 		CHANNEL_NEW => sysret_1!(syscall_1!(channel_new, vals), vals),
 		CHANNEL_TRY_SEND => sysret_1!(syscall_4!(channel_try_send, vals), vals),
 		CHANNEL_SYNC_SEND => sysret_1!(syscall_5!(channel_sync_send, vals), vals),

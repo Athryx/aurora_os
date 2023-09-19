@@ -21,6 +21,10 @@ pub const MEMORY_NEW: u32 = 15;
 pub const MEMORY_GET_SIZE: u32 = 16;
 pub const MEMORY_RESIZE: u32 = 17;
 
+pub const EVENT_POOL_NEW: u32 = 24;
+pub const EVENT_POOL_MAP: u32 = 25;
+pub const EVENT_POOL_AWAIT: u32 = 26;
+
 pub const CHANNEL_NEW: u32 = 27;
 pub const CHANNEL_TRY_SEND: u32 = 28;
 pub const CHANNEL_SYNC_SEND: u32 = 29;
@@ -53,6 +57,9 @@ pub fn syscall_name(syscall_num: u32) -> &'static str {
         MEMORY_NEW => "memory_new",
         MEMORY_GET_SIZE => "memory_get_size",
         MEMORY_RESIZE => "memory_resize",
+        EVENT_POOL_NEW => "event_pool_new",
+        EVENT_POOL_MAP => "event_pool_map",
+        EVENT_POOL_AWAIT => "event_pool_await",
         CHANNEL_NEW => "channel_new",
         CHANNEL_TRY_SEND => "channel_try_send",
         CHANNEL_SYNC_SEND => "channel_sync_send",
