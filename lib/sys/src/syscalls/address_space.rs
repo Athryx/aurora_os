@@ -15,7 +15,7 @@ use crate::{
     sysret_1,
 };
 use crate::syscall_nums::*;
-use super::{Capability, Allocator, Memory, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
+use super::{Capability, Allocator, Memory, EventPool, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AddressSpace(CapId);
@@ -73,6 +73,18 @@ impl AddressSpace {
                 address,
                 max_size.unwrap_or_default().pages_rounded()
             )).map(Size::from_pages)
+        }
+    }
+
+    pub fn map_event_pool(&self, event_pool: &EventPool, address: usize) -> KResult<()> {
+        unsafe {
+            sysret_0!(syscall!(
+                EVENT_POOL_MAP,
+                WEAK_AUTO_DESTROY,
+                self.as_usize(),
+                event_pool.as_usize(),
+                address
+            ))
         }
     }
 

@@ -12,6 +12,8 @@ mod channel;
 pub use channel::*;
 pub mod debug;
 pub use debug::*;
+mod event_pool;
+pub use event_pool::*;
 mod key;
 pub use key::*;
 mod memory;

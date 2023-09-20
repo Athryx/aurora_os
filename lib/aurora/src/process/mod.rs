@@ -147,32 +147,44 @@ fn spawn_process(exe_data: &[u8], namespace: &Namespace) -> Result<Child, Proces
             let end_addr = start_addr + phdr.p_memsz as usize;
 
             // elf does not require page aligned addressess
-            let start_addr = align_down(start_addr, PAGE_SIZE);
-            let end_addr = align_up(end_addr, PAGE_SIZE);
-            let map_size = end_addr - start_addr;
+            let aligned_start_addr = align_down(start_addr, PAGE_SIZE);
+            let aligned_end_addr = align_up(end_addr, PAGE_SIZE);
+            let map_size = aligned_end_addr - aligned_start_addr;
             if map_size == 0 {
                 continue;
             }
 
             let section_mapping = manager.map_memory_remote_and_local(MapMemoryArgs {
-                address: Some(start_addr),
+                address: Some(aligned_start_addr),
                 size: Some(Size::from_bytes(map_size)),
                 flags: map_flags,
                 ..Default::default()
             })?;
 
             let section_data = elf_data.segment_data(&phdr)?;
+            if section_data.len() > phdr.p_memsz as usize {
+                return Err(ProcessError::ElfSegmentToBig);
+            }
 
             // offset from start of mapping where elf section data should be placed
-            let offset = phdr.p_vaddr as usize - start_addr;
+            let offset = phdr.p_vaddr as usize - aligned_start_addr;
             if section_data.len() + offset > section_mapping.size.bytes() {
                 return Err(ProcessError::ElfSegmentToBig);
             }
 
-            let dest_ptr = (section_mapping.local_address.unwrap() + offset) as *mut u8;
+            let dest_addr = section_mapping.local_address.unwrap() + offset;
+            let dest_ptr = dest_addr as *mut u8;
 
             unsafe {
                 core::ptr::copy_nonoverlapping(section_data.as_ptr(), dest_ptr, section_data.len());
+            }
+
+            let padding_ptr = (dest_addr + section_data.len()) as *mut u8;
+            // this will not overflow since it is already checked that memsz >= section data len
+            let pading_size = phdr.p_memsz as usize - section_data.len();
+
+            unsafe {
+                core::ptr::write_bytes(padding_ptr, 0, pading_size);
             }
         }
     }
