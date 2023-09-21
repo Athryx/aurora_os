@@ -3,7 +3,7 @@ use bit_utils::container::{LinkedList, DefaultNode};
 use sys::CapType;
 
 use crate::alloc::HeapRef;
-use crate::event::{EventListenerRef, UserspaceBuffer, EventSenderRef, ThreadListenerRef};
+use crate::event::{EventListenerRef, UserspaceBuffer, EventSenderRef, ThreadListenerRef, EventPoolListenerRef};
 use crate::prelude::*;
 use crate::mem::MemOwnerKernelExt;
 use crate::sched::ThreadRef;
@@ -54,14 +54,14 @@ impl Channel {
     /// 
     /// Ok(number of bytes written) on success,
     /// Err if there was a nobody waiting to recieve the message
-    pub fn try_send(&self, buffer: &UserspaceBuffer) -> Result<Size, SysErr> {
+    pub fn try_send(&self, buffer: &UserspaceBuffer) -> KResult<Size> {
         let mut inner = self.inner();
 
         loop {
             let reciever = inner.reciever_queue.pop_front()
                 .ok_or(SysErr::OkUnreach)?;
 
-            let Some(write_size) = reciever.data.write_channel_message(buffer) else {
+            let Some(write_size) = reciever.data.write_channel_message(buffer)? else {
                 // this listener is no longer valid, retry on next listner
                 unsafe { reciever.drop_in_place(&mut self.allocator.clone()); }
                 continue;
@@ -132,7 +132,12 @@ impl Channel {
                 return SendRecvResult::Block;
             };
 
-            let Some(write_size) = reciever.data.write_channel_message(&buffer) else {
+            let recieve_result = match reciever.data.write_channel_message(&buffer) {
+                Ok(recieve_result) => recieve_result,
+                Err(error) => return SendRecvResult::Error(error),
+            };
+
+            let Some(write_size) = recieve_result else {
                 // this listener is no longer valid, retry on next listner
                 unsafe { reciever.drop_in_place(&mut self.allocator.clone()); }
                 continue;
@@ -187,6 +192,82 @@ impl Channel {
             unsafe { sender.drop_in_place(&mut self.allocator.clone()); }
 
             return SendRecvResult::Success(write_size);
+        }
+    }
+
+    pub fn async_send(&self, event_pool: EventPoolListenerRef, message_buffer: UserspaceBuffer) -> KResult<()> {
+        let mut inner = self.inner();
+
+        loop {
+            let Some(reciever) = inner.reciever_queue.pop_front() else {
+                // no recievers present, insert ourselves in recievers queue
+                let sender = EventSenderRef::EventPool {
+                    send_complete_event: event_pool,
+                    event_data: message_buffer,
+                };
+
+                let sender = MemOwner::new(sender.into(), &mut self.allocator.clone())?;
+
+                inner.sender_queue.push(sender);
+
+                return Ok(());
+            };
+
+            let recieve_result = reciever.data.write_channel_message(&message_buffer)?;
+
+            let Some(write_size) = recieve_result else {
+                // this listener is no longer valid, retry on next listner
+                unsafe { reciever.drop_in_place(&mut self.allocator.clone()); }
+                continue;
+            };
+
+            if reciever.data.is_auto_reque() {
+                inner.reciever_queue.push(reciever);
+            } else {
+                unsafe { reciever.drop_in_place(&mut self.allocator.clone()); }
+            }
+
+            EventSenderRef::EventPool {
+                send_complete_event: event_pool,
+                event_data: message_buffer,
+            }.acknowledge_send(write_size);
+
+            return Ok(());
+        }
+    }
+
+    pub fn async_recv(&self, event_pool: EventPoolListenerRef, auto_reque: bool) -> KResult<()> {
+        let mut inner = self.inner();
+
+        loop {
+            let Some(sender) = inner.sender_queue.pop_front() else {
+                // no senders present, insert ourselves in reciever queue
+                let reciever = EventListenerRef::EventPool {
+                    event_pool,
+                    auto_reque,
+                };
+
+                let reciever = MemOwner::new(reciever.into(), &mut self.allocator.clone())?;
+
+                inner.reciever_queue.push(reciever);
+
+                return Ok(());
+            };
+
+            let write_size = event_pool.write_channel_message(sender.data.event_buffer())?;
+
+            match write_size {
+                Some(write_size) => {
+                    sender.data.acknowledge_send(write_size);
+                    unsafe { sender.drop_in_place(&mut self.allocator.clone()); }
+                    return Ok(());
+                },
+                None => {
+                    // recv failed, try on recv on next sender
+                    unsafe { sender.drop_in_place(&mut self.allocator.clone()); }
+                    continue;
+                }
+            }
         }
     }
 }

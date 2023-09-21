@@ -101,7 +101,26 @@ pub struct ThreadListenerRef {
 #[derive(Debug)]
 pub struct EventPoolListenerRef {
     pub event_pool: Weak<EventPool>,
-    event_source_capid: CapId,
+    pub event_source_capid: CapId,
+}
+
+impl EventPoolListenerRef {
+    /// See [`EventListenerRef`] for details, this behaves exectly the same as and EventListenerRef with an event pool
+    pub fn write_channel_message(&self, src: &UserspaceBuffer) -> KResult<Option<Size>> {
+        let Some(event_pool) = self.event_pool.upgrade() else {
+            return Ok(None);
+        };
+
+        match event_pool.write_event(self.event_source_capid, src) {
+            // this error is treated as the sender is now invalid, move onto next one
+            Err(SysErr::OutOfCapacity) => return Ok(None),
+            Err(error) => return Err(error),
+            _ => (),
+        }
+
+        // event pool write event always writes the whole event buffer, so return size of src
+        Ok(Some(Size::from_bytes(src.buffer_size)))
+    }
 }
 
 #[derive(Debug)]
@@ -135,8 +154,10 @@ impl EventListenerRef {
     /// 
     /// # Returns
     /// 
-    /// The number of bytes written, or None if the write failed
-    pub fn write_channel_message(&self, src: &UserspaceBuffer) -> Option<Size> {
+    /// The number of bytes written, or Ok(None) if the listener was invalid
+    /// 
+    /// If any other error occured, Err is returned
+    pub fn write_channel_message(&self, src: &UserspaceBuffer) -> KResult<Option<Size>> {
         match self {
             EventListenerRef::Thread(listener) => {
                 let write_size = unsafe {
@@ -144,12 +165,14 @@ impl EventListenerRef {
                 };
 
                 if !listener.thread.move_to_ready_list(WakeReason::MsgSendRecv { msg_size: write_size }) {
-                    None
+                    Ok(None)
                 } else {
-                    Some(write_size)
+                    Ok(Some(write_size))
                 }
             },
-            EventListenerRef::EventPool { .. } => todo!(),
+            EventListenerRef::EventPool { event_pool: event_pool_listener, .. } => {
+                event_pool_listener.write_channel_message(src)
+            },
         }
     }
 }
@@ -175,7 +198,9 @@ impl EventSenderRef {
                     WakeReason::MsgSendRecv { msg_size: write_size }
                 );
             },
-            EventSenderRef::EventPool { .. } => todo!(),
+            EventSenderRef::EventPool { send_complete_event, event_data } => {
+                todo!();
+            },
         }
     }
 

@@ -129,3 +129,9 @@ bitflags! {
         const TIMEOUT = 1;
     }
 }
+
+bitflags! {
+    pub struct ChannelAsyncRecvFlags: u32 {
+        const AUTO_REQUE = 1;
+    }
+}

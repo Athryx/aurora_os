@@ -1,11 +1,11 @@
-use sys::{CapFlags, ChannelSyncFlags};
+use sys::{CapFlags, ChannelSyncFlags, CapId, ChannelAsyncRecvFlags};
 
 use crate::alloc::HeapRef;
 use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::channel::SendRecvResult;
 use crate::cap::{Capability, StrongCapability, channel::Channel};
 use crate::container::Arc;
-use crate::event::UserspaceBuffer;
+use crate::event::{UserspaceBuffer, EventPoolListenerRef};
 use crate::prelude::*;
 use crate::arch::x64::IntDisable;
 use crate::sched::{switch_current_thread_to, ThreadState, PostSwitchAction, WakeReason};
@@ -37,6 +37,7 @@ pub fn channel_new(options: u32, allocator_id: usize) -> KResult<usize> {
 fn channel_handle_args(
     options: u32,
     channel_id: usize,
+    channel_perms: CapFlags,
     msg_buf_id: usize,
     msg_buf_offset: usize,
     msg_buf_size: usize,
@@ -47,7 +48,7 @@ fn channel_handle_args(
     let cspace = CapabilitySpace::current();
 
     let channel = cspace
-        .get_channel_with_perms(channel_id, CapFlags::PROD, weak_auto_destroy)?
+        .get_channel_with_perms(channel_id, channel_perms, weak_auto_destroy)?
         .into_inner();
 
     let buffer = cspace
@@ -74,6 +75,7 @@ pub fn channel_try_send(
     let (channel, buffer) = channel_handle_args(
         options,
         channel_id,
+        CapFlags::PROD,
         msg_buf_id,
         msg_buf_offset,
         msg_buf_size,
@@ -98,6 +100,7 @@ pub fn channel_sync_send(
     let (channel, buffer) = channel_handle_args(
         options,
         channel_id,
+        CapFlags::PROD,
         msg_buf_id,
         msg_buf_offset,
         msg_buf_size,
@@ -145,6 +148,7 @@ pub fn channel_try_recv(
     let (channel, buffer) = channel_handle_args(
         options,
         channel_id,
+        CapFlags::WRITE,
         msg_buf_id,
         msg_buf_offset,
         msg_buf_size,
@@ -169,6 +173,7 @@ pub fn channel_sync_recv(
     let (channel, buffer) = channel_handle_args(
         options,
         channel_id,
+        CapFlags::WRITE,
         msg_buf_id,
         msg_buf_offset,
         msg_buf_size,
@@ -202,4 +207,70 @@ pub fn channel_sync_recv(
             }
         },
     }
+}
+
+pub fn channel_async_send(
+    options: u32,
+    channel_id: usize,
+    msg_buf_id: usize,
+    msg_buf_offset: usize,
+    msg_buf_size: usize,
+    event_pool_id: usize,
+) -> KResult<()> {
+    let _int_disable = IntDisable::new();
+
+    let (channel, buffer) = channel_handle_args(
+        options,
+        channel_id,
+        CapFlags::PROD,
+        msg_buf_id,
+        msg_buf_offset,
+        msg_buf_size,
+        CapFlags::READ,
+    )?;
+
+    let event_pool_cap_id = CapId::try_from(event_pool_id)
+        .ok_or(SysErr::InvlId)?;
+
+    let event_pool = CapabilitySpace::current()
+        .get_event_pool_with_perms(event_pool_id, CapFlags::WRITE, options_weak_autodestroy(options))?
+        .into_inner();
+
+    let event_pool_listener = EventPoolListenerRef {
+        event_pool: Arc::downgrade(&event_pool),
+        event_source_capid: event_pool_cap_id,
+    };
+
+    channel.async_send(event_pool_listener, buffer)
+}
+
+pub fn channel_async_recv(
+    options: u32,
+    channel_id: usize,
+    event_pool_id: usize,
+) -> KResult<()> {
+    let weak_auto_destroy = options_weak_autodestroy(options);
+    let flags = ChannelAsyncRecvFlags::from_bits_truncate(options);
+
+    let _int_disable = IntDisable::new();
+
+    let cspace = CapabilitySpace::current();
+
+    let channel = cspace
+        .get_channel_with_perms(channel_id, CapFlags::WRITE, weak_auto_destroy)?
+        .into_inner();
+
+    let event_pool_cap_id = CapId::try_from(event_pool_id)
+        .ok_or(SysErr::InvlId)?;
+
+    let event_pool = cspace
+        .get_event_pool_with_perms(event_pool_id, CapFlags::WRITE, weak_auto_destroy)?
+        .into_inner();
+
+    let event_pool_listener = EventPoolListenerRef {
+        event_pool: Arc::downgrade(&event_pool),
+        event_source_capid: event_pool_cap_id,
+    };
+
+    channel.async_recv(event_pool_listener, flags.contains(ChannelAsyncRecvFlags::AUTO_REQUE))
 }

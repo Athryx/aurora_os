@@ -40,3 +40,4 @@
     - their original intent was so you can send your capability to another process and still have control over when its dropped
     - probably just remove weak auto destroy though, and make destroying invalid weaks the default behavior
 - clean up handling of weak capabilities in userspace
+- Add syscalls to remove event pools from listening to an event

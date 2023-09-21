@@ -4,7 +4,6 @@ use bit_utils::Size;
 use crate::{
     CapId,
     CapType,
-    CapFlags,
     KResult,
     CspaceTarget,
     syscall,
