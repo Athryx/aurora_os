@@ -9,10 +9,11 @@ use crate::{
     ChannelSyncFlags,
     CspaceTarget,
     syscall,
-    sysret_1,
+    sysret_0,
+    sysret_1, ChannelAsyncRecvFlags,
 };
 use crate::syscall_nums::*;
-use super::{Capability, Allocator, MessageBuffer, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
+use super::{Capability, Allocator, MessageBuffer, EventPool, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Channel(CapId);
@@ -70,13 +71,29 @@ impl Channel {
         unsafe {
             sysret_1!(syscall!(
                 CHANNEL_SYNC_SEND,
-                flags.bits() as u32 | WEAK_AUTO_DESTROY,
+                flags.bits() | WEAK_AUTO_DESTROY,
                 self.as_usize(),
                 buffer.memory.as_usize(),
                 buffer.offset.bytes(),
                 buffer.size.bytes(),
                 timeout.unwrap_or_default()
             )).map(Size::from_bytes)
+        }
+    }
+
+    pub fn async_send(&self, buffer: &MessageBuffer, event_pool: &EventPool) -> KResult<()> {
+        assert!(buffer.is_readable());
+
+        unsafe {
+            sysret_0!(syscall!(
+                CHANNEL_ASYNC_SEND,
+                WEAK_AUTO_DESTROY,
+                self.as_usize(),
+                buffer.memory.as_usize(),
+                buffer.offset.bytes(),
+                buffer.size.bytes(),
+                event_pool.as_usize()
+            ))
         }
     }
 
@@ -106,13 +123,30 @@ impl Channel {
         unsafe {
             sysret_1!(syscall!(
                 CHANNEL_SYNC_RECV,
-                flags.bits() as u32 | WEAK_AUTO_DESTROY,
+                flags.bits() | WEAK_AUTO_DESTROY,
                 self.as_usize(),
                 buffer.memory.as_usize(),
                 buffer.offset.bytes(),
                 buffer.size.bytes(),
                 timeout.unwrap_or_default()
             )).map(Size::from_bytes)
+        }
+    }
+
+    pub fn async_recv(&self, event_pool: &EventPool, auto_reque: bool) -> KResult<()> {
+        let flags = if auto_reque {
+            ChannelAsyncRecvFlags::AUTO_REQUE
+        } else {
+            ChannelAsyncRecvFlags::empty()
+        };
+
+        unsafe {
+            sysret_0!(syscall!(
+                CHANNEL_ASYNC_RECV,
+                flags.bits() | WEAK_AUTO_DESTROY,
+                self.as_usize(),
+                event_pool.as_usize()
+            ))
         }
     }
 }
