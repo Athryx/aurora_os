@@ -7,8 +7,8 @@ use core::mem::size_of;
 
 use bytemuck::{Pod, Zeroable, PodCastError, try_from_bytes, try_cast_slice};
 
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 #[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct StackInfo {
     pub process_data_address: usize,
     pub process_data_size: usize,

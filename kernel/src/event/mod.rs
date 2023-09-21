@@ -1,4 +1,4 @@
-use sys::CapId;
+use sys::{CapId, Event, MessageSent};
 use bit_utils::Size;
 
 use crate::prelude::*;
@@ -14,14 +14,17 @@ mod queue_event_emitter;
 
 #[derive(Debug)]
 pub struct UserspaceBuffer {
+    /// The capability id the buffer was created from, stored here so send events can tell userspace correct id
+    memory_id: CapId,
     memory: Weak<Memory>,
     offset: usize,
     buffer_size: usize,
 }
 
 impl UserspaceBuffer {
-    pub fn new(memory: Weak<Memory>, offset: usize, buffer_size: usize) -> Self {
+    pub fn new(memory_id: CapId, memory: Weak<Memory>, offset: usize, buffer_size: usize) -> Self {
         UserspaceBuffer {
+            memory_id,
             memory,
             offset,
             buffer_size,
@@ -105,6 +108,14 @@ pub struct EventPoolListenerRef {
 }
 
 impl EventPoolListenerRef {
+    pub fn write_event<T: MemoryCopySrc + ?Sized>(&self, src: &T) -> KResult<()> {
+        let Some(event_pool) = self.event_pool.upgrade() else {
+            return Err(SysErr::InvlWeak);
+        };
+
+        event_pool.write_event(self.event_source_capid, src)
+    }
+
     /// See [`EventListenerRef`] for details, this behaves exectly the same as and EventListenerRef with an event pool
     pub fn write_channel_message(&self, src: &UserspaceBuffer) -> KResult<Option<Size>> {
         let Some(event_pool) = self.event_pool.upgrade() else {
@@ -199,7 +210,15 @@ impl EventSenderRef {
                 );
             },
             EventSenderRef::EventPool { send_complete_event, event_data } => {
-                todo!();
+                let event = Event::MessageSent(MessageSent {
+                    channel_id: send_complete_event.event_source_capid.into(),
+                    message_buffer_id: event_data.memory_id.into(),
+                    message_buffer_offset: event_data.offset,
+                    message_buffer_len: event_data.buffer_size,
+                }).as_raw();
+
+                // ignore errors, there is no where to report them to
+                let _ = send_complete_event.write_event(event.as_bytes());
             },
         }
     }

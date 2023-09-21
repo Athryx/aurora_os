@@ -220,7 +220,10 @@ impl CapabilitySpace {
             .downgrade()
             .into_inner();
 
-        Ok(UserspaceBuffer::new(memory, buffer_offset, buffer_size))
+        let memory_cap_id = CapId::try_from(memory_id)
+            .ok_or(SysErr::InvlId)?;
+
+        Ok(UserspaceBuffer::new(memory_cap_id, memory, buffer_offset, buffer_size))
     }
 }
 

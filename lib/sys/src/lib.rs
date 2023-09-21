@@ -5,6 +5,8 @@ pub mod syscall_nums;
 
 mod cap;
 pub use cap::*;
+mod events;
+pub use events::*;
 mod flags;
 pub use flags::*;
 mod init_info;
