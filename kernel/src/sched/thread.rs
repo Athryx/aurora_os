@@ -1,5 +1,6 @@
 use core::sync::atomic::{AtomicUsize, Ordering, AtomicBool};
 
+use crate::arch::x64::{wrmsr, FSBASE_MSR};
 use crate::cap::CapObject;
 use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::address_space::AddressSpace;
@@ -68,6 +69,8 @@ pub struct Thread {
     pub is_alive: AtomicBool,
     // this has to be atomic usize because it is written to in assembly
     pub rsp: AtomicUsize,
+    // address of thread local data for userspace
+    pub thread_local_pointer: AtomicUsize,
     kernel_stack: KernelStack,
     thread_group: Weak<ThreadGroup>,
     address_space: Arc<AddressSpace>,
@@ -89,6 +92,7 @@ impl Thread {
             wake_reason: IMutex::new(WakeReason::None),
             is_alive: AtomicBool::new(true),
             rsp: AtomicUsize::new(rsp),
+            thread_local_pointer: AtomicUsize::new(0),
             kernel_stack,
             thread_group,
             address_space,
@@ -135,6 +139,19 @@ impl Thread {
     /// Gets the wake reason of this thread
     pub fn wake_reason(&self) -> WakeReason {
         *self.wake_reason.lock()
+    }
+
+    pub fn thread_local_pointer(&self) -> usize {
+        self.thread_local_pointer.load(Ordering::Acquire)
+    }
+
+    /// Writes the thread local pointer of this thread into thread local register
+    pub fn load_thread_local_pointer(&self) {
+        wrmsr(FSBASE_MSR, self.thread_local_pointer() as u64)
+    }
+
+    pub fn set_thread_local_pointer(&self, data: usize) {
+        self.thread_local_pointer.store(data, Ordering::Release);
     }
 
     /// Sets this threads state and incraments the generation, only if the old state is `old_state`

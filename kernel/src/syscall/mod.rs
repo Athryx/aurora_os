@@ -238,6 +238,7 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		THREAD_DESTROY => sysret_0!(syscall_1!(thread_destroy, vals), vals),
 		THREAD_SUSPEND => sysret_0!(syscall_1!(thread_suspend, vals), vals),
 		THREAD_RESUME => sysret_0!(syscall_1!(thread_resume, vals), vals),
+		THREAD_SET_PROPERTY => sysret_0!(syscall_2!(thread_set_property, vals), vals),
 		CAP_CLONE => sysret_1!(syscall_3!(cap_clone, vals), vals),
 		CAP_DESTROY => sysret_0!(syscall_2!(cap_destroy, vals), vals),
 		ADDRESS_SPACE_NEW => sysret_1!(syscall_1!(address_space_new, vals), vals),

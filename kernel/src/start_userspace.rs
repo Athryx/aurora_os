@@ -238,6 +238,7 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
         capability_space_id,
         allocator_id,
         main_thread_id: thread_id,
+        stack_region_start_address: STACK_ADDRESS,
         aslr_seed: EARLY_INIT_ASLR_SEED,
     };
 

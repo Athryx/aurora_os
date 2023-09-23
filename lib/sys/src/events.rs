@@ -2,39 +2,29 @@ use core::mem::size_of;
 
 use bytemuck::{Pod, Zeroable, AnyBitPattern, try_from_bytes};
 use bit_utils::align_of;
+use strum::FromRepr;
 
 use crate::CapId;
 
 macro_rules! create_event_types {
     ($( $events:ident ),*,) => {
         #[repr(usize)]
+        #[derive(FromRepr)]
         enum EventNums {
             $(
                 $events,
             )*
             // this one is special because it is variably sized
             MessageRecieved,
-            Invalid,
         }
 
         impl EventNums {
-            fn from_id(n: usize) -> Option<EventNums> {
-                if n >= Self::Invalid as usize {
-                    None
-                } else {
-                    unsafe {
-                        core::mem::transmute(n)
-                    }
-                }
-            }
-
             fn event_size(&self) -> usize {
                 match self {
                     $(
                         Self::$events => size_of::<$events>() + size_of::<Self>(),
                     )*
                     Self::MessageRecieved => panic!("message recieved is unsized"),
-                    Self::Invalid => panic!("invalid event num"),
                 }
             }
         }
@@ -116,7 +106,7 @@ macro_rules! create_event_types {
             fn next(&mut self) -> Option<Self::Item> {
                 self.assert_aligned();
 
-                let event_type = EventNums::from_id(self.take()?)?;
+                let event_type = EventNums::from_repr(self.take()?)?;
         
                 match event_type {
                     $(
@@ -134,7 +124,6 @@ macro_rules! create_event_types {
                             message_data,
                         }))
                     },
-                    EventNums::Invalid => unreachable!(),
                 }
             }
         }

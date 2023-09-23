@@ -18,12 +18,16 @@ use context::Context;
 use sync::{Once, Mutex, MutexGuard};
 use env::{Namespace, THIS_NAMESPACE};
 
+use prelude::*;
+use thread::{ThreadLocalData, Thread};
+
 mod allocator;
 mod context;
 pub mod collections;
 pub mod env;
 pub mod prelude;
 pub mod process;
+pub mod thread;
 mod sync;
 
 static THIS_CONTEXT: Once<Context> = Once::new();
@@ -92,7 +96,7 @@ impl TryFrom<ProcessMemoryEntry> for MappedRegion {
     }
 }
 
-/// Performs all the initilization required for memory mapping and allocation to work
+/// Performs all the initilization required for memory mapping, allocation, and threading to work
 pub fn init_allocation(init_data: ProcessInitData, memory_entries: &[ProcessMemoryEntry]) -> Result<(), InitError> {
     let context = init_data.try_into()?;
     THIS_CONTEXT.call_once(|| context);
@@ -106,6 +110,19 @@ pub fn init_allocation(init_data: ProcessInitData, memory_entries: &[ProcessMemo
     }
 
     ADDR_SPACE.call_once(|| Mutex::new(addr_space));
+
+    let main_thread_id = CapId::try_from(init_data.main_thread_id)
+        .ok_or(InitError::InvalidCapId)?;
+    let main_sys_thread = sys::Thread::from_cap_id(main_thread_id)
+        .ok_or(InitError::InvalidCapId)?;
+
+    let main_thread = Thread::new(
+        Some(String::from("main_thread")),
+        main_sys_thread,
+        init_data.stack_region_start_address,
+    );
+
+    ThreadLocalData::init(main_thread);
 
     Ok(())
 }

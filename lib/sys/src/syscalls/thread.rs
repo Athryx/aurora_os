@@ -1,4 +1,5 @@
 use serde::{Serialize, Deserialize};
+use strum::FromRepr;
 
 use crate::{
     CapId,
@@ -165,6 +166,30 @@ impl Thread {
                 self.as_usize()
             ))
         }
+    }
+}
+
+#[repr(usize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromRepr)]
+pub enum ThreadProperty {
+    ThreadLocalPointer,
+}
+
+impl Thread {
+    pub fn set_property(property: ThreadProperty, data: usize) -> KResult<()> {
+        unsafe {
+            sysret_0!(syscall!(
+                THREAD_SET_PROPERTY,
+                0,
+                property as usize,
+                data
+            ))
+        }
+    }
+
+    pub fn set_local_pointer(local_pointer: usize) {
+        Self::set_property(ThreadProperty::ThreadLocalPointer, local_pointer)
+            .expect("set local pointer should not fail");
     }
 }
 

@@ -405,12 +405,13 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
                 .checked_add(padding.end.bytes_aligned())?
         };
         let region_size = region_size.ok_or(AddrSpaceError::Overflow)?;
+        let region_size = Size::from_bytes(region_size).as_aligned();
 
         // do a first pass to compute the total number of possible places the region could be mapped at
         let mut available_map_positions = 0;
         for (_, size) in self.iter_free_regions() {
-            if size.bytes() >= region_size {
-                available_map_positions += size.pages_rounded() + 1;
+            if size >= region_size {
+                available_map_positions += size.pages_rounded() - region_size.pages_rounded() + 1;
             }
         }
 
@@ -424,8 +425,8 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
 
         // do a second pass to find out which address was actually selected
         for (address, size) in self.iter_free_regions() {
-            if size.bytes() >= region_size {
-                let available_positions = size.pages_rounded() + 1;
+            if size >= region_size {
+                let available_positions = size.pages_rounded() - region_size.pages_rounded() + 1;
 
                 if map_position < available_positions {
                     let base_address = address + map_position * PAGE_SIZE;

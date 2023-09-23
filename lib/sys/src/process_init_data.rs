@@ -24,6 +24,7 @@ pub struct ProcessInitData {
     pub capability_space_id: usize,
     pub allocator_id: usize,
     pub main_thread_id: usize,
+    pub stack_region_start_address: usize,
     pub aslr_seed: [u8; 32]
 }
 

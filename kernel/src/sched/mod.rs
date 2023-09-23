@@ -6,7 +6,7 @@ pub use thread::{ThreadState, Thread, ThreadRef, Tid, WakeReason};
 pub use thread_group::{ThreadGroup, ThreadStartMode};
 use thread_map::ThreadMap;
 use crate::alloc::{root_alloc_ref, root_alloc_page_ref};
-use crate::arch::x64::{IntDisable, set_cr3};
+use crate::arch::x64::{IntDisable, set_cr3, wrmsr, FSBASE_MSR};
 use crate::cap::address_space::AddressSpace;
 use crate::cap::capability_space::CapabilitySpace;
 use crate::config::SCHED_TIME;
@@ -157,6 +157,8 @@ pub fn switch_current_thread_to(state: ThreadState, _int_disable: IntDisable, po
     // get the new rsp and address space we have to switch to
     let new_rsp = new_thread.rsp.load(Ordering::Acquire);
     let new_addr_space = new_thread.address_space().get_cr3().as_usize();
+
+    new_thread.load_thread_local_pointer();
 
     // set syscall rsp
     cpu_local_data().syscall_rsp.store(new_thread.syscall_rsp(), Ordering::Release);

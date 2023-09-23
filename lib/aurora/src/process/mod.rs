@@ -252,6 +252,7 @@ fn spawn_process(exe_data: &[u8], namespace: &Namespace) -> Result<Child, Proces
         capability_space_id,
         allocator_id,
         main_thread_id,
+        stack_region_start_address: stack.remote_address,
         aslr_seed,
     };
 

@@ -1,4 +1,4 @@
-use sys::{CapFlags, ThreadNewFlags, ThreadSuspendFlags, ThreadDestroyFlags};
+use sys::{CapFlags, ThreadNewFlags, ThreadSuspendFlags, ThreadDestroyFlags, ThreadProperty};
 
 use crate::alloc::HeapRef;
 use crate::arch::x64::IntDisable;
@@ -205,4 +205,22 @@ pub fn thread_resume(options: u32, thread_id: usize) -> KResult<()> {
         .into_inner();
 
     Thread::resume_suspended_thread(&thread)
+}
+
+pub fn thread_set_property(_options: u32, property: usize, data: usize) -> KResult<()> {
+    let property = ThreadProperty::from_repr(property)
+        .ok_or(SysErr::InvlArgs)?;
+
+    let _int_disable = IntDisable::new();
+
+    let current_thread = cpu_local_data().current_thread();
+
+    match property {
+        ThreadProperty::ThreadLocalPointer => {
+            current_thread.set_thread_local_pointer(data);
+            current_thread.load_thread_local_pointer();
+        },
+    }
+
+    Ok(())
 }
