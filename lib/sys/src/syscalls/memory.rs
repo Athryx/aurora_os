@@ -24,17 +24,8 @@ pub struct Memory {
 impl Capability for Memory {
     const TYPE: CapType = CapType::Memory;
 
-    fn from_cap_id(cap_id: CapId) -> Option<Self> {
-        if cap_id.cap_type() == CapType::Memory {
-            let out = Self {
-                id: cap_id,
-                size: None,
-            };
-
-            Some(out)
-        } else {
-            None
-        }
+    fn cloned_new_id(&self, cap_id: CapId) -> Option<Self> {
+        Self::from_capid_size(cap_id, self.size)
     }
 
     fn cap_id(&self) -> CapId {
@@ -43,6 +34,17 @@ impl Capability for Memory {
 }
 
 impl Memory {
+    pub fn from_capid_size(cap_id: CapId, size: Option<Size>) -> Option<Self> {
+        if cap_id.cap_type() == CapType::Memory {
+            Some(Self {
+                id: cap_id,
+                size,
+            })
+        } else {
+            None
+        }
+    }
+
     pub fn new(flags: CapFlags, allocator: &Allocator, size: Size) -> KResult<Self> {
         unsafe {
             sysret_2!(syscall!(

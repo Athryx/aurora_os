@@ -1,6 +1,6 @@
 use core::mem::size_of;
 
-use crate::allocator::addr_space::{RemoteAddrSpaceManager, AddrSpaceError, MapMemoryArgs, RegionPadding};
+use crate::allocator::addr_space::{RemoteAddrSpaceManager, AddrSpaceError, MapMemoryArgs, RegionPadding, MappingTarget};
 use crate::env::{Args, Namespace};
 
 use aser::{Value, to_bytes_count_cap, AserError, AserCloneCapsError};
@@ -260,15 +260,17 @@ fn spawn_process(exe_data: &[u8], namespace: &Namespace) -> Result<Child, Proces
     let mut startup_data = Vec::new();
     startup_data.extend_from_slice(bytes_of(&process_init_data));
 
-    for mapping in manager.memory_regions.iter() {
+    for mapping in manager.memory_regions.iter_mut() {
         // we don't care about communicating reserved memory regions to new process
-        if let Some(memory) = &mapping.memory_cap {
+        if let MappingTarget::Memory(memory) = &mut mapping.map_target {
             let memory_id = cap_clone(dst_cspace, CspaceTarget::Current, memory, CapFlags::all())?
                 .into_cap_id()
                 .into();
 
             let memory_entry = ProcessMemoryEntry {
                 memory_cap_id: memory_id,
+                // panic safety: we created memory so we should have a valid id and size
+                memory_size: memory.size().unwrap().bytes(),
                 map_address: mapping.address,
                 map_size: mapping.size.bytes(),
                 padding_start: mapping.padding.start.bytes(),

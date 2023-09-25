@@ -5,6 +5,7 @@ use rand_chacha::ChaCha20Rng;
 use sys::AddressSpace;
 use sys::Allocator;
 use sys::CspaceTarget;
+use sys::EventPool;
 use sys::cap_clone;
 use thiserror_no_std::Error;
 use bit_utils::{Size, PAGE_SIZE, LOWER_HALF_END, KERNEL_RESERVED_START, HIGHER_HALF_START};
@@ -41,6 +42,8 @@ pub enum AddrSpaceError {
     Overflow,
     #[error("There is no available region in the address space where the mapping will fit")]
     NoAvailableRegion,
+    #[error("There is a mismatch between the event pools reported size and its actual size")]
+    SizeMismatch,
     #[error("No mapping at address {0} exists")]
     InvalidAddress(usize),
     #[error("Syscall error when mapping memory: {0:?}")]
@@ -54,8 +57,37 @@ pub struct RegionPadding {
 }
 
 #[derive(Debug)]
+pub enum MappingTarget {
+    Memory(Memory),
+    EventPool(EventPool),
+    Empty,
+}
+
+impl MappingTarget {
+    pub fn is_empty(&self) -> bool {
+        matches!(self, MappingTarget::Empty)
+    }
+
+    pub fn memory(&self) -> Option<&Memory> {
+        match self {
+            Self::Memory(memory) => Some(memory),
+            _ => None,
+        }
+    }
+}
+
+impl From<Option<Memory>> for MappingTarget {
+    fn from(value: Option<Memory>) -> Self {
+        match value {
+            Some(memory) => MappingTarget::Memory(memory),
+            None => MappingTarget::Empty,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct MappedRegion {
-    pub(crate) memory_cap: Option<Memory>,
+    pub(crate) map_target: MappingTarget,
     pub(crate) address: usize,
     pub(crate) size: Size,
     pub(crate) padding: RegionPadding,
@@ -273,7 +305,7 @@ impl LocalAddrSpaceManager {
         let mut out = AddrSpaceManager {
             memory_regions: MemoryCapStorage::new(&mut aslr_rng)?,
             end_region: MappedRegion {
-                memory_cap: None,
+                map_target: MappingTarget::Empty,
                 address: MAX_MAP_ADDR,
                 size: Size::default(),
                 padding: RegionPadding::default(),
@@ -295,7 +327,7 @@ impl<'a> RemoteAddrSpaceManager<'a> {
         let mut out = AddrSpaceManager {
             memory_regions: Vec::new(),
             end_region: MappedRegion {
-                memory_cap: None,
+                map_target: MappingTarget::Empty,
                 address: MAX_MAP_ADDR,
                 size: Size::default(),
                 padding: RegionPadding::default(),
@@ -470,6 +502,19 @@ pub struct MapMemoryResult<'a> {
     pub memory: Option<&'a Memory>,
 }
 
+#[derive(Debug)]
+pub struct MapEventPoolArgs {
+    pub event_pool: EventPool,
+    pub address: Option<usize>,
+    pub padding: RegionPadding,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MapEventPoolResult {
+    pub address: usize,
+    pub size: Size,
+}
+
 impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
     /// Maps memory into the address space, see [`MapMemoryArgs`] for more details
     // FIXME: check if padding goes below zero or above max userspace address, or non canonical address
@@ -521,7 +566,7 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
         };
 
         let region = MappedRegion {
-            memory_cap: memory,
+            map_target: memory.into(),
             address,
             size,
             padding: args.padding,
@@ -530,7 +575,7 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
         let region_index = self.insert_region(region)?;
         let region = self.memory_regions.get(region_index).unwrap();
 
-        if let Some(memory) = &region.memory_cap {
+        if let MappingTarget::Memory(memory) = &region.map_target {
             // TODO: have a way to not specify max size pages
             let result = self.address_space
                 .map_memory(&memory, address, Some(size), args.flags)
@@ -548,20 +593,76 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
             address,
             size,
             // can't use region here because borrow checker issues
-            memory: self.memory_regions.get(region_index).unwrap().memory_cap.as_ref(),
+            memory: self.memory_regions.get(region_index).unwrap().map_target.memory(),
         })
     }
 
-    /// Gets the memory capability currently in use by the given mapping, or None if none is in use
-    pub fn get_mapping_capability(&self, address: usize) -> Result<Option<&Memory>, AddrSpaceError> {
-        Ok(self.get_region(address)?.memory_cap.as_ref())
+    pub fn map_event_pool(&mut self, args: MapEventPoolArgs) -> Result<MapEventPoolResult, AddrSpaceError> {
+        let padding = args.padding;
+        let size = args.event_pool.size();
+
+        let region_size: Option<usize> = try {
+            size.bytes_aligned()
+                .checked_add(padding.start.bytes_aligned())?
+                .checked_add(padding.end.bytes_aligned())?
+        };
+        let region_size = region_size.ok_or(AddrSpaceError::Overflow)?;
+
+        if region_size == 0 {
+            return Err(AddrSpaceError::ZeroSizeMapping);
+        }
+
+        let address = match args.address {
+            Some(address) => {
+                if !self.is_region_free(address, size, args.padding) {
+                    return Err(AddrSpaceError::MappingOverlap);
+                }
+
+                address
+            },
+            None => self.find_map_address(size, args.padding)?,
+        };
+
+
+        let map_size = self.address_space.map_event_pool(&args.event_pool, address)?;
+        if map_size != size {
+            // panic safety: this address was just mapped
+            self.address_space.unmap_memory(address).unwrap();
+            return Err(AddrSpaceError::SizeMismatch);
+        }
+
+        let region = MappedRegion {
+            map_target: MappingTarget::EventPool(args.event_pool),
+            address,
+            size,
+            padding,
+        };
+
+        match self.insert_region(region) {
+            Ok(_) => {
+                Ok(MapEventPoolResult {
+                    address,
+                    size,
+                })
+            },
+            Err(error) => {
+                // panic safety: this address was just mapped
+                self.address_space.unmap_memory(address).unwrap();
+                Err(error)
+            }
+        }
+    }
+
+    /// Gets the mapping target currently in use by the given mapping
+    pub fn get_mapping_target(&self, address: usize) -> Result<&MappingTarget, AddrSpaceError> {
+        Ok(&self.get_region(address)?.map_target)
     }
 
     /// Unmaps the given memory and drops the memory capability
     pub unsafe fn unmap_memory(&mut self, address: usize) -> Result<(), AddrSpaceError> {
         let region = self.remove_region(address)?;
 
-        if region.memory_cap.is_some() {
+        if !region.map_target.is_empty() {
             self.address_space.unmap_memory(address)
                 .expect("failed to unmap previously mapped memory");
         }

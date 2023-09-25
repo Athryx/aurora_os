@@ -1,4 +1,4 @@
-use sys::{CapId, Event, MessageSent};
+use sys::{CapId, Event, EventId, MessageSent};
 use bit_utils::Size;
 
 use crate::prelude::*;
@@ -104,7 +104,7 @@ pub struct ThreadListenerRef {
 #[derive(Debug)]
 pub struct EventPoolListenerRef {
     pub event_pool: Weak<EventPool>,
-    pub event_source_capid: CapId,
+    pub event_id: EventId,
 }
 
 impl EventPoolListenerRef {
@@ -113,7 +113,7 @@ impl EventPoolListenerRef {
             return Err(SysErr::InvlWeak);
         };
 
-        event_pool.write_event(self.event_source_capid, src)
+        event_pool.write_event(self.event_id, src)
     }
 
     /// See [`EventListenerRef`] for details, this behaves exectly the same as and EventListenerRef with an event pool
@@ -122,7 +122,7 @@ impl EventPoolListenerRef {
             return Ok(None);
         };
 
-        match event_pool.write_event(self.event_source_capid, src) {
+        match event_pool.write_event(self.event_id, src) {
             // this error is treated as the sender is now invalid, move onto next one
             Err(SysErr::OutOfCapacity) => return Ok(None),
             Err(error) => return Err(error),
@@ -211,7 +211,7 @@ impl EventSenderRef {
             },
             EventSenderRef::EventPool { send_complete_event, event_data } => {
                 let event = Event::MessageSent(MessageSent {
-                    channel_id: send_complete_event.event_source_capid.into(),
+                    event_id: send_complete_event.event_id,
                     message_buffer_id: event_data.memory_id.into(),
                     message_buffer_offset: event_data.offset,
                     message_buffer_len: event_data.buffer_size,

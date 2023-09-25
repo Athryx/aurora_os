@@ -1,4 +1,4 @@
-use sys::{CapFlags, ChannelSyncFlags, CapId, ChannelAsyncRecvFlags};
+use sys::{CapFlags, ChannelSyncFlags, ChannelAsyncRecvFlags, EventId};
 
 use crate::alloc::HeapRef;
 use crate::cap::capability_space::CapabilitySpace;
@@ -216,7 +216,10 @@ pub fn channel_async_send(
     msg_buf_offset: usize,
     msg_buf_size: usize,
     event_pool_id: usize,
+    event_id: usize,
 ) -> KResult<()> {
+    let event_id = EventId::from_u64(event_id as u64);
+
     let _int_disable = IntDisable::new();
 
     let (channel, buffer) = channel_handle_args(
@@ -229,16 +232,13 @@ pub fn channel_async_send(
         CapFlags::READ,
     )?;
 
-    let event_pool_cap_id = CapId::try_from(event_pool_id)
-        .ok_or(SysErr::InvlId)?;
-
     let event_pool = CapabilitySpace::current()
         .get_event_pool_with_perms(event_pool_id, CapFlags::WRITE, options_weak_autodestroy(options))?
         .into_inner();
 
     let event_pool_listener = EventPoolListenerRef {
         event_pool: Arc::downgrade(&event_pool),
-        event_source_capid: event_pool_cap_id,
+        event_id,
     };
 
     channel.async_send(event_pool_listener, buffer)
@@ -248,9 +248,12 @@ pub fn channel_async_recv(
     options: u32,
     channel_id: usize,
     event_pool_id: usize,
+    event_id: usize,
 ) -> KResult<()> {
     let weak_auto_destroy = options_weak_autodestroy(options);
     let flags = ChannelAsyncRecvFlags::from_bits_truncate(options);
+
+    let event_id = EventId::from_u64(event_id as u64);
 
     let _int_disable = IntDisable::new();
 
@@ -260,16 +263,13 @@ pub fn channel_async_recv(
         .get_channel_with_perms(channel_id, CapFlags::WRITE, weak_auto_destroy)?
         .into_inner();
 
-    let event_pool_cap_id = CapId::try_from(event_pool_id)
-        .ok_or(SysErr::InvlId)?;
-
     let event_pool = cspace
         .get_event_pool_with_perms(event_pool_id, CapFlags::WRITE, weak_auto_destroy)?
         .into_inner();
 
     let event_pool_listener = EventPoolListenerRef {
         event_pool: Arc::downgrade(&event_pool),
-        event_source_capid: event_pool_cap_id,
+        event_id,
     };
 
     channel.async_recv(event_pool_listener, flags.contains(ChannelAsyncRecvFlags::AUTO_REQUE))

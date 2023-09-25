@@ -45,7 +45,7 @@ pub fn event_pool_map(
     addr_space_id: usize,
     event_pool_id: usize,
     addr: usize,
-) -> KResult<()> {
+) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
     let addr = VirtAddr::try_new_aligned(addr)?;
 
@@ -62,6 +62,7 @@ pub fn event_pool_map(
         .into_inner();
 
     AddressSpace::map_event_pool(&addr_space, addr, event_pool)
+        .map(Size::pages_rounded)
 }
 
 pub fn event_pool_await(options: u32, event_pool_id: usize, timeout: usize) -> KResult<(usize, usize)> {

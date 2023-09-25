@@ -129,6 +129,7 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
 
         let region = ProcessMemoryEntry {
             memory_cap_id: memory_id.into(),
+            memory_size: memory.inner_read().size().bytes(),
             map_address: address,
             map_size: size.bytes(),
             padding_start: 0,

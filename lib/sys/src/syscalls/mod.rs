@@ -277,7 +277,7 @@ pub trait Capability {
     /// Create a new capability struct wrapping an existing CapId
     /// 
     /// Returns None if the cap_type of `cap_id` is not the right type
-    fn from_cap_id(cap_id: CapId) -> Option<Self>
+    fn cloned_new_id(&self, cap_id: CapId) -> Option<Self>
         where Self: Sized;
 
     fn cap_id(&self) -> CapId;
@@ -331,10 +331,12 @@ macro_rules! make_cap_fn_move {
                 true,
             )?;
 
+            let out = cap.cloned_new_id(cap_id).expect(INVALID_CAPID_MESSAGE);
+
             // old cap was destroyed by syscall
             core::mem::forget(cap);
 
-            Ok(T::from_cap_id(cap_id).expect("invalid capid returned by kernel"))
+            Ok(out)
         }        
     };
 }
@@ -356,7 +358,7 @@ macro_rules! make_cap_fn_clone {
                 false,
             )?;
 
-            Ok(T::from_cap_id(cap_id).expect("invalid capid returned by kernel"))
+            Ok(cap.cloned_new_id(cap_id).expect(INVALID_CAPID_MESSAGE))
         }        
     };
 }

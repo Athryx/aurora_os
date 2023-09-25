@@ -26,12 +26,8 @@ pub struct Thread(CapId);
 impl Capability for Thread {
     const TYPE: CapType = CapType::Thread;
 
-    fn from_cap_id(cap_id: CapId) -> Option<Self> {
-        if cap_id.cap_type() == CapType::Thread {
-            Some(Thread(cap_id))
-        } else {
-            None
-        }
+    fn cloned_new_id(&self, cap_id: CapId) -> Option<Self> {
+        Self::from_cap_id(cap_id)
     }
 
     fn cap_id(&self) -> CapId {
@@ -46,6 +42,14 @@ pub enum ThreadStartMode {
 }
 
 impl Thread {
+    pub fn from_cap_id(cap_id: CapId) -> Option<Self> {
+        if cap_id.cap_type() == CapType::Thread {
+            Some(Thread(cap_id))
+        } else {
+            None
+        }
+    }
+
     pub fn new(
         allocator: &Allocator,
         thread_group: &ThreadGroup,

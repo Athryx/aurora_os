@@ -1,4 +1,5 @@
 use core::mem::size_of;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 use bytemuck::{Pod, Zeroable, AnyBitPattern, try_from_bytes};
 use bit_utils::align_of;
@@ -49,6 +50,14 @@ macro_rules! create_event_types {
                     )*
                 }
             }
+
+            pub fn event_id(&self) -> EventId {
+                match self {
+                    $(
+                        Self::$events(event) => event.event_id,
+                    )*
+                }
+            }
         }
 
         pub struct EventParser<'a> {
@@ -91,13 +100,22 @@ macro_rules! create_event_types {
 
         #[derive(Debug, Clone, Copy)]
         pub struct MessageRecievedEvent<'a> {
-            pub channel_id: CapId,
+            pub event_id: EventId,
             pub message_data: &'a [u8],
         }
 
         pub enum EventParseResult<'a> {
             MessageRecieved(MessageRecievedEvent<'a>),
             Event(Event),
+        }
+
+        impl EventParseResult<'_> {
+            pub fn event_id(&self) -> EventId {
+                match self {
+                    Self::MessageRecieved(message_event) => message_event.event_id,
+                    Self::Event(event) => event.event_id(),
+                }
+            }
         }
 
         impl<'a> Iterator for EventParser<'a> {
@@ -113,14 +131,13 @@ macro_rules! create_event_types {
                         EventNums::$events => Some(EventParseResult::Event(Event::$events(self.take()?))),
                     )*
                     EventNums::MessageRecieved => {
-                        let channel_id = self.take()?;
+                        let event_id = EventId(self.take()?);
                         let message_size = self.take()?;
 
-                        let channel_id = CapId::try_from(channel_id)?;
                         let message_data = self.take_bytes(message_size)?;
 
                         Some(EventParseResult::MessageRecieved(MessageRecievedEvent {
-                            channel_id,
+                            event_id,
                             message_data,
                         }))
                     },
@@ -152,6 +169,26 @@ macro_rules! create_event_types {
     };
 }
 
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Pod, Zeroable)]
+pub struct EventId(u64);
+
+impl EventId {
+    pub fn new() -> EventId {
+        static NEXT_EVENT_ID: AtomicU64 = AtomicU64::new(0);
+
+        EventId(NEXT_EVENT_ID.fetch_add(1, Ordering::Relaxed))
+    }
+
+    pub fn from_u64(n: u64) -> Self {
+        EventId(n)
+    }
+
+    pub fn as_u64(&self) -> u64 {
+        self.0
+    }
+}
+
 create_event_types! {
     MessageSent,
 }
@@ -159,7 +196,7 @@ create_event_types! {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct MessageSent {
-    pub channel_id: usize,
+    pub event_id: EventId,
     pub message_buffer_id: usize,
     pub message_buffer_offset: usize,
     pub message_buffer_len: usize,

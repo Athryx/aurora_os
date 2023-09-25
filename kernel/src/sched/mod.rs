@@ -6,7 +6,7 @@ pub use thread::{ThreadState, Thread, ThreadRef, Tid, WakeReason};
 pub use thread_group::{ThreadGroup, ThreadStartMode};
 use thread_map::ThreadMap;
 use crate::alloc::{root_alloc_ref, root_alloc_page_ref};
-use crate::arch::x64::{IntDisable, set_cr3, wrmsr, FSBASE_MSR};
+use crate::arch::x64::{IntDisable, set_cr3};
 use crate::cap::address_space::AddressSpace;
 use crate::cap::capability_space::CapabilitySpace;
 use crate::config::SCHED_TIME;

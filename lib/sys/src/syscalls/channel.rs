@@ -8,6 +8,7 @@ use crate::{
     KResult,
     ChannelSyncFlags,
     CspaceTarget,
+    EventId,
     syscall,
     sysret_0,
     sysret_1, ChannelAsyncRecvFlags,
@@ -21,12 +22,8 @@ pub struct Channel(CapId);
 impl Capability for Channel {
     const TYPE: CapType = CapType::Channel;
 
-    fn from_cap_id(cap_id: CapId) -> Option<Self> {
-        if cap_id.cap_type() == CapType::Channel {
-            Some(Channel(cap_id))
-        } else {
-            None
-        }
+    fn cloned_new_id(&self, cap_id: CapId) -> Option<Self> {
+        Self::from_cap_id(cap_id)
     }
 
     fn cap_id(&self) -> CapId {
@@ -35,6 +32,14 @@ impl Capability for Channel {
 }
 
 impl Channel {
+    pub fn from_cap_id(cap_id: CapId) -> Option<Self> {
+        if cap_id.cap_type() == CapType::Channel {
+            Some(Channel(cap_id))
+        } else {
+            None
+        }
+    }
+
     pub fn new(flags: CapFlags, allocator: &Allocator) -> KResult<Self> {
         unsafe {
             sysret_1!(syscall!(
@@ -81,7 +86,7 @@ impl Channel {
         }
     }
 
-    pub fn async_send(&self, buffer: &MessageBuffer, event_pool: &EventPool) -> KResult<()> {
+    pub fn async_send(&self, buffer: &MessageBuffer, event_pool: &EventPool, event_id: EventId) -> KResult<()> {
         assert!(buffer.is_readable());
 
         unsafe {
@@ -92,7 +97,8 @@ impl Channel {
                 buffer.memory.as_usize(),
                 buffer.offset.bytes(),
                 buffer.size.bytes(),
-                event_pool.as_usize()
+                event_pool.as_usize(),
+                event_id.as_u64() as usize
             ))
         }
     }
@@ -133,7 +139,7 @@ impl Channel {
         }
     }
 
-    pub fn async_recv(&self, event_pool: &EventPool, auto_reque: bool) -> KResult<()> {
+    pub fn async_recv(&self, event_pool: &EventPool, auto_reque: bool, event_id: EventId) -> KResult<()> {
         let flags = if auto_reque {
             ChannelAsyncRecvFlags::AUTO_REQUE
         } else {
@@ -145,7 +151,8 @@ impl Channel {
                 CHANNEL_ASYNC_RECV,
                 flags.bits() | WEAK_AUTO_DESTROY,
                 self.as_usize(),
-                event_pool.as_usize()
+                event_pool.as_usize(),
+                event_id.as_u64() as usize
             ))
         }
     }

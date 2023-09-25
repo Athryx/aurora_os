@@ -18,12 +18,8 @@ pub struct ThreadGroup(CapId);
 impl Capability for ThreadGroup {
     const TYPE: CapType = CapType::ThreadGroup;
 
-    fn from_cap_id(cap_id: CapId) -> Option<Self> {
-        if cap_id.cap_type() == CapType::ThreadGroup {
-            Some(ThreadGroup(cap_id))
-        } else {
-            None
-        }
+    fn cloned_new_id(&self, cap_id: CapId) -> Option<Self> {
+        Self::from_cap_id(cap_id)
     }
 
     fn cap_id(&self) -> CapId {
@@ -32,6 +28,14 @@ impl Capability for ThreadGroup {
 }
 
 impl ThreadGroup {
+    pub fn from_cap_id(cap_id: CapId) -> Option<Self> {
+        if cap_id.cap_type() == CapType::ThreadGroup {
+            Some(ThreadGroup(cap_id))
+        } else {
+            None
+        }
+    }
+
     pub fn new_child_group(&self, allocator: &Allocator) -> KResult<Self> {
         let child_cap_id = unsafe {
             sysret_1!(syscall!(

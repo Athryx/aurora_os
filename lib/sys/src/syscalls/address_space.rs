@@ -23,12 +23,8 @@ pub struct AddressSpace(CapId);
 impl Capability for AddressSpace {
     const TYPE: CapType = CapType::AddressSpace;
 
-    fn from_cap_id(cap_id: CapId) -> Option<Self> {
-        if cap_id.cap_type() == CapType::AddressSpace {
-            Some(AddressSpace(cap_id))
-        } else {
-            None
-        }
+    fn cloned_new_id(&self, cap_id: CapId) -> Option<Self> {
+        Self::from_cap_id(cap_id)
     }
 
     fn cap_id(&self) -> CapId {
@@ -43,6 +39,14 @@ impl Drop for AddressSpace {
 }
 
 impl AddressSpace {
+    pub fn from_cap_id(cap_id: CapId) -> Option<Self> {
+        if cap_id.cap_type() == CapType::AddressSpace {
+            Some(AddressSpace(cap_id))
+        } else {
+            None
+        }
+    }
+
     pub fn new(allocator: &Allocator) -> KResult<Self> {
         let addr_space_id = unsafe {
             sysret_1!(syscall!(
@@ -76,15 +80,15 @@ impl AddressSpace {
         }
     }
 
-    pub fn map_event_pool(&self, event_pool: &EventPool, address: usize) -> KResult<()> {
+    pub fn map_event_pool(&self, event_pool: &EventPool, address: usize) -> KResult<Size> {
         unsafe {
-            sysret_0!(syscall!(
+            sysret_1!(syscall!(
                 EVENT_POOL_MAP,
                 WEAK_AUTO_DESTROY,
                 self.as_usize(),
                 event_pool.as_usize(),
                 address
-            ))
+            )).map(Size::from_pages)
         }
     }
 

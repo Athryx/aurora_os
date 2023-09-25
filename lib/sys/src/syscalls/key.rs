@@ -18,12 +18,8 @@ pub struct Key(CapId);
 impl Capability for Key {
     const TYPE: CapType = CapType::Key;
 
-    fn from_cap_id(cap_id: CapId) -> Option<Self> {
-        if cap_id.cap_type() == CapType::Key {
-            Some(Key(cap_id))
-        } else {
-            None
-        }
+    fn cloned_new_id(&self, cap_id: CapId) -> Option<Self> {
+        Self::from_cap_id(cap_id)
     }
 
     fn cap_id(&self) -> CapId {
@@ -32,6 +28,14 @@ impl Capability for Key {
 }
 
 impl Key {
+    pub fn from_cap_id(cap_id: CapId) -> Option<Self> {
+        if cap_id.cap_type() == CapType::Key {
+            Some(Key(cap_id))
+        } else {
+            None
+        }
+    }
+
     pub fn new(flags: CapFlags, allocator: &Allocator) -> KResult<Self> {
         unsafe {
             sysret_1!(syscall!(

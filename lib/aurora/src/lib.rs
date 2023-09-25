@@ -4,6 +4,7 @@
 #![feature(let_chains)]
 #![feature(slice_ptr_get)]
 #![feature(slice_take)]
+#![feature(negative_impls)]
 
 extern crate alloc;
 
@@ -13,7 +14,7 @@ use sys::{CapId, ThreadGroup, Allocator, Memory, AddressSpace, CapabilitySpace};
 pub use sys::{ProcessInitData, ProcessMemoryEntry, Capability, process_data_from_slice};
 use thiserror_no_std::Error;
 
-use allocator::addr_space::{LocalAddrSpaceManager, AddrSpaceError, RegionPadding, MappedRegion};
+use allocator::addr_space::{LocalAddrSpaceManager, AddrSpaceError, RegionPadding, MappedRegion, MappingTarget};
 use context::Context;
 use sync::{Once, Mutex, MutexGuard};
 use env::{Namespace, THIS_NAMESPACE};
@@ -21,6 +22,7 @@ use env::{Namespace, THIS_NAMESPACE};
 use prelude::*;
 use thread::{ThreadLocalData, Thread};
 
+pub mod async_runtime;
 mod allocator;
 mod context;
 pub mod collections;
@@ -80,7 +82,8 @@ impl TryFrom<ProcessMemoryEntry> for MappedRegion {
 
     fn try_from(value: ProcessMemoryEntry) -> Result<Self, Self::Error> {
         let memory_id = CapId::try_from(value.memory_cap_id).ok_or(InitError::InvalidCapId)?;
-        let memory = Memory::from_cap_id(memory_id).ok_or(InitError::InvalidCapId)?;
+        let memory = Memory::from_capid_size(memory_id, Some(Size::from_bytes(value.memory_size)))
+            .ok_or(InitError::InvalidCapId)?;
 
         let padding = RegionPadding {
             start: Size::from_bytes(value.padding_start),
@@ -88,7 +91,7 @@ impl TryFrom<ProcessMemoryEntry> for MappedRegion {
         };
 
         Ok(MappedRegion {
-            memory_cap: Some(memory),
+            map_target: MappingTarget::Memory(memory),
             address: value.map_address,
             size: Size::from_bytes(value.map_size),
             padding,

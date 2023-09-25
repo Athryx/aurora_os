@@ -1,7 +1,8 @@
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 use core::sync::atomic::{AtomicUsize, Ordering};
 use core::arch::asm;
 use alloc::boxed::Box;
+use alloc::rc::Rc;
 use alloc::vec::Vec;
 use core::any::Any;
 
@@ -12,8 +13,9 @@ use super::Thread;
 pub struct ThreadLocalData {
     self_addr: AtomicUsize,
     pub(super) thread: Thread,
+    currently_dropping: Cell<bool>,
     // TODO: find a faster way to do this, this might be a bit slow
-    data: RefCell<Vec<Option<Box<dyn Any>>>>,
+    data: RefCell<Vec<Option<Rc<dyn Any>>>>,
 }
 
 impl ThreadLocalData {
@@ -22,6 +24,7 @@ impl ThreadLocalData {
         let data = Box::new(ThreadLocalData {
             self_addr: AtomicUsize::new(0),
             thread,
+            currently_dropping: Cell::new(false),
             data: RefCell::new(Vec::new()),
         });
 
@@ -56,38 +59,57 @@ impl ThreadLocalData {
         }
     }
 
-    /// Gets the local data at index i and calls `f` with the given value, and returns the result of f
-    /// 
-    /// If the value stored at that index is the wrong type, returns None
-    /// 
-    /// If no value is currently present at the given index, calls `init_fn` to initialize the value 
-    /// 
-    /// # Safety
-    /// 
-    /// Thread local data must have been initialized
-    pub unsafe fn with_index<T, F, R>(&self, index: usize, f: F, init_fn: fn() -> T) -> Option<R>
-        where T: 'static,
-            F: FnOnce(&T) -> R {
-        
-        let local_data = unsafe {
-            Self::get().as_ref().unwrap()
-        };
+    fn currently_dropping(&self) -> bool {
+        self.currently_dropping.get()
+    }
 
-        let mut data = local_data.data.borrow_mut();
-
-        // fill vector with nones until index is valid
-        while index >= data.len() {
-            data.push(None);
+    /// Initializes the thread local variable at the given index if it is not initialized yet
+    fn init_index<T: 'static>(&self, index: usize, init_fn: impl FnOnce() -> T) {
+        if self.currently_dropping() {
+            panic!("cannot initialize new tls slot while thread local data is being dropped");
         }
 
-        if let Some(elem) = &data[index] {
-            Some(f(elem.downcast_ref::<T>()?))
-        } else {
-            let new_elem = Box::new(init_fn());
-            let out =f(&new_elem);
+        let data = self.data.borrow();
+        let elem = data.get(index)
+            .map(Option::as_ref)
+            .flatten();
+
+        if elem.is_none() {
+            // avoid holding borrowed refcell while calling init_fn so references
+            // to other thread local variables doesn't cause a panic
+            drop(data);
+
+            let new_elem = Rc::new(init_fn());
+
+            let mut data = self.data.borrow_mut();
+
+            // fill vector with nones until index is valid
+            while index >= data.len() {
+                data.push(None);
+            }
+
             data[index] = Some(new_elem);
-            Some(out)
         }
+    }
+
+    /// Gets the local data at `index` and calls `f` with the given value, and returns the result of f
+    /// 
+    /// Returns `None` if the slot at `index` is not initialized or if the value in the slot is the wrong type
+    fn with_index<T: 'static, R>(&self, index: usize, f: impl FnOnce(&T) -> R) -> Option<R> {
+        let elem = self.data.borrow()
+            .get(index)?
+            .as_ref()?
+            .clone(); // clone out of the rc so if `f` calls with_index recursively no panic occurs
+
+        Some(f(elem.downcast_ref::<T>()?))
+    }
+}
+
+impl Drop for ThreadLocalData {
+    fn drop(&mut self) {
+        // technically at this point it is undefined behavior if a destructor references the thread local data,
+        // but this will hopefully cause a panic instead of a segfault
+        self.currently_dropping.set(true);
     }
 }
 
@@ -98,10 +120,17 @@ const CURRENTLY_INITIALIZING: usize = 0xfffffffffffffffd;
 
 pub struct LocalKey<T: 'static> {
     index: AtomicUsize,
-    init_fn: fn() -> T,
+    init_fn: Option<fn() -> T>,
 }
 
 impl<T: 'static> LocalKey<T> {
+    pub const fn new(init_fn: Option<fn() -> T>) -> Self {
+        LocalKey {
+            index: AtomicUsize::new(UNINITIALIZED_INDEX),
+            init_fn,
+        }
+    }
+
     fn get_index(&self) -> usize {
         // relaxed ordering is fine here because these operations are not used to synchronize anything
         // the only thing that matters is the index is unique
@@ -126,6 +155,8 @@ impl<T: 'static> LocalKey<T> {
                         if key_index != CURRENTLY_INITIALIZING {
                             break key_index;
                         }
+
+                        core::hint::spin_loop();
                     }
                 } else {
                     // index is already initialized, return the index
@@ -142,10 +173,24 @@ impl<T: 'static> LocalKey<T> {
             ThreadLocalData::get().as_ref().unwrap()
         };
 
-        unsafe {
-            local_data.with_index(self.get_index(), f, self.init_fn)
-                .expect("failed to get thread local variable")
+        let index = self.get_index();
+
+        if let Some(init_fn) = self.init_fn {
+            local_data.init_index(index, init_fn);
         }
+
+        local_data.with_index(self.get_index(), f)
+            .expect("failed to get thread local variable")
+    }
+
+    pub fn init_with(&self, f: impl FnOnce() -> T) {
+        // fixme: this is not actually safe, caller might call before thread local variable is initialized
+        // this function is still marked as safe for compatability with rust std definition
+        let local_data = unsafe {
+            ThreadLocalData::get().as_ref().unwrap()
+        };
+
+        local_data.init_index(self.get_index(), f);
     }
 }
 
@@ -175,6 +220,16 @@ macro_rules! thread_local {
     ($(#[$attr:meta])* $vis:vis static $name:ident: $t:ty = $init:expr) => (
         $crate::thread_local_inner!($(#[$attr])* $vis $name, $t, $init);
     );
+
+
+    ($(#[$attr:meta])* $vis:vis static $name:ident: $t:ty; $($rest:tt)*) => (
+        $crate::thread_local_inner!($(#[$attr])* $vis $name, $t,);
+        $crate::thread_local!($($rest)*);
+    );
+
+    ($(#[$attr:meta])* $vis:vis static $name:ident: $t:ty) => (
+        $crate::thread_local_inner!($(#[$attr])* $vis $name, $t,);
+    );
 }
 
 #[macro_export]
@@ -185,7 +240,7 @@ macro_rules! thread_local_inner {
             INIT_EXPR
         }
 
-        $crate::thread::LocalKey::new(__init_thread_local)
+        $crate::thread::LocalKey::new(Some(__init_thread_local))
     });
 
     (@key $t:ty, $init:expr) => ({
@@ -193,7 +248,11 @@ macro_rules! thread_local_inner {
             $init
         }
 
-        $crate::thread::LocalKey::new(__init_thread_local)
+        $crate::thread::LocalKey::new(Some(__init_thread_local))
+    });
+
+    (@key $t:ty,) => ({
+        $crate::thread::LocalKey::new(None)
     });
 
     ($(#[$attr:meta])* $vis:vis $name:ident, $t:ty, $($init:tt)*) => (

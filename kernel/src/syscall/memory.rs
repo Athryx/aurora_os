@@ -128,7 +128,7 @@ pub fn memory_get_size(options: u32, memory_id: usize) -> KResult<usize> {
 /// InvlArgs: options has no bits set indicating read, write, or exec permissions
 /// 
 /// # Returns
-/// size: size of the memory that was mapped into address space in pages (this will be the size of memory capability)
+/// size: size of the memory that was mapped into address space in pages
 pub fn memory_map(
     options: u32,
     addr_space_id: usize,

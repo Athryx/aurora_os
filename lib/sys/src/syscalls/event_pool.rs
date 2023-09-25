@@ -15,21 +15,27 @@ use crate::syscall_nums::*;
 use super::{Capability, Allocator, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct EventPool(CapId);
+pub struct EventPool {
+    id: CapId,
+    size: Size,
+}
 
 impl Capability for EventPool {
     const TYPE: CapType = CapType::EventPool;
 
-    fn from_cap_id(cap_id: CapId) -> Option<Self> {
+    fn cloned_new_id(&self, cap_id: CapId) -> Option<Self> {
         if cap_id.cap_type() == CapType::EventPool {
-            Some(EventPool(cap_id))
+            Some(EventPool {
+                id: cap_id,
+                size: self.size,
+            })
         } else {
             None
         }
     }
 
     fn cap_id(&self) -> CapId {
-        self.0
+        self.id
     }
 }
 
@@ -40,16 +46,39 @@ pub struct EventRange {
     pub len: usize,
 }
 
+impl EventRange {
+    /// Returns the slice of data this event range points to
+    /// 
+    /// # Safety
+    /// 
+    /// The returned slice is only valid as long as await_event is not called again on the event pool this came from
+    /// Once it is called again, this returned slice is no longer valid
+    pub unsafe fn as_slice(&self) -> &[u8] {
+        unsafe {
+            core::slice::from_raw_parts(self.data, self.len)
+        }
+    }
+}
+
 impl EventPool {
     pub fn new(allocator: &Allocator, max_size: Size) -> KResult<Self> {
-        unsafe {
+        let cap_id = unsafe {
             sysret_1!(syscall!(
                 EVENT_POOL_NEW,
                 WEAK_AUTO_DESTROY,
                 allocator.as_usize(),
                 max_size.pages_rounded()
-            )).map(|num| EventPool(CapId::try_from(num).expect(INVALID_CAPID_MESSAGE)))
-        }
+            ))?
+        };
+
+        Ok(EventPool {
+            id: CapId::try_from(cap_id).expect(INVALID_CAPID_MESSAGE),
+            size: max_size,
+        })
+    }
+
+    pub fn size(&self) -> Size {
+        self.size
     }
 
     /// Waits for an event to occur, and returns a pointer to the event data slice
@@ -78,6 +107,6 @@ impl EventPool {
 
 impl Drop for EventPool {
     fn drop(&mut self) {
-        let _ = cap_destroy(CspaceTarget::Current, self.0);
+        let _ = cap_destroy(CspaceTarget::Current, self.id);
     }
 }

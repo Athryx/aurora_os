@@ -32,6 +32,10 @@ pub struct ProcessInitData {
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct ProcessMemoryEntry {
     pub memory_cap_id: usize,
+    /// Memory size in bytes
+    /// 
+    /// This might be different than the mapping size
+    pub memory_size: usize,
     pub map_address: usize,
     /// Mapping size of memory in bytes
     pub map_size: usize,

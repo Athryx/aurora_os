@@ -260,14 +260,15 @@ impl AddressSpace {
     }
 
     /// Maps the event pool in this address space at the given address
-    pub fn map_event_pool(this: &Arc<AddressSpace>, address: VirtAddr, event_pool: Arc<EventPool>) -> KResult<()> {
+    pub fn map_event_pool(this: &Arc<AddressSpace>, address: VirtAddr, event_pool: Arc<EventPool>) -> KResult<Size> {
         let mut addr_space_inner = this.inner.lock();
+        let map_size = event_pool.max_size();
 
         addr_space_inner.insert_mapping(
             event_pool.id(),
             AddrSpaceMapping::EventPool(EventPoolMapping {
                 event_pool: event_pool.clone(),
-                map_range: AVirtRange::new(address, event_pool.max_size().bytes()),
+                map_range: AVirtRange::new(address, map_size.bytes()),
             }),
         )?;
 
@@ -277,7 +278,7 @@ impl AddressSpace {
 
             Err(error)
         } else {
-            Ok(())
+            Ok(map_size)
         }
     }
 

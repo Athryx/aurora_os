@@ -1,6 +1,6 @@
 use core::cmp::{max, min};
 
-use sys::{CapId, CapType};
+use sys::{CapType, EventId};
 
 use crate::alloc::{PaRef, HeapRef};
 use crate::cap::address_space::{MappingId, AddressSpaceInner};
@@ -74,12 +74,12 @@ impl EventPool {
         }
     }
 
-    pub fn write_event<T: MemoryCopySrc + ?Sized>(&self, event_capid: CapId, event_data: &T) -> KResult<()> {
+    pub fn write_event<T: MemoryCopySrc + ?Sized>(&self, event_id: EventId, event_data: &T) -> KResult<()> {
         let mut inner = self.inner.lock();
 
         // safety: the write buffer is not mapped
         unsafe {
-            inner.write_buffer.write_event(event_capid, event_data)?;
+            inner.write_buffer.write_event(event_id, event_data)?;
         }
 
         inner.wake_listener()
@@ -271,7 +271,7 @@ impl EventBuffer {
     /// # Safety
     /// 
     /// This event buffer must not be mapped
-    pub unsafe fn write_event<T: MemoryCopySrc + ?Sized>(&mut self, event_capid: CapId, event_data: &T) -> KResult<()> {
+    pub unsafe fn write_event<T: MemoryCopySrc + ?Sized>(&mut self, event_id: EventId, event_data: &T) -> KResult<()> {
         let write_size = size_of::<usize>() + align_up(event_data.size(), size_of::<usize>());
         let mut memory = self.memory.inner_write();
 
@@ -283,7 +283,7 @@ impl EventBuffer {
         let mut writer = memory.create_memory_writer(self.current_event_offset..)
             .unwrap();
 
-        let capid_data = usize::from(event_capid).to_le_bytes();
+        let capid_data = event_id.as_u64().to_le_bytes();
 
         self.current_event_offset += unsafe {
             capid_data.copy_to(&mut writer).bytes()
