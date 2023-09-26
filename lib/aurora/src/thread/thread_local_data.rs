@@ -136,7 +136,7 @@ impl<T: 'static> LocalKey<T> {
         // the only thing that matters is the index is unique
 
         let num = self.index.load(Ordering::Relaxed);
-        if num != CURRENTLY_INITIALIZING || num != UNINITIALIZED_INDEX {
+        if num != CURRENTLY_INITIALIZING && num != UNINITIALIZED_INDEX {
             // fast path if index is already initialized
             return num;
         }

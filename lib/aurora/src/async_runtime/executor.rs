@@ -13,12 +13,12 @@ use crate::allocator::addr_space::{MapEventPoolArgs, RegionPadding};
 use crate::{prelude::*, this_context, addr_space};
 use crate::collections::HashMap;
 use super::AsyncError;
-use super::task::{TaskId, Task};
+use super::task::{TaskId, Task, JoinHandle, TaskHandle};
 
 const ASYNC_EVENT_POOL_MAX_SIZE: Size = Size::from_pages(1000);
 
 pub struct Executor {
-    tasks: HashMap<TaskId, Task>,
+    tasks: RefCell<HashMap<TaskId, TaskHandle>>,
     /// A queue of tasks that are ready to be run
     task_queue: Arc<SegQueue<TaskId>>,
     /// Event pool used by this executor
@@ -39,18 +39,21 @@ impl Executor {
         })?;
 
         Ok(Executor {
-            tasks: HashMap::default(),
+            tasks: RefCell::new(HashMap::default()),
             task_queue: Arc::new(SegQueue::new()),
             event_pool,
             event_waiters: RefCell::new(HashMap::default()),
         })
     }
 
-    pub fn spawn(&mut self, task: impl Future<Output = ()> + 'static) {
-        let task = Task::new(Box::pin(task), self.task_queue.clone());
-        let task_id = task.id;
-        self.tasks.insert(task.id, task);
+    pub fn spawn<T: 'static>(&self, task: impl Future<Output = T> + 'static) -> JoinHandle<T> {
+        let (task_handle, join_handle) = Task::new(task, self.task_queue.clone());
+
+        let task_id = task_handle.id();
+        self.tasks.borrow_mut().insert(task_id, task_handle);
         self.task_queue.push(task_id);
+
+        join_handle
     }
 
     pub fn register_event_waiter(
@@ -69,10 +72,10 @@ impl Executor {
     }
 
     /// Runs all the tasks in this executor, returns on error or when the last task has completed
-    pub fn run(&mut self) -> Result<(), AsyncError> {
+    pub fn run(&self) -> Result<(), AsyncError> {
         loop {
             self.run_ready_tasks();
-            if self.tasks.len() == 0 {
+            if self.tasks.borrow().len() == 0 {
                 return Ok(());
             }
 
@@ -80,13 +83,14 @@ impl Executor {
         }
     }
 
-    fn run_ready_tasks(&mut self) {
+    fn run_ready_tasks(&self) {
         while let Some(task_id) = self.task_queue.pop() {
-            let task = self.tasks.get_mut(&task_id)
-                .expect("task id found in ready queue but no task with given id exists");
+            let task = self.tasks.borrow().get(&task_id)
+                .expect("task id found in ready queue but no task with given id exists")
+                .clone();
 
             if let Poll::Ready(()) = task.poll() {
-                self.tasks.remove(&task_id);
+                self.tasks.borrow_mut().remove(&task_id);
             }
         }
     }
