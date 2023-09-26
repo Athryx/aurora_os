@@ -1,10 +1,14 @@
-use core::sync::atomic::{Ordering, AtomicU8};
+use core::arch::asm;
+use core::sync::atomic::{Ordering, AtomicU8, AtomicU64};
 use alloc::{sync::Arc, string::String};
 
+use sys::syscall_nums::{MEMORY_UNMAP, THREAD_DESTROY};
 use sys::{CapId, Capability, Thread as SysThread};
 
 mod thread_local_data;
 pub use thread_local_data::{LocalKey, ThreadLocalData};
+
+use crate::{process, addr_space, this_context};
 
 /// An opaque, unique identifier for a thread
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -61,4 +65,56 @@ pub fn current() -> Thread {
 /// Cooperatively gives up the calling threads timeslice to the OS scheduler
 pub fn yield_now() {
     sys::Thread::yield_current();
+}
+
+// start at 1 for the initial thread
+static NUM_THREADS: AtomicU64 = AtomicU64::new(1);
+
+/// Exits the calling thread
+/// 
+/// This function should not normally be used, it is public only for std to call when main thread exits
+pub fn exit() -> ! {
+    // this is a thread local variable, must call before deallocating thread local data
+    let stack_address = current().0.stack_region_address;
+
+    // safety: thread local data is assumed to be initialized, and it is no longer use beyond this point
+    unsafe {
+        ThreadLocalData::dealloc();
+    }
+    
+    if NUM_THREADS.fetch_sub(1, Ordering::Relaxed) == 1 {
+        // we are the last thread exiting, exit process
+        process::exit();
+    } else {
+        let transient_pointer = addr_space().unmap_transient(stack_address)
+            .expect("failed to transiently unmap stack address")
+            .expect("failed to transiently unmap stack address");
+
+        let address_space_id = this_context().address_space.as_usize();
+
+        thread_exit_asm(MEMORY_UNMAP, address_space_id, stack_address, transient_pointer, THREAD_DESTROY);
+    }
+}
+
+#[naked]
+extern "C" fn thread_exit_asm(
+    unmap_syscall_num: u32,
+    address_space_id: usize,
+    stack_address: usize,
+    transient_pointer: *const AtomicU64,
+    thread_exit_syscall_num: u32,
+) -> ! {
+    unsafe {
+        asm!(
+            "mov eax, edi", // mov unmap syscall num to eax
+            "mov rbx, rsi", // mov address space id to syscall arg 1
+            "mov r9, rcx", // save transient pointer for later, r9 is saved register for syscalls
+            "syscall", // isssue unmap syscall
+            // TODO: make sure this has release semantics
+            "lock dec qword ptr [r9]", // decrament the transient counter now that stack is unmapped
+            "mov eax, r8d", // move thread exit syscall to eax, this zeroes upper bits of eax, which is the flag for exit self
+            "syscall", // issue thread destroy syscall to exit the current thread
+            options(noreturn),
+        )
+    }
 }

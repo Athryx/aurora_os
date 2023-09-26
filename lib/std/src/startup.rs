@@ -1,7 +1,5 @@
 use core::{slice, arch::asm};
 
-use aurora::process::exit;
-
 extern "C" {
     fn main();
 }
@@ -52,7 +50,7 @@ pub extern "C" fn _rust_startup(
         main();
     }
 
-    exit();
+    aurora::thread::exit();
 }
 
 #[lang = "start"]

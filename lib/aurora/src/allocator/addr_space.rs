@@ -1,3 +1,4 @@
+use core::sync::atomic::{AtomicU64, Ordering, fence};
 use core::{ptr::NonNull, ptr, ops::Deref, mem::size_of};
 
 use rand_core::{RngCore, SeedableRng};
@@ -295,6 +296,13 @@ pub struct AddrSpaceManager<'a, T: MappedRegionStorage> {
     allocator: &'a Allocator,
     /// Address space where memory is mapped
     address_space: &'a AddressSpace,
+    /// The number of transient regions that currently exist
+    /// 
+    /// A transient region is a memory region that has been removed from the address space manager's
+    /// region list, but it has not actually been unmapped
+    /// 
+    /// This is used for unmapping the stack when a thread exits
+    transient_region_count: AtomicU64,
 }
 
 impl LocalAddrSpaceManager {
@@ -313,6 +321,7 @@ impl LocalAddrSpaceManager {
             aslr_rng,
             allocator: &this_context().allocator,
             address_space: &this_context().address_space,
+            transient_region_count: AtomicU64::new(0),
         };
 
         out.reserve_null_page()?;
@@ -335,6 +344,7 @@ impl<'a> RemoteAddrSpaceManager<'a> {
             aslr_rng: ChaCha20Rng::from_seed(aslr_seed),
             allocator,
             address_space,
+            transient_region_count: AtomicU64::new(0),
         };
 
         out.reserve_null_page()?;
@@ -471,6 +481,19 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
 
         panic!("could not find map region even though one should have existed");
     }
+
+    /// Waits for the transient region count to reach 0
+    /// 
+    /// Once it is 0, it will not be incramented again until we unlock the address space manager lock
+    fn await_transient_region_unmap(&self) {
+        while self.transient_region_count.load(Ordering::Relaxed) != 0 {
+            core::hint::spin_loop();
+        }
+
+        // synchronizes with release decrment of transient region pointer
+        // Im not sure this is totally necessary, but good to have
+        fence(Ordering::Acquire);
+    }
 }
 
 /// Arguments for mapping memory in the address apce manager
@@ -519,6 +542,8 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
     /// Maps memory into the address space, see [`MapMemoryArgs`] for more details
     // FIXME: check if padding goes below zero or above max userspace address, or non canonical address
     pub fn map_memory(&mut self, args: MapMemoryArgs) -> Result<MapMemoryResult, AddrSpaceError> {
+        self.await_transient_region_unmap();
+
         let padding = args.padding;
 
         let (memory, size) = match args.memory {
@@ -598,6 +623,8 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
     }
 
     pub fn map_event_pool(&mut self, args: MapEventPoolArgs) -> Result<MapEventPoolResult, AddrSpaceError> {
+        self.await_transient_region_unmap();
+
         let padding = args.padding;
         let size = args.event_pool.size();
 
@@ -668,6 +695,22 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
         }
 
         Ok(())
+    }
+
+    /// Unmaps the memory transiently
+    /// 
+    /// Returns Some(pointer to transient counter) if memory needs to be unmappd, or None if this mapping was only a reservation
+    pub fn unmap_transient(&mut self, address: usize) -> Result<Option<*const AtomicU64>, AddrSpaceError> {
+        let region = self.remove_region(address)?;
+
+        if !region.map_target.is_empty() {
+            // ordering relaxed is ok because we are not synchronising any data here
+            self.transient_region_count.fetch_add(1, Ordering::Relaxed);
+
+            Ok(Some(&self.transient_region_count as *const AtomicU64))
+        } else {
+            Ok(None)
+        }
     }
 
     /// Marks the first page (at address 0) as reserved so null dereferences will alwayus cause page fault

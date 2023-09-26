@@ -5,6 +5,7 @@
 #![feature(slice_ptr_get)]
 #![feature(slice_take)]
 #![feature(negative_impls)]
+#![feature(naked_functions)]
 
 extern crate alloc;
 
