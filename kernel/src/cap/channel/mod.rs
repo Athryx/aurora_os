@@ -3,17 +3,24 @@ use bit_utils::container::{LinkedList, DefaultNode};
 use sys::CapType;
 
 use crate::alloc::HeapRef;
-use crate::event::{EventListenerRef, UserspaceBuffer, EventSenderRef, ThreadListenerRef, EventPoolListenerRef};
+use crate::event::{UserspaceBuffer, ThreadListenerRef, EventPoolListenerRef};
 use crate::prelude::*;
 use crate::mem::MemOwnerKernelExt;
 use crate::sched::ThreadRef;
+use crate::container::Arc;
 use crate::sync::{IMutex, IMutexGuard};
 use super::CapObject;
+use super::capability_space::CapabilitySpace;
+
+mod capability_writer;
+pub use capability_writer::{CapabilityWriter, CapabilityTransferInfo};
+mod event_listeners;
+use event_listeners::{ChannelSenderRef, ChannelRecieverRef};
 
 #[derive(Debug, Default)]
 struct ChannelInner {
-    sender_queue: LinkedList<DefaultNode<EventSenderRef>>,
-    reciever_queue: LinkedList<DefaultNode<EventListenerRef>>,
+    sender_queue: LinkedList<DefaultNode<ChannelSenderRef>>,
+    reciever_queue: LinkedList<DefaultNode<ChannelRecieverRef>>,
 }
 
 /// Returns result of channel functions to indicate to calling thread, success, failure or if it should block
@@ -54,14 +61,14 @@ impl Channel {
     /// 
     /// Ok(number of bytes written) on success,
     /// Err if there was a nobody waiting to recieve the message
-    pub fn try_send(&self, buffer: &UserspaceBuffer) -> KResult<Size> {
+    pub fn try_send(&self, buffer: &UserspaceBuffer, src_cspace: &CapabilitySpace) -> KResult<Size> {
         let mut inner = self.inner();
 
         loop {
             let reciever = inner.reciever_queue.pop_front()
                 .ok_or(SysErr::OkUnreach)?;
 
-            let Some(write_size) = reciever.data.write_channel_message(buffer)? else {
+            let Some(write_size) = reciever.data.write_channel_message(buffer, src_cspace)? else {
                 // this listener is no longer valid, retry on next listner
                 unsafe { reciever.drop_in_place(&mut self.allocator.clone()); }
                 continue;
@@ -83,17 +90,25 @@ impl Channel {
     /// 
     /// Ok(number of bytes recieved) on success,
     /// Err if there was a nobody waiting to send the message
-    pub fn try_recv(&self, buffer: &UserspaceBuffer) -> Result<Size, SysErr> {
+    pub fn try_recv(&self, buffer: &UserspaceBuffer, dst_cspace: &CapabilitySpace) -> Result<Size, SysErr> {
         let mut inner = self.inner();
 
         loop {
             let sender = inner.sender_queue.pop_front()
                 .ok_or(SysErr::OkUnreach)?;
 
-            // TODO: detect if sender emmory capability is dropped
-            let write_size = unsafe {
-                buffer.copy_channel_message_from_buffer(0, sender.data.event_buffer())
+            let Some(src_cspace) = sender.data.cspace() else {
+                // if csapce is not valid, try on next listener
+                unsafe { sender.drop_in_place(&mut self.allocator.clone()); }
+                continue;
             };
+
+            // TODO: detect if sender emmory capability is dropped
+            let write_size = buffer
+                .copy_channel_message_from_buffer(sender.data.event_buffer(), CapabilityTransferInfo {
+                    src_cspace: &src_cspace,
+                    dst_cspace,
+                });
 
             sender.data.acknowledge_send(write_size);
 
@@ -110,17 +125,22 @@ impl Channel {
     /// # Returns
     /// 
     /// See [`SendRecvResult`]
-    pub fn sync_send(&self, buffer: UserspaceBuffer) -> SendRecvResult {
+    pub fn sync_send(&self, buffer: UserspaceBuffer, src_cspace: Arc<CapabilitySpace>) -> SendRecvResult {
         let mut inner = self.inner();
 
         loop {
             let Some(reciever) = inner.reciever_queue.pop_front() else {
                 // no recievers present, insert ourselves in the senders list
                 let thread_ref = ThreadRef::future_ref(&cpu_local_data().current_thread());
-                let sender = EventSenderRef::Thread(ThreadListenerRef {
+                let thread_listener_ref = ThreadListenerRef {
                     thread: thread_ref,
                     event_buffer: buffer,
-                });
+                };
+
+                let sender = ChannelSenderRef::Thread {
+                    sender: thread_listener_ref,
+                    cspace: Arc::downgrade(&src_cspace),
+                };
 
                 let sender = match MemOwner::new(sender.into(), &mut self.allocator.clone()) {
                     Ok(sender) => sender,
@@ -132,7 +152,7 @@ impl Channel {
                 return SendRecvResult::Block;
             };
 
-            let recieve_result = match reciever.data.write_channel_message(&buffer) {
+            let recieve_result = match reciever.data.write_channel_message(&buffer, &src_cspace) {
                 Ok(recieve_result) => recieve_result,
                 Err(error) => return SendRecvResult::Error(error),
             };
@@ -160,17 +180,22 @@ impl Channel {
     /// # Returns
     /// 
     /// See [`SendRecvResult`]
-    pub fn sync_recv(&self, buffer: UserspaceBuffer) -> SendRecvResult {
+    pub fn sync_recv(&self, buffer: UserspaceBuffer, dst_cspace: Arc<CapabilitySpace>) -> SendRecvResult {
         let mut inner = self.inner();
 
         loop {
             let Some(sender) = inner.sender_queue.pop_front() else {
                 // no senders present, insert our selves in the recievers list
                 let thread_ref = ThreadRef::future_ref(&cpu_local_data().current_thread());
-                let reciever = EventListenerRef::Thread(ThreadListenerRef {
+                let thread_listener_ref = ThreadListenerRef {
                     thread: thread_ref,
                     event_buffer: buffer,
-                });
+                };
+
+                let reciever = ChannelRecieverRef::Thread {
+                    reciever: thread_listener_ref,
+                    cspace: Arc::downgrade(&dst_cspace),
+                };
 
                 let reciever = match MemOwner::new(reciever.into(), &mut self.allocator.clone()) {
                     Ok(reciever) => reciever,
@@ -182,10 +207,18 @@ impl Channel {
                 return SendRecvResult::Block;
             };
 
-            // TODO: detect if sender memory capability is dropped
-            let write_size = unsafe {
-                buffer.copy_channel_message_from_buffer(0, sender.data.event_buffer())
+            let Some(src_cspace) = sender.data.cspace() else {
+                // move on to next listener if cspace is invalid
+                unsafe { sender.drop_in_place(&mut self.allocator.clone()); }
+                continue;
             };
+
+            // TODO: detect if sender memory capability is dropped
+            let write_size = buffer
+                .copy_channel_message_from_buffer(sender.data.event_buffer(), CapabilityTransferInfo {
+                    src_cspace: &src_cspace,
+                    dst_cspace: &dst_cspace,
+                });
 
             sender.data.acknowledge_send(write_size);
 
@@ -195,15 +228,16 @@ impl Channel {
         }
     }
 
-    pub fn async_send(&self, event_pool: EventPoolListenerRef, message_buffer: UserspaceBuffer) -> KResult<()> {
+    pub fn async_send(&self, event_pool: EventPoolListenerRef, message_buffer: UserspaceBuffer, src_cspace: Arc<CapabilitySpace>) -> KResult<()> {
         let mut inner = self.inner();
 
         loop {
             let Some(reciever) = inner.reciever_queue.pop_front() else {
                 // no recievers present, insert ourselves in recievers queue
-                let sender = EventSenderRef::EventPool {
+                let sender = ChannelSenderRef::EventPool {
                     send_complete_event: event_pool,
                     event_data: message_buffer,
+                    cspace: Arc::downgrade(&src_cspace),
                 };
 
                 let sender = MemOwner::new(sender.into(), &mut self.allocator.clone())?;
@@ -213,7 +247,7 @@ impl Channel {
                 return Ok(());
             };
 
-            let recieve_result = reciever.data.write_channel_message(&message_buffer)?;
+            let recieve_result = reciever.data.write_channel_message(&message_buffer, &src_cspace)?;
 
             let Some(write_size) = recieve_result else {
                 // this listener is no longer valid, retry on next listner
@@ -227,24 +261,27 @@ impl Channel {
                 unsafe { reciever.drop_in_place(&mut self.allocator.clone()); }
             }
 
-            EventSenderRef::EventPool {
+            ChannelSenderRef::EventPool {
                 send_complete_event: event_pool,
                 event_data: message_buffer,
+                // TODO: don't require cloning cspace just to send acknowledge event to event pool
+                cspace: Arc::downgrade(&src_cspace),
             }.acknowledge_send(write_size);
 
             return Ok(());
         }
     }
 
-    pub fn async_recv(&self, event_pool: EventPoolListenerRef, auto_reque: bool) -> KResult<()> {
+    pub fn async_recv(&self, event_pool: EventPoolListenerRef, auto_reque: bool, dst_cspace: Arc<CapabilitySpace>) -> KResult<()> {
         let mut inner = self.inner();
 
         loop {
             let Some(sender) = inner.sender_queue.pop_front() else {
                 // no senders present, insert ourselves in reciever queue
-                let reciever = EventListenerRef::EventPool {
+                let reciever = ChannelRecieverRef::EventPool {
                     event_pool,
                     auto_reque,
+                    cspace: Arc::downgrade(&dst_cspace),
                 };
 
                 let reciever = MemOwner::new(reciever.into(), &mut self.allocator.clone())?;
@@ -254,7 +291,16 @@ impl Channel {
                 return Ok(());
             };
 
-            let write_size = event_pool.write_channel_message(sender.data.event_buffer())?;
+            let Some(src_cspace) = sender.data.cspace() else {
+                // cspace is invalid, move onto next sender
+                unsafe { sender.drop_in_place(&mut self.allocator.clone()); }
+                continue;
+            };
+
+            let write_size = event_pool.write_channel_message(sender.data.event_buffer(), CapabilityTransferInfo {
+                src_cspace: &src_cspace,
+                dst_cspace: &dst_cspace,
+            })?;
 
             match write_size {
                 Some(write_size) => {

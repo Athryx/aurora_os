@@ -47,42 +47,15 @@ pub fn cap_clone(
             .into_inner()
     };
 
-    macro_rules! call_cap_clone {
-        ($cspace_clone:ident) => {
-            CapabilitySpace::$cspace_clone(
-                &dst_cspace,
-                &src_cspace,
-                old_cap,
-                new_cap_perms,
-                cap_weakness,
-                flags.contains(CapCloneFlags::DESTROY_SRC_CAP),
-                weak_auto_destroy,
-            )?
-        };
-    }
-
-    let new_cap_id = match old_cap.cap_type() {
-        CapType::Thread => call_cap_clone!(clone_thread),
-        CapType::ThreadGroup => call_cap_clone!(clone_thread_group),
-        CapType::AddressSpace => call_cap_clone!(clone_address_space),
-        CapType::CapabilitySpace => call_cap_clone!(clone_capability_space),
-        CapType::Memory => call_cap_clone!(clone_memory),
-        //CapType::Lock => call_cap_clone!(clone_),
-        CapType::EventPool => call_cap_clone!(clone_event_pool),
-        CapType::Channel => call_cap_clone!(clone_channel),
-        //CapType::MessageCapacity => call_cap_clone!(clone_),
-        CapType::Key => call_cap_clone!(clone_key),
-        //CapType::Interrupt => call_cap_clone!(clone_),
-        //CapType::Port => call_cap_clone!(clone_),
-        CapType::Allocator => call_cap_clone!(clone_allocator),
-        CapType::DropCheck => call_cap_clone!(clone_drop_check),
-        CapType::DropCheckReciever => call_cap_clone!(clone_drop_check_reciever),
-        //CapType::RootOom => call_cap_clone!(clone_),
-        //CapType::MmioAllocator => call_cap_clone!(clone_),
-        //CapType::IntAllocator => call_cap_clone!(clone_),
-        //CapType::PortAllocator => call_cap_clone!(clone_),
-        _ => todo!(),
-    };
+    let new_cap_id = CapabilitySpace::cap_clone(
+        &dst_cspace,
+        &src_cspace,
+        old_cap,
+        new_cap_perms,
+        cap_weakness,
+        flags.contains(CapCloneFlags::DESTROY_SRC_CAP),
+        weak_auto_destroy,
+    )?;
 
     Ok(new_cap_id.into())
 }

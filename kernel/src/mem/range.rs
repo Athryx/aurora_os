@@ -193,11 +193,6 @@ macro_rules! impl_addr_range {
                 self.size().is_power_of_two() && align_of(self.as_usize()) >= self.size()
             }
 
-            /*pub fn verify_umem(&self) -> bool
-            {
-                udata::verify_umem(self.as_usize(), self.size())
-            }*/
-
             fn merge(&self, other: Self) -> Option<Self>
             where
                 Self: Sized;

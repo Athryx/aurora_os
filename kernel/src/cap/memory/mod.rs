@@ -1,4 +1,3 @@
-use core::cmp::min;
 use core::ops::{RangeBounds, Bound};
 
 use crate::prelude::*;
@@ -6,6 +5,9 @@ use crate::alloc::{PaRef, HeapRef};
 use crate::mem::{Allocation, PageLayout};
 use crate::sync::{IrwLock, IrwLockReadGuard, IrwLockWriteGuard};
 use super::{CapObject, CapType, address_space::MappingId};
+
+mod memory_writer;
+pub use memory_writer::*;
 
 #[derive(Debug, Clone, Copy)]
 struct AllocationEntry {
@@ -303,17 +305,15 @@ impl MemoryInner {
         }
     }
 
-    pub unsafe fn copy_from<T: MemoryCopySrc + ?Sized>(&self, range: impl RangeBounds<usize>, src: &T) -> Size {
+    pub fn copy_from<T: MemoryCopySrc + ?Sized>(&self, range: impl RangeBounds<usize>, src: &T) -> Size {
         let Some(mut writer) = self.create_memory_writer(range) else {
             return Size::zero();
         };
 
-        unsafe {
-            src.copy_to(&mut writer)
-        }
+        src.copy_to(&mut writer)
     }
 
-    pub fn create_memory_writer(&self, range: impl RangeBounds<usize>) -> Option<MemoryWriter> {
+    pub fn create_memory_writer(&self, range: impl RangeBounds<usize>) -> Option<PlainMemoryWriter> {
         // start byte inclusive
         let start = match range.start_bound() {
             Bound::Included(n) => *n,
@@ -331,7 +331,7 @@ impl MemoryInner {
         if end > self.size || start >= end {
             None
         } else {
-            Some(MemoryWriter {
+            Some(PlainMemoryWriter {
                 memory: self,
                 alloc_entry_index: self.allocation_index_of_offset(start)?,
                 offset: start,
@@ -357,117 +357,6 @@ impl MemoryInner {
             }
         }
     }
-}
-
-/// An object that serves as a source for copying into a memory capability
-pub trait MemoryCopySrc {
-    /// Size that could be written from this src
-    fn size(&self) -> usize;
-
-    /// Returns the number of bytes written
-    unsafe fn copy_to(&self, writer: &mut MemoryWriter) -> Size;
-}
-
-impl MemoryCopySrc for [u8] {
-    fn size(&self) -> usize {
-        self.len()
-    }
-
-    unsafe fn copy_to(&self, writer: &mut MemoryWriter) -> Size {
-        let src_range = UVirtRange::new(
-            VirtAddr::new(self.as_ptr() as usize),
-            self.len(),
-        );
-        
-        unsafe {
-            writer.write_region(src_range).write_size
-        }
-    }
-}
-
-/// Used to copy data into a memory capability
-/// 
-/// Users of `MemoryWriter` should repeatedly call [`write_region`]
-pub struct MemoryWriter<'a> {
-    memory: &'a MemoryInner,
-    /// current index of allocation entry
-    alloc_entry_index: usize,
-    offset: usize,
-    end_offset: usize,
-}
-
-impl MemoryWriter<'_> {
-    fn remaining_write_capacity(&self) -> usize {
-        self.end_offset - self.offset
-    }
-
-    fn current_alloc_entry(&self) -> AllocationEntry {
-        self.memory.allocations[self.alloc_entry_index]
-    }
-
-    /// Writes the given zone into this writer
-    /// 
-    /// # Safety
-    /// 
-    /// Must not write to any memory used by anything else, or a place that userspace doesn't expect
-    pub unsafe fn write_region(&mut self, virt_range: UVirtRange) -> WriteResult {
-        let mut src_offset = 0;
-
-        let mut dest_offset = self.offset - self.current_alloc_entry().offset;
-
-        // amount written in this call of write_region
-        let mut amount_written = 0;
-
-        loop {
-            if self.remaining_write_capacity() == 0 {
-                return WriteResult {
-                    write_size: Size::from_bytes(amount_written),
-                    end_reached: true,
-                };
-            }
-
-            let mut allocation = self.current_alloc_entry().allocation;
-
-            let write_size = min(virt_range.size() - src_offset, allocation.size() - dest_offset);
-            let write_size = min(write_size, self.remaining_write_capacity());
-
-            // when src offset is set, it is ensured to be less than the size of the zone
-            let src_ptr = unsafe { virt_range.addr().as_ptr::<u8>().add(src_offset) };
-            // safety: allocation_index_of_offset already checks offset is valid
-            let dest_ptr = unsafe { allocation.as_mut_ptr::<u8>().add(dest_offset) };
-
-            // safety: caller must ensure that this memory capability only stores userspace data expecting to be written to
-            // TODO: get a version of copy_nonoverlapping that is safe, because we don't really care
-            // if data is copied wrong when overalapping, that is userspaces problem
-            unsafe {
-                ptr::copy(src_ptr, dest_ptr, write_size);
-            }
-
-            amount_written += write_size;
-            self.offset += write_size;
-
-            if src_offset + write_size == virt_range.size() {
-                // finished copying everything from memory zone
-                return WriteResult {
-                    write_size: Size::from_bytes(amount_written),
-                    end_reached: self.remaining_write_capacity() == 0,
-                };
-            } else {
-                // finished consuming current alloc entry
-                self.alloc_entry_index += 1;
-
-                dest_offset = 0;
-                src_offset += write_size;
-            }
-        }
-    }
-}
-
-/// Represents result of calling [`write_region`]
-#[derive(Debug, Clone, Copy)]
-pub struct WriteResult {
-    pub write_size: Size,
-    pub end_reached: bool,
 }
 
 /// An iterator over the virtual memory mappings that need to be made to map a given section of a memory cpaability

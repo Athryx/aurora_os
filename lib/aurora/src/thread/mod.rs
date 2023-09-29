@@ -74,23 +74,28 @@ static NUM_THREADS: AtomicU64 = AtomicU64::new(1);
 /// 
 /// This function should not normally be used, it is public only for std to call when main thread exits
 pub fn exit() -> ! {
-    // this is a thread local variable, must call before deallocating thread local data
-    let stack_address = current().0.stack_region_address;
-
-    // safety: thread local data is assumed to be initialized, and it is no longer use beyond this point
-    unsafe {
-        ThreadLocalData::dealloc();
-    }
-    
     if NUM_THREADS.fetch_sub(1, Ordering::Relaxed) == 1 {
+        // safety: thread local data is assumed to be initialized, and it is no longer use beyond this point
+        unsafe {
+            ThreadLocalData::dealloc();
+        }
+
         // we are the last thread exiting, exit process
         process::exit();
     } else {
+        // this is a thread local variable, must call before deallocating thread local data
+        let stack_address = current().0.stack_region_address;
+
         let transient_pointer = addr_space().unmap_transient(stack_address)
             .expect("failed to transiently unmap stack address")
             .expect("failed to transiently unmap stack address");
 
         let address_space_id = this_context().address_space.as_usize();
+
+        // safety: thread local data is assumed to be initialized, and it is no longer use beyond this point
+        unsafe {
+            ThreadLocalData::dealloc();
+        }
 
         thread_exit_asm(MEMORY_UNMAP, address_space_id, stack_address, transient_pointer, THREAD_DESTROY);
     }

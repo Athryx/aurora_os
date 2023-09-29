@@ -42,7 +42,7 @@ fn channel_handle_args(
     msg_buf_offset: usize,
     msg_buf_size: usize,
     msg_buf_perms: CapFlags,
-) -> KResult<(Arc<Channel>, UserspaceBuffer)> {
+) -> KResult<(Arc<Channel>, UserspaceBuffer, Arc<CapabilitySpace>)> {
     let weak_auto_destroy = options_weak_autodestroy(options);
 
     let cspace = CapabilitySpace::current();
@@ -60,7 +60,7 @@ fn channel_handle_args(
             weak_auto_destroy,
         )?;
     
-    Ok((channel, buffer))
+    Ok((channel, buffer, cspace))
 }
 
 pub fn channel_try_send(
@@ -72,7 +72,7 @@ pub fn channel_try_send(
 ) -> KResult<usize> {
     let _int_disable = IntDisable::new();
 
-    let (channel, buffer) = channel_handle_args(
+    let (channel, buffer, cspace) = channel_handle_args(
         options,
         channel_id,
         CapFlags::PROD,
@@ -82,7 +82,7 @@ pub fn channel_try_send(
         CapFlags::READ,
     )?;
 
-    channel.try_send(&buffer).map(Size::bytes)
+    channel.try_send(&buffer, &cspace).map(Size::bytes)
 }
 
 pub fn channel_sync_send(
@@ -97,7 +97,7 @@ pub fn channel_sync_send(
 
     let int_disable = IntDisable::new();
 
-    let (channel, buffer) = channel_handle_args(
+    let (channel, buffer, cspace) = channel_handle_args(
         options,
         channel_id,
         CapFlags::PROD,
@@ -107,7 +107,7 @@ pub fn channel_sync_send(
         CapFlags::READ,
     )?;
 
-    match channel.sync_send(buffer) {
+    match channel.sync_send(buffer, cspace) {
         SendRecvResult::Success(write_size) => Ok(write_size.bytes()),
         SendRecvResult::Error(error) => Err(error),
         SendRecvResult::Block => {
@@ -145,7 +145,7 @@ pub fn channel_try_recv(
 ) -> KResult<usize> {
     let _int_disable = IntDisable::new();
 
-    let (channel, buffer) = channel_handle_args(
+    let (channel, buffer, cspace) = channel_handle_args(
         options,
         channel_id,
         CapFlags::WRITE,
@@ -155,7 +155,7 @@ pub fn channel_try_recv(
         CapFlags::WRITE,
     )?;
     
-    channel.try_recv(&buffer).map(Size::bytes)
+    channel.try_recv(&buffer, &cspace).map(Size::bytes)
 }
 
 pub fn channel_sync_recv(
@@ -170,7 +170,7 @@ pub fn channel_sync_recv(
 
     let int_disable = IntDisable::new();
 
-    let (channel, buffer) = channel_handle_args(
+    let (channel, buffer, cspace) = channel_handle_args(
         options,
         channel_id,
         CapFlags::WRITE,
@@ -180,7 +180,7 @@ pub fn channel_sync_recv(
         CapFlags::WRITE,
     )?;
 
-    match channel.sync_recv(buffer) {
+    match channel.sync_recv(buffer, cspace) {
         SendRecvResult::Success(write_size) => Ok(write_size.bytes()),
         SendRecvResult::Error(error) => Err(error),
         SendRecvResult::Block => {
@@ -222,7 +222,7 @@ pub fn channel_async_send(
 
     let _int_disable = IntDisable::new();
 
-    let (channel, buffer) = channel_handle_args(
+    let (channel, buffer, cspace) = channel_handle_args(
         options,
         channel_id,
         CapFlags::PROD,
@@ -241,7 +241,7 @@ pub fn channel_async_send(
         event_id,
     };
 
-    channel.async_send(event_pool_listener, buffer)
+    channel.async_send(event_pool_listener, buffer, cspace)
 }
 
 pub fn channel_async_recv(
@@ -272,5 +272,5 @@ pub fn channel_async_recv(
         event_id,
     };
 
-    channel.async_recv(event_pool_listener, flags.contains(ChannelAsyncRecvFlags::AUTO_REQUE))
+    channel.async_recv(event_pool_listener, flags.contains(ChannelAsyncRecvFlags::AUTO_REQUE), cspace)
 }

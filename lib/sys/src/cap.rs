@@ -93,6 +93,10 @@ impl CapId {
         CapId(flags.bits | ((is_weak as usize) << 4))
     }
 
+    pub fn null() -> Self {
+        CapId(0)
+    }
+
     pub fn flags(&self) -> CapFlags {
         CapFlags::from_bits_truncate(self.0)
     }

@@ -203,9 +203,7 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
         PageMappingFlags::USER | PageMappingFlags::READ | PageMappingFlags::WRITE,
     ).expect("failed to map initrd memory");
 
-    unsafe {
-        initrd_memory.inner_read().copy_from(.., initrd);
-    }
+    initrd_memory.inner_read().copy_from(.., initrd);
 
 
     // create first thread
@@ -267,9 +265,7 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
 
 
     // write startup data to startup data memory
-    unsafe {
-        startup_data_memory.inner_read().copy_from(.., startup_data.as_slice());
-    }
+    startup_data_memory.inner_read().copy_from(.., startup_data.as_slice());
 
 
     // write pointers to stack
@@ -280,11 +276,9 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
         namespace_data_size,
     };
 
-    unsafe {
-        let stack_memory_inner = stack_memory.inner_read();
-        let stack_memory_size = stack_memory_inner.size().bytes();
-        stack_memory.inner_read().copy_from(stack_memory_size - size_of::<StackInfo>().., bytes_of(&stack_info));
-    }
+    let stack_memory_inner = stack_memory.inner_read();
+    let stack_memory_size = stack_memory_inner.size().bytes();
+    stack_memory.inner_read().copy_from(stack_memory_size - size_of::<StackInfo>().., bytes_of(&stack_info));
 
 
     // start the first thread

@@ -225,6 +225,53 @@ impl CapabilitySpace {
 
         Ok(UserspaceBuffer::new(memory_cap_id, memory, buffer_offset, buffer_size))
     }
+
+    pub fn cap_clone(
+        dst_cspace: &CapabilitySpace,
+        src_cspace: &CapabilitySpace,
+        cap_id: CapId,
+        new_cap_perms: CapFlags,
+        cap_weakness: CapCloneWeakness,
+        destroy_src_cap: bool,
+        weak_auto_destroy: bool,
+    ) -> KResult<CapId> {
+        macro_rules! call_cap_clone {
+            ($cspace_clone:ident) => {
+                CapabilitySpace::$cspace_clone(
+                    &dst_cspace,
+                    &src_cspace,
+                    cap_id,
+                    new_cap_perms,
+                    cap_weakness,
+                    destroy_src_cap,
+                    weak_auto_destroy,
+                )
+            };
+        }
+    
+        match cap_id.cap_type() {
+            CapType::Thread => call_cap_clone!(clone_thread),
+            CapType::ThreadGroup => call_cap_clone!(clone_thread_group),
+            CapType::AddressSpace => call_cap_clone!(clone_address_space),
+            CapType::CapabilitySpace => call_cap_clone!(clone_capability_space),
+            CapType::Memory => call_cap_clone!(clone_memory),
+            //CapType::Lock => call_cap_clone!(clone_),
+            CapType::EventPool => call_cap_clone!(clone_event_pool),
+            CapType::Channel => call_cap_clone!(clone_channel),
+            //CapType::MessageCapacity => call_cap_clone!(clone_),
+            CapType::Key => call_cap_clone!(clone_key),
+            //CapType::Interrupt => call_cap_clone!(clone_),
+            //CapType::Port => call_cap_clone!(clone_),
+            CapType::Allocator => call_cap_clone!(clone_allocator),
+            CapType::DropCheck => call_cap_clone!(clone_drop_check),
+            CapType::DropCheckReciever => call_cap_clone!(clone_drop_check_reciever),
+            //CapType::RootOom => call_cap_clone!(clone_),
+            //CapType::MmioAllocator => call_cap_clone!(clone_),
+            //CapType::IntAllocator => call_cap_clone!(clone_),
+            //CapType::PortAllocator => call_cap_clone!(clone_),
+            _ => todo!(),
+        }
+    }
 }
 
 impl CapObject for CapabilitySpace {

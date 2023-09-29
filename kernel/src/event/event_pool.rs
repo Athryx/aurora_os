@@ -4,13 +4,14 @@ use sys::{CapType, EventId};
 
 use crate::alloc::{PaRef, HeapRef};
 use crate::cap::address_space::{MappingId, AddressSpaceInner};
-use crate::cap::memory::{MemoryInner, MemoryCopySrc};
+use crate::cap::memory::{MemoryInner, MemoryCopySrc, PlainMemoryWriter, MemoryWriter};
 use crate::prelude::*;
 use crate::sched::{ThreadRef, WakeReason};
 use crate::sync::IMutex;
 use crate::container::{Arc, Weak};
 use crate::cap::{CapObject, address_space::AddressSpace, memory::Memory};
 use crate::vmem_manager::PageMappingFlags;
+use crate::cap::channel::{CapabilityTransferInfo, CapabilityWriter};
 
 /// Communicates to calling thread what it needs to do after calling [`await_event`]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,6 +75,7 @@ impl EventPool {
         }
     }
 
+    /// Writes the event id and event data into this event pool, and potentially wakes a waiting thread
     pub fn write_event<T: MemoryCopySrc + ?Sized>(&self, event_id: EventId, event_data: &T) -> KResult<()> {
         let mut inner = self.inner.lock();
 
@@ -85,6 +87,28 @@ impl EventPool {
         inner.wake_listener()
     }
 
+    /// Writes the event id and event data into this event pool, and potentially wakes a waiting thread
+    /// 
+    /// This version also copies capabilities over, it is used for sending capabilties over channels
+    pub fn write_channel_event<T: MemoryCopySrc + ?Sized>(
+        &self,
+        event_id: EventId,
+        event_data: &T,
+        cap_transfer_info: CapabilityTransferInfo,
+    ) -> KResult<()> {
+        let mut inner = self.inner.lock();
+
+        // safety: the write buffer is not mapped
+        unsafe {
+            inner.write_buffer.write_channel_event(event_id, event_data, cap_transfer_info)?;
+        }
+
+        inner.wake_listener()
+    }
+
+    /// Tells the event pool where in memory it is mapped
+    /// 
+    /// Souldn't be used directly, use [`AddressSpace::map_event_pool`] instead
     pub fn set_mapping_data(&self, address_space: Weak<AddressSpace>, address: VirtAddr) -> KResult<()> {
         let mut inner = self.inner.lock();
 
@@ -258,12 +282,38 @@ impl EventBuffer {
             );
             let new_size = min(new_size, self.max_size.bytes());
 
+            // safety: caller ensures this buffer is not mapped
             unsafe {
                 memory.resize_out_of_place(new_size / PAGE_SIZE)?;
             }
         }
 
         Ok(())
+    }
+
+    /// Gets a writer for the given size
+    /// 
+    /// # Safety
+    /// 
+    /// This event buffer must not be mapped
+    unsafe fn get_writer<'a>(&self, memory: &'a mut MemoryInner, write_size: usize) -> KResult<PlainMemoryWriter<'a>> {
+        // safety: caller ensures this buffer is not mapped
+        unsafe {
+            self.ensure_capacity(memory, write_size)?;
+        }
+
+        // panic safety: ensure capacity allocates enough capacity so this shouldn't fail
+        Ok(memory.create_memory_writer(self.current_event_offset..).unwrap())
+    }
+
+    /// Returns the number of bytes written
+    fn write_event_to_writer<T: MemoryCopySrc + ?Sized>(writer: &mut impl MemoryWriter, event_id: EventId, event_data: &T) -> usize {
+        let eventid_data = event_id.as_u64().to_le_bytes();
+        let evnet_id_write_size = eventid_data.copy_to(writer).bytes();
+
+        let write_size = event_data.copy_to(writer).bytes();
+
+        evnet_id_write_size + align_up(write_size, size_of::<usize>())
     }
 
     /// Writes the event into this buffer
@@ -275,24 +325,35 @@ impl EventBuffer {
         let write_size = size_of::<usize>() + align_up(event_data.size(), size_of::<usize>());
         let mut memory = self.memory.inner_write();
 
-        unsafe {
-            self.ensure_capacity(&mut memory, write_size)?;
-        }
-
-        // panic safety: ensure capacity ensures this shouldn't fail
-        let mut writer = memory.create_memory_writer(self.current_event_offset..)
-            .unwrap();
-
-        let capid_data = event_id.as_u64().to_le_bytes();
-
-        self.current_event_offset += unsafe {
-            capid_data.copy_to(&mut writer).bytes()
+        // safety: caller ensures this buffer is not mapped
+        let mut writer = unsafe {
+            self.get_writer(&mut memory, write_size)?
         };
 
-        let write_size = unsafe {
-            event_data.copy_to(&mut writer).bytes()
+        let write_size = Self::write_event_to_writer(&mut writer, event_id, event_data);
+        self.current_event_offset += write_size;
+
+        Ok(())
+    }
+
+    pub unsafe fn write_channel_event<T: MemoryCopySrc + ?Sized>(
+        &mut self,
+        event_id: EventId,
+        event_data: &T,
+        cap_transfer_info: CapabilityTransferInfo,
+    ) -> KResult<()> {
+        let write_size = size_of::<usize>() + align_up(event_data.size(), size_of::<usize>());
+        let mut memory = self.memory.inner_write();
+
+        // safety: caller ensures this buffer is not mapped
+        let inner_writer = unsafe {
+            self.get_writer(&mut memory, write_size)?
         };
-        self.current_event_offset += align_up(write_size, size_of::<usize>());
+
+        let mut writer = CapabilityWriter::new(cap_transfer_info, inner_writer);
+
+        let write_size = Self::write_event_to_writer(&mut writer, event_id, event_data);
+        self.current_event_offset += write_size;
 
         Ok(())
     }
