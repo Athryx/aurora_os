@@ -2,7 +2,7 @@
 //! 
 //! All the types here usually wrap event listener ref with some extra data
 
-use sys::{Event, MessageSent};
+use sys::{EventData, MessageSent};
 
 use crate::cap::capability_space::CapabilitySpace;
 use crate::prelude::*;
@@ -38,15 +38,14 @@ impl ChannelSenderRef {
                 );
             },
             Self::EventPool { send_complete_event, event_data, .. } => {
-                let event = Event::MessageSent(MessageSent {
-                    event_id: send_complete_event.event_id,
+                let event_data = EventData::MessageSent(MessageSent {
                     message_buffer_id: event_data.memory_id.into(),
                     message_buffer_offset: event_data.offset,
                     message_buffer_len: event_data.buffer_size,
-                }).as_raw();
+                });
 
                 // ignore errors, there is no where to report them to
-                let _ = send_complete_event.write_event(event.as_bytes());
+                let _ = send_complete_event.write_event(event_data);
             },
         }
     }
@@ -111,17 +110,10 @@ impl ChannelRecieverRef {
                     return Ok(None);
                 };
 
-                let write_size = reciever.event_buffer.copy_channel_message_from_buffer(src, CapabilityTransferInfo {
+                reciever.write_channel_message(src, CapabilityTransferInfo {
                     src_cspace,
                     dst_cspace: &cspace,
-                });
-
-                if !reciever.thread.move_to_ready_list(WakeReason::MsgSendRecv { msg_size: write_size }) {
-                    // FIXME: drop capabilties that were copied over if the thread listener was invalid
-                    Ok(None)
-                } else {
-                    Ok(Some(write_size))
-                }
+                })
             },
             Self::EventPool {
                 event_pool,

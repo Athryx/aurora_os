@@ -18,8 +18,19 @@
                 "source": false
               }
             }
+          },
+          {
+            "id": "01e36cdb5c2cbde1",
+            "type": "leaf",
+            "state": {
+              "type": "release-notes",
+              "state": {
+                "currentVersion": "1.4.14"
+              }
+            }
           }
-        ]
+        ],
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -164,7 +175,7 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "b280dac4642fcc1f",
+  "active": "01e36cdb5c2cbde1",
   "lastOpenFiles": [
     "Kernel Bytecode Interpreter.md",
     "General Design.md",

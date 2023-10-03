@@ -1,12 +1,16 @@
-use sys::{CapId, EventId};
+use sys::{CapId, Event, EventId, EventData};
 use bit_utils::Size;
 
 use crate::prelude::*;
-use crate::sched::ThreadRef;
+use crate::sched::{ThreadRef, WakeReason};
 use crate::container::Weak;
 use crate::cap::memory::{Memory, MemoryCopySrc, MemoryWriter, MemoryWriteRegion};
 use crate::cap::channel::{CapabilityWriter, CapabilityTransferInfo};
+use crate::sched::thread_map;
+use crate::container::Arc;
 
+mod broadcast_event_emitter;
+pub use broadcast_event_emitter::*;
 mod event_pool;
 pub use event_pool::*;
 mod message_capacity;
@@ -36,7 +40,7 @@ impl UserspaceBuffer {
     /// # Returns
     /// 
     /// Number of bytes written
-    pub fn copy_from<T: MemoryCopySrc>(&self, src: &T) -> Size {
+    pub fn copy_from<T: MemoryCopySrc + ?Sized>(&self, src: &T) -> Size {
         let Some(memory) = self.memory.upgrade() else {
             return Size::zero();
         };
@@ -115,6 +119,30 @@ pub struct ThreadListenerRef {
     pub event_buffer: UserspaceBuffer,
 }
 
+impl ThreadListenerRef {
+    /// Writes the channel message from `src` to this event listener, and transfers capabilities according to `cap_transfer_info`
+    /// 
+    /// # Returns
+    /// 
+    /// Returns Ok(Some(write_size)) on success,
+    /// Ok(None) if this listener is invalid
+    /// Err(error) if another error occured
+    pub fn write_channel_message(&self, src: &UserspaceBuffer, cap_transfer_info: CapabilityTransferInfo) -> KResult<Option<Size>> {
+        let Some(thread) = self.thread.get_thread_as_ready() else {
+            return Ok(None);
+        };
+
+        let write_size = self.event_buffer.copy_channel_message_from_buffer(src, cap_transfer_info);
+        thread.set_wake_reason(WakeReason::MsgSendRecv { msg_size: write_size });
+
+        // FIXME: don't have oom here
+        thread_map().insert_ready_thread(Arc::downgrade(&thread))
+            .expect("failed to insert thread into ready list");
+
+        Ok(Some(write_size))
+    }
+}
+
 #[derive(Debug)]
 pub struct EventPoolListenerRef {
     pub event_pool: Weak<EventPool>,
@@ -122,15 +150,20 @@ pub struct EventPoolListenerRef {
 }
 
 impl EventPoolListenerRef {
-    pub fn write_event<T: MemoryCopySrc + ?Sized>(&self, src: &T) -> KResult<()> {
+    pub fn write_event(&self, event_data: EventData) -> KResult<()> {
         let Some(event_pool) = self.event_pool.upgrade() else {
             return Err(SysErr::InvlWeak);
         };
 
-        event_pool.write_event(self.event_id, src)
+        let event = Event {
+            event_data,
+            event_id: self.event_id,
+        }.as_raw();
+
+        event_pool.write_event(self.event_id, event.as_bytes())
     }
 
-    /// See [`EventListenerRef`] for details, this behaves exectly the same as an EventListenerRef with an event pool
+    /// Behaves the same as [`ThreadListenerRef::write_channel_message`], but for an event pool
     pub fn write_channel_message(&self, src: &UserspaceBuffer, cap_transfer_info: CapabilityTransferInfo) -> KResult<Option<Size>> {
         let Some(event_pool) = self.event_pool.upgrade() else {
             return Ok(None);

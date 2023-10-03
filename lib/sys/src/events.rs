@@ -23,7 +23,7 @@ macro_rules! create_event_types {
             fn event_size(&self) -> usize {
                 match self {
                     $(
-                        Self::$events => size_of::<$events>() + size_of::<Self>(),
+                        Self::$events => size_of::<$events>() + size_of::<EventId>() + size_of::<Self>(),
                     )*
                     Self::MessageRecieved => panic!("message recieved is unsized"),
                 }
@@ -31,20 +31,27 @@ macro_rules! create_event_types {
         }
 
         #[derive(Debug, Clone, Copy)]
-        pub enum Event {
+        pub enum EventData {
             $(
                 $events($events),
             )*
         }
 
+        #[derive(Debug, Clone, Copy)]
+        pub struct Event {
+            pub event_data: EventData,
+            pub event_id: EventId,
+        }
+
         impl Event {
             pub fn as_raw(&self) -> EventRaw {
-                match self {
+                match self.event_data {
                     $(
-                        Self::$events(event) => EventRaw {
+                        EventData::$events(event) => EventRaw {
                             tag: EventNums::$events,
+                            event_id: self.event_id,
                             inner: EventRawInner {
-                                $events: *event,
+                                $events: event,
                             },
                         },
                     )*
@@ -52,11 +59,7 @@ macro_rules! create_event_types {
             }
 
             pub fn event_id(&self) -> EventId {
-                match self {
-                    $(
-                        Self::$events(event) => event.event_id,
-                    )*
-                }
+                self.event_id
             }
         }
 
@@ -125,13 +128,21 @@ macro_rules! create_event_types {
                 self.assert_aligned();
 
                 let event_type = EventNums::from_repr(self.take()?)?;
+                let event_id = EventId(self.take()?);
         
                 match event_type {
                     $(
-                        EventNums::$events => Some(EventParseResult::Event(Event::$events(self.take()?))),
+                        EventNums::$events => {
+                            let event_data = EventData::$events(self.take()?);
+                            let event = Event {
+                                event_data,
+                                event_id,
+                            };
+
+                            Some(EventParseResult::Event(event))
+                        },
                     )*
                     EventNums::MessageRecieved => {
-                        let event_id = EventId(self.take()?);
                         let message_size = self.take()?;
 
                         let message_data = self.take_bytes(message_size)?;
@@ -148,6 +159,7 @@ macro_rules! create_event_types {
         #[repr(C)]
         pub struct EventRaw {
             tag: EventNums,
+            event_id: EventId,
             inner: EventRawInner,
         }
 
@@ -191,13 +203,56 @@ impl EventId {
 
 create_event_types! {
     MessageSent,
+    ThreadExit,
+}
+
+pub trait EventSyncReturn {
+    type SyncReturn;
+
+    fn as_sync_return(&self) -> Self::SyncReturn;
+    fn from_sync_return(data: Self::SyncReturn) -> Self;
 }
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct MessageSent {
-    pub event_id: EventId,
     pub message_buffer_id: usize,
     pub message_buffer_offset: usize,
     pub message_buffer_len: usize,
+}
+
+impl EventSyncReturn for MessageSent {
+    type SyncReturn = (usize, usize, usize);
+
+    fn as_sync_return(&self) -> Self::SyncReturn {
+        (
+            self.message_buffer_id,
+            self.message_buffer_offset,
+            self.message_buffer_len
+        )
+    }
+
+    fn from_sync_return(data: Self::SyncReturn) -> Self {
+        MessageSent {
+            message_buffer_id: data.0,
+            message_buffer_offset: data.1,
+            message_buffer_len: data.2,
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct ThreadExit;
+
+impl EventSyncReturn for ThreadExit {
+    type SyncReturn = ();
+
+    fn as_sync_return(&self) -> Self::SyncReturn {
+        ()
+    }
+
+    fn from_sync_return(_: Self::SyncReturn) -> Self {
+        ThreadExit
+    }
 }

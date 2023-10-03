@@ -11,6 +11,7 @@ mod channel;
 use channel::*;
 mod debug;
 use debug::*;
+mod event;
 mod drop_check;
 use drop_check::*;
 mod event_pool;
@@ -239,11 +240,14 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		THREAD_SUSPEND => sysret_0!(syscall_1!(thread_suspend, vals), vals),
 		THREAD_RESUME => sysret_0!(syscall_1!(thread_resume, vals), vals),
 		THREAD_SET_PROPERTY => sysret_0!(syscall_2!(thread_set_property, vals), vals),
+		THREAD_HANDLE_THREAD_EXIT_SYNC => sysret_0!(syscall_2!(thread_handle_thread_exit_sync, vals), vals),
+		THREAD_HANDLE_THREAD_EXIT_ASYNC => sysret_0!(syscall_3!(thread_handle_thread_exit_async, vals), vals),
 		CAP_CLONE => sysret_1!(syscall_3!(cap_clone, vals), vals),
 		CAP_DESTROY => sysret_0!(syscall_2!(cap_destroy, vals), vals),
 		ADDRESS_SPACE_NEW => sysret_1!(syscall_1!(address_space_new, vals), vals),
 		MEMORY_MAP => sysret_1!(syscall_4!(memory_map, vals), vals),
 		MEMORY_UNMAP => sysret_0!(syscall_2!(memory_unmap, vals), vals),
+		MEMORY_UPDATE_MAPPING => sysret_1!(syscall_3!(memory_update_mapping, vals), vals),
 		MEMORY_NEW => sysret_2!(syscall_2!(memory_new, vals), vals),
 		MEMORY_GET_SIZE => sysret_1!(syscall_1!(memory_get_size, vals), vals),
 		MEMORY_RESIZE => sysret_1!(syscall_3!(memory_resize, vals), vals),

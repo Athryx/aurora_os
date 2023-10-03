@@ -10,17 +10,19 @@ pub const THREAD_DESTROY: u32 = 5;
 pub const THREAD_SUSPEND: u32 = 6;
 pub const THREAD_RESUME: u32 = 7;
 pub const THREAD_SET_PROPERTY: u32 = 8;
+pub const THREAD_HANDLE_THREAD_EXIT_SYNC: u32 = 9;
+pub const THREAD_HANDLE_THREAD_EXIT_ASYNC: u32 = 10;
 
-pub const CAP_CLONE: u32 = 9;
-pub const CAP_DESTROY: u32 = 10;
+pub const CAP_CLONE: u32 = 11;
+pub const CAP_DESTROY: u32 = 12;
 
-pub const ADDRESS_SPACE_NEW: u32 = 11;
-pub const MEMORY_MAP: u32 = 12;
-pub const MEMORY_UNMAP: u32 = 13;
-pub const MEMORY_UPDATE_MAPPING: u32 = 14;
-pub const MEMORY_NEW: u32 = 15;
-pub const MEMORY_GET_SIZE: u32 = 16;
-pub const MEMORY_RESIZE: u32 = 17;
+pub const ADDRESS_SPACE_NEW: u32 = 13;
+pub const MEMORY_MAP: u32 = 14;
+pub const MEMORY_UNMAP: u32 = 15;
+pub const MEMORY_UPDATE_MAPPING: u32 = 16;
+pub const MEMORY_NEW: u32 = 17;
+pub const MEMORY_GET_SIZE: u32 = 18;
+pub const MEMORY_RESIZE: u32 = 19;
 
 pub const EVENT_POOL_NEW: u32 = 24;
 pub const EVENT_POOL_MAP: u32 = 25;
@@ -50,6 +52,8 @@ pub fn syscall_name(syscall_num: u32) -> &'static str {
         THREAD_SUSPEND => "thread_suspend",
         THREAD_RESUME => "thread_resume",
         THREAD_SET_PROPERTY => "thread_set_property",
+        THREAD_HANDLE_THREAD_EXIT_SYNC => "thread_handel_thread_exit_sync",
+        THREAD_HANDLE_THREAD_EXIT_ASYNC => "thread_handel_thread_exit_async",
         CAP_CLONE => "cap_clone",
         CAP_DESTROY => "cap_destroy",
         ADDRESS_SPACE_NEW => "address_space_new",

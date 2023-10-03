@@ -1,10 +1,14 @@
 use core::sync::atomic::{AtomicUsize, Ordering, AtomicBool};
 
+use sys::{EventData, ThreadExit};
+
+use crate::alloc::HeapRef;
 use crate::arch::x64::{wrmsr, FSBASE_MSR};
 use crate::cap::CapObject;
 use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::address_space::AddressSpace;
 use crate::container::Arc;
+use crate::event::{BroadcastEventEmitter, BroadcastEventListener};
 use crate::sync::IMutex;
 use super::kernel_stack::KernelStack;
 use super::{thread_map, ThreadGroup};
@@ -46,7 +50,7 @@ impl ThreadState {
 }
 
 /// Notifies a thread why it was woken up
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy)]
 pub enum WakeReason {
     None,
     /// Thread was woken up do to a timeout finishing
@@ -59,6 +63,8 @@ pub enum WakeReason {
     EventPoolEventRecieved {
         event_range: UVirtRange,
     },
+    /// An event was recieved
+    EventRecieved(EventData),
 }
 
 #[derive(Debug)]
@@ -75,6 +81,7 @@ pub struct Thread {
     thread_group: Weak<ThreadGroup>,
     address_space: Arc<AddressSpace>,
     capability_space: Arc<CapabilitySpace>,
+    exit_event: IMutex<BroadcastEventEmitter>,
 }
 
 impl Thread {
@@ -85,6 +92,7 @@ impl Thread {
         thread_group: Weak<ThreadGroup>,
         address_space: Arc<AddressSpace>,
         capability_space: Arc<CapabilitySpace>,
+        heap_ref: HeapRef,
     ) -> Self {
         Thread {
             name,
@@ -97,6 +105,7 @@ impl Thread {
             thread_group,
             address_space,
             capability_space,
+            exit_event: IMutex::new(BroadcastEventEmitter::new(heap_ref)),
         }
     }
 
@@ -139,6 +148,10 @@ impl Thread {
     /// Gets the wake reason of this thread
     pub fn wake_reason(&self) -> WakeReason {
         *self.wake_reason.lock()
+    }
+
+    pub fn set_wake_reason(&self, reason: WakeReason) {
+        *self.wake_reason.lock() = reason;
     }
 
     pub fn thread_local_pointer(&self) -> usize {
@@ -202,6 +215,17 @@ impl Thread {
         } else {
             Err(SysErr::InvlOp)
         }
+    }
+
+    pub fn add_exit_event_listener(&self, listener: BroadcastEventListener) -> KResult<()> {
+        self.exit_event.lock().add_listener(listener)
+    }
+}
+
+impl Drop for Thread {
+    fn drop(&mut self) {
+        // ignore errors, no where to report them
+        let _ = self.exit_event.lock().emit_event(EventData::ThreadExit(ThreadExit));
     }
 }
 
@@ -280,7 +304,7 @@ impl ThreadRef {
             return false;
         };
 
-        *thread.wake_reason.lock() = wake_reason;
+        thread.set_wake_reason(wake_reason);
 
         // FIXME: don't have oom here
         thread_map().insert_ready_thread(Arc::downgrade(&thread))

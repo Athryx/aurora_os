@@ -238,6 +238,7 @@ pub fn init_cpu_local(stack: AVirtRange) -> KResult<()> {
             Arc::downgrade(thread_group),
             address_space.clone(),
             capability_space.clone(),
+            root_alloc_ref(),
         ),
         root_alloc_ref(),
     )?;

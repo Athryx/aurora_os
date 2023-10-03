@@ -111,6 +111,7 @@ impl ThreadGroup {
                 Arc::downgrade(this),
                 address_space,
                 capability_space,
+                this.heap_allocator.clone(),
             ),
             this.heap_allocator.clone(),
         )?;

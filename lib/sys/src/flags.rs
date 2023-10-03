@@ -61,6 +61,19 @@ impl From<CapCloneFlags> for CapFlags {
 
 
 bitflags! {
+    pub struct HandleEventSyncFlags: u32 {
+        const TIMEOUT = 1;
+    }
+}
+
+bitflags! {
+    pub struct HandleEventAsyncFlags: u32 {
+        const AUTO_REQUE = 1;
+    }
+}
+
+
+bitflags! {
     pub struct ThreadNewFlags: u32 {
         const CREATE_CAPABILITY_SPACE = 1;
         const THREAD_AUTOSTART = 1 << 1;

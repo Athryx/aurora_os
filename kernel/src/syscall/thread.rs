@@ -1,4 +1,4 @@
-use sys::{CapFlags, ThreadNewFlags, ThreadSuspendFlags, ThreadDestroyFlags, ThreadProperty};
+use sys::{CapFlags, ThreadNewFlags, ThreadSuspendFlags, ThreadDestroyFlags, ThreadProperty, ThreadExit};
 
 use crate::alloc::HeapRef;
 use crate::arch::x64::IntDisable;
@@ -178,7 +178,7 @@ pub fn thread_suspend(options: u32, timeout_nsec: usize) -> KResult<()> {
             false,
         ).expect("could not find idle thread to switch to");
 
-        if cpu_local_data().current_thread().wake_reason() == WakeReason::Timeout {
+        if matches!(cpu_local_data().current_thread().wake_reason(), WakeReason::Timeout) {
             Err(SysErr::OkTimeout)
         } else {
             Ok(())
@@ -224,3 +224,5 @@ pub fn thread_set_property(_options: u32, property: usize, data: usize) -> KResu
 
     Ok(())
 }
+
+crate::generate_event_syscall!(thread, ThreadExit, thread_exit, CapFlags::PROD, Thread::add_exit_event_listener);

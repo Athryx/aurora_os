@@ -36,8 +36,16 @@
     - add support to memory mapping syscalls that allow mapping at some offset into the memory capability
     - extend memory_update_mapping to support moving the base address and changing mapping flags
     - maybe merge memory_resize and memory_update_mapping syscalls
+- redisign memory system
+    - copy on write
+    - figure out how dirty page tracking is communcated to userspace
+    - figure how paging to disc will communicate to userspace
 - figure out if weak capabilities are even needed
     - their original intent was so you can send your capability to another process and still have control over when its dropped
     - probably just remove weak auto destroy though, and make destroying invalid weaks the default behavior
 - clean up handling of weak capabilities in userspace
 - Add syscalls to remove event pools from listening to an event
+- Get rid of int disable everywhere
+    - 2 options
+        - get rid of IPI_PROCESS_EXIT and have syscalls check if they should switch processess only when returning
+        - make kernel entirely non preemptable, switch to 1 stack per cpu
