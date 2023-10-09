@@ -35,6 +35,9 @@ pub const CHANNEL_ASYNC_SEND: u32 = 30;
 pub const CHANNEL_TRY_RECV: u32 = 31;
 pub const CHANNEL_SYNC_RECV: u32 = 32;
 pub const CHANNEL_ASYNC_RECV: u32 = 33;
+pub const CHANNEL_SYNC_CALL: u32 = 34;
+pub const CHANNEL_ASYNC_CALL: u32 = 35;
+pub const REPLY_REPLY: u32 = 36;
 
 pub const KEY_NEW: u32 = 38;
 pub const KEY_ID: u32 = 39;
@@ -73,6 +76,9 @@ pub fn syscall_name(syscall_num: u32) -> &'static str {
         CHANNEL_TRY_RECV => "channel_try_recv",
         CHANNEL_SYNC_RECV => "channel_sync_recv",
         CHANNEL_ASYNC_RECV => "channel_async_recv",
+        CHANNEL_SYNC_CALL => "channel_sync_call",
+        CHANNEL_ASYNC_CALL => "channel_async_call",
+        REPLY_REPLY => "reply_reply",
         KEY_NEW => "key_new",
         KEY_ID => "key_id",
         DROP_CHECK_NEW => "drop_check_new",

@@ -30,11 +30,28 @@ impl<T> Box<T> {
         }
     }
 
-    pub fn into_raw(this: Self) -> (*mut T, HeapRef) {
+    pub unsafe fn from_mem_owner(mem_owner: MemOwner<T>, allocator: HeapRef) -> Self {
+        Box {
+            data: mem_owner,
+            allocator,
+        }
+    }
+
+    pub fn into_pieces(this: Self) -> (MemOwner<T>, HeapRef) {
         let data = unsafe { ptr::read(&this.data) };
         let allocator = unsafe { ptr::read(&this.allocator) };
         mem::forget(this);
+        (data, allocator)
+    }
+
+    pub fn into_raw(this: Self) -> (*mut T, HeapRef) {
+        let (data, allocator) = Self::into_pieces(this);
         (data.ptr_mut(), allocator)
+    }
+
+    pub fn into_mem_owner(this: Self) -> MemOwner<T> {
+        let (data, _) = Self::into_pieces(this);
+        data
     }
 
     fn try_clone(this: &Self) -> KResult<Self>

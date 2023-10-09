@@ -5,7 +5,10 @@ use bytemuck::{Pod, Zeroable, AnyBitPattern, try_from_bytes};
 use bit_utils::align_of;
 use strum::FromRepr;
 
-use crate::CapId;
+use crate::{CapId, Reply};
+
+/// The event number of message recieved, kernel needs to know this
+pub const MESSAGE_RECIEVED_NUM: usize = EventNums::MessageRecieved as usize;
 
 macro_rules! create_event_types {
     ($( $events:ident ),*,) => {
@@ -101,9 +104,10 @@ macro_rules! create_event_types {
             }
         }
 
-        #[derive(Debug, Clone, Copy)]
+        #[derive(Debug)]
         pub struct MessageRecievedEvent<'a> {
             pub event_id: EventId,
+            pub reply: Option<Reply>,
             pub message_data: &'a [u8],
         }
 
@@ -129,7 +133,7 @@ macro_rules! create_event_types {
 
                 let event_type = EventNums::from_repr(self.take()?)?;
                 let event_id = EventId(self.take()?);
-        
+
                 match event_type {
                     $(
                         EventNums::$events => {
@@ -143,12 +147,18 @@ macro_rules! create_event_types {
                         },
                     )*
                     EventNums::MessageRecieved => {
+                        let reply_id = self.take()?;
+                        let reply = CapId::try_from(reply_id)
+                            .map(Reply::from_cap_id)
+                            .flatten();
+
                         let message_size = self.take()?;
 
                         let message_data = self.take_bytes(message_size)?;
 
                         Some(EventParseResult::MessageRecieved(MessageRecievedEvent {
                             event_id,
+                            reply,
                             message_data,
                         }))
                     },

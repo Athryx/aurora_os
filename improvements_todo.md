@@ -45,6 +45,11 @@
     - probably just remove weak auto destroy though, and make destroying invalid weaks the default behavior
 - clean up handling of weak capabilities in userspace
 - Add syscalls to remove event pools from listening to an event
+- Add zero copy channel sends
+    - raw pages will just be remapped if reciever specifies page aligned address and size, and sender specifies page aligned address and special flag
+        - the reason for using flag to enable it is so sender can still specify actual copy size not page aligned, so if reciever buffer is not page aligned extra bytes don't need to be copied
+    - add another type of event pool or something for page aligned data, so pages can just be pushed into this event pool
+        - seperate from normal event pool so small writes don't get interspersed and cause issues with wasted space due to alignmant needs
 - Get rid of int disable everywhere
     - 2 options
         - get rid of IPI_PROCESS_EXIT and have syscalls check if they should switch processess only when returning

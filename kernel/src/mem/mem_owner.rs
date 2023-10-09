@@ -10,6 +10,8 @@ pub trait MemOwnerKernelExt<T> {
         where Self: Sized;
 
     unsafe fn drop_in_place(self, allocator: &mut HeapRef);
+
+    unsafe fn as_box(self, allocator: HeapRef) -> Box<T>;
 }
 
 impl<T> MemOwnerKernelExt<T> for MemOwner<T> {
@@ -30,6 +32,12 @@ impl<T> MemOwnerKernelExt<T> for MemOwner<T> {
         unsafe {
             ptr::drop_in_place(self.ptr_nonnull().as_ptr());
             allocator.dealloc(self.ptr_nonnull().cast(), Layout::new::<T>());
+        }
+    }
+
+    unsafe fn as_box(self, allocator: HeapRef) -> Box<T> {
+        unsafe {
+            Box::from_mem_owner(self, allocator)
         }
     }
 }

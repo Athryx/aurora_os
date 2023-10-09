@@ -12,9 +12,15 @@ use crate::sync::IMutex;
 use crate::container::Arc;
 use super::address_space::AddressSpace;
 use super::drop_check::{DropCheck, DropCheckReciever};
-use super::{CapId, Capability, StrongCapability, CapFlags, CapObject, key::Key, memory::Memory, channel::Channel};
+use super::{CapId, Capability, StrongCapability, CapFlags, CapObject, key::Key, memory::Memory, channel::{Channel, Reply}};
 
-type InnerCapMap<T> = IMutex<HashMap<CapId, Capability<T>>>;
+#[derive(Debug)]
+struct CapabilityEntry<T: CapObject> {
+    visible: bool,
+    capability: Capability<T>,
+}
+
+type InnerCapMap<T> = IMutex<HashMap<CapId, CapabilityEntry<T>>>;
 
 /// A map that holds all the capabilities in a process
 #[derive(Debug)]
@@ -28,6 +34,7 @@ pub struct CapabilitySpace {
     event_pool_map: InnerCapMap<EventPool>,
     key_map: InnerCapMap<Key>,
     channel_map: InnerCapMap<Channel>,
+    reply_map: InnerCapMap<Reply>,
     allocator_map: InnerCapMap<CapAllocator>,
     drop_check_map: InnerCapMap<DropCheck>,
     drop_check_reciever_map: InnerCapMap<DropCheckReciever>,
@@ -45,6 +52,7 @@ impl CapabilitySpace {
             event_pool_map: IMutex::new(HashMap::new(allocator.clone())),
             key_map: IMutex::new(HashMap::new(allocator.clone())),
             channel_map: IMutex::new(HashMap::new(allocator.clone())),
+            reply_map: IMutex::new(HashMap::new(allocator.clone())),
             allocator_map: IMutex::new(HashMap::new(allocator.clone())),
             drop_check_map: IMutex::new(HashMap::new(allocator.clone())),
             drop_check_reciever_map: IMutex::new(HashMap::new(allocator)),
@@ -68,25 +76,46 @@ macro_rules! generate_cap_methods {
     ($map:ty, $cap_type:ty, $cap_map:ident, $cap_name:ident) => {
         paste! {
             impl $map {
-                pub fn [<insert_ $cap_name>](&self, mut capability: Capability<$cap_type>) -> KResult<CapId> {
+                pub fn [<insert_ $cap_name _inner>](&self, mut capability: Capability<$cap_type>, visible: bool) -> KResult<CapId> {
                     let next_id = self.next_id.fetch_add(1, Ordering::Relaxed);
-                    
+
                     let cap_id = CapId::new(
                         $cap_type::TYPE,
                         capability.flags(),
                         capability.is_weak(),
-                        next_id
+                        next_id,
                     );
 
                     capability.set_id(cap_id);
 
-                    self.$cap_map.lock().insert(cap_id, capability)?;
+                    self.$cap_map.lock().insert(cap_id, CapabilityEntry {
+                        capability,
+                        visible,
+                    })?;
                     Ok(cap_id)
                 }
 
+                pub fn [<insert_ $cap_name>](&self, capability: Capability<$cap_type>) -> KResult<CapId> {
+                    self.[<insert_ $cap_name _inner>](capability, true)
+                }
+
+                pub fn [<insert_ $cap_name _invisible>](&self, capability: Capability<$cap_type>) -> KResult<CapId> {
+                    self.[<insert_ $cap_name _inner>](capability, false)
+                }
+
+                pub fn [<make_ $cap_name _visible>](&self, cap_id: CapId) -> KResult<()> {
+                    let mut map = self.$cap_map.lock();
+
+                    let entry = map.get_mut(&cap_id).ok_or(SysErr::InvlId)?;
+                    entry.visible = true;
+
+                    Ok(())
+                }
+
                 pub fn [<remove_ $cap_name>](&self, cap_id: CapId) -> KResult<Capability<$cap_type>> {
-                    self.$cap_map.lock().remove(&cap_id)
-                        .ok_or(SysErr::InvlId)
+                    Ok(self.$cap_map.lock().remove(&cap_id)
+                        .ok_or(SysErr::InvlId)?
+                        .capability)
                 }
 
                 pub fn [<get_ $cap_name _with_perms>](
@@ -98,13 +127,17 @@ macro_rules! generate_cap_methods {
                     let mut map = self.$cap_map.lock();
 
                     let cap_id = CapId::try_from(cap_id).ok_or(SysErr::InvlId)?;
-                    let cap = map.get(&cap_id).ok_or(SysErr::InvlId)?;
+                    let entry = map.get(&cap_id).ok_or(SysErr::InvlId)?;
 
-                    if !cap.flags().contains(required_perms) {
-                        return Err(SysErr::InvlPerm)
+                    if !entry.visible {
+                        return Err(SysErr::InvlId);
                     }
 
-                    match cap {
+                    if !entry.capability.flags().contains(required_perms) {
+                        return Err(SysErr::InvlPerm);
+                    }
+
+                    match &entry.capability {
                         Capability::Strong(cap) => Ok(cap.clone()),
                         Capability::Weak(cap) => {
                             let strong = cap.upgrade();
@@ -126,7 +159,7 @@ macro_rules! generate_cap_methods {
                 pub fn [<get_ $cap_name>](&self, cap_id: CapId) -> KResult<Capability<$cap_type>> {
                     let map = self.$cap_map.lock();
 
-                    Ok(map.get(&cap_id).ok_or(SysErr::InvlId)?.clone())
+                    Ok(map.get(&cap_id).ok_or(SysErr::InvlId)?.capability.clone())
                 }
 
                 /// Used by cap_clone syscall
@@ -202,6 +235,7 @@ generate_cap_methods!(CapabilitySpace, Memory, memory_map, memory);
 generate_cap_methods!(CapabilitySpace, EventPool, event_pool_map, event_pool);
 generate_cap_methods!(CapabilitySpace, Key, key_map, key);
 generate_cap_methods!(CapabilitySpace, Channel, channel_map, channel);
+generate_cap_methods!(CapabilitySpace, Reply, reply_map, reply);
 generate_cap_methods!(CapabilitySpace, CapAllocator, allocator_map, allocator);
 generate_cap_methods!(CapabilitySpace, DropCheck, drop_check_map, drop_check);
 generate_cap_methods!(CapabilitySpace, DropCheckReciever, drop_check_reciever_map, drop_check_reciever);
@@ -217,7 +251,6 @@ impl CapabilitySpace {
         weak_auto_destroy: bool,
     ) -> KResult<UserspaceBuffer> {
         let memory = self.get_memory_with_perms(memory_id, required_perms, weak_auto_destroy)?
-            .downgrade()
             .into_inner();
 
         let memory_cap_id = CapId::try_from(memory_id)

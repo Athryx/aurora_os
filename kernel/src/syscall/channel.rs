@@ -1,8 +1,8 @@
-use sys::{CapFlags, ChannelSyncFlags, ChannelAsyncRecvFlags, EventId};
+use sys::{CapId, CapFlags, ChannelSyncFlags, ChannelAsyncRecvFlags, EventId};
 
 use crate::alloc::HeapRef;
 use crate::cap::capability_space::CapabilitySpace;
-use crate::cap::channel::SendRecvResult;
+use crate::cap::channel::ChannelSyncResult;
 use crate::cap::{Capability, StrongCapability, channel::Channel};
 use crate::container::Arc;
 use crate::event::{UserspaceBuffer, EventPoolListenerRef};
@@ -107,10 +107,10 @@ pub fn channel_sync_send(
         CapFlags::READ,
     )?;
 
-    match channel.sync_send(buffer, cspace) {
-        SendRecvResult::Success(write_size) => Ok(write_size.bytes()),
-        SendRecvResult::Error(error) => Err(error),
-        SendRecvResult::Block => {
+    match channel.sync_send(&buffer, &cspace) {
+        ChannelSyncResult::Success(write_size) => Ok(write_size.bytes()),
+        ChannelSyncResult::Error(error) => Err(error),
+        ChannelSyncResult::Block => {
             drop(channel);
 
             let post_switch_hook = if flags.contains(ChannelSyncFlags::TIMEOUT) {
@@ -128,7 +128,7 @@ pub fn channel_sync_send(
 
             let _int_disable = IntDisable::new();
             match cpu_local_data().current_thread().wake_reason() {
-                WakeReason::MsgSendRecv { msg_size } => Ok(msg_size.bytes()),
+                WakeReason::MsgSend { msg_size } => Ok(msg_size.bytes()),
                 WakeReason::Timeout => Err(SysErr::OkTimeout),
                 _ => unreachable!(),
             }
@@ -142,7 +142,7 @@ pub fn channel_try_recv(
     msg_buf_id: usize,
     msg_buf_offset: usize,
     msg_buf_size: usize,
-) -> KResult<usize> {
+) -> KResult<(usize, usize)> {
     let _int_disable = IntDisable::new();
 
     let (channel, buffer, cspace) = channel_handle_args(
@@ -155,7 +155,12 @@ pub fn channel_try_recv(
         CapFlags::WRITE,
     )?;
     
-    channel.try_recv(&buffer, &cspace).map(Size::bytes)
+    let recv_result = channel.try_recv(&buffer, &cspace)?;
+
+    Ok((
+        recv_result.recieve_size.bytes(),
+        recv_result.reply_cap_id.unwrap_or(CapId::null()).into(),
+    ))
 }
 
 pub fn channel_sync_recv(
@@ -165,7 +170,7 @@ pub fn channel_sync_recv(
     msg_buf_offset: usize,
     msg_buf_size: usize,
     timeout: usize,
-) -> KResult<usize> {
+) -> KResult<(usize, usize)> {
     let flags = ChannelSyncFlags::from_bits_truncate(options);
 
     let int_disable = IntDisable::new();
@@ -180,10 +185,13 @@ pub fn channel_sync_recv(
         CapFlags::WRITE,
     )?;
 
-    match channel.sync_recv(buffer, cspace) {
-        SendRecvResult::Success(write_size) => Ok(write_size.bytes()),
-        SendRecvResult::Error(error) => Err(error),
-        SendRecvResult::Block => {
+    match channel.sync_recv(&buffer, &cspace) {
+        ChannelSyncResult::Success(recv_result) => Ok((
+            recv_result.recieve_size.bytes(),
+            recv_result.reply_cap_id.unwrap_or(CapId::null()).into(),
+        )),
+        ChannelSyncResult::Error(error) => Err(error),
+        ChannelSyncResult::Block => {
             drop(channel);
 
             let post_switch_hook = if flags.contains(ChannelSyncFlags::TIMEOUT) {
@@ -201,7 +209,10 @@ pub fn channel_sync_recv(
 
             let _int_disable = IntDisable::new();
             match cpu_local_data().current_thread().wake_reason() {
-                WakeReason::MsgSendRecv { msg_size } => Ok(msg_size.bytes()),
+                WakeReason::MsgRecv(recieve_result) => Ok((
+                    recieve_result.recieve_size.bytes(),
+                    recieve_result.reply_cap_id.unwrap_or(CapId::null()).into(),
+                )),
                 WakeReason::Timeout => Err(SysErr::OkTimeout),
                 _ => unreachable!(),
             }
@@ -241,7 +252,7 @@ pub fn channel_async_send(
         event_id,
     };
 
-    channel.async_send(event_pool_listener, buffer, cspace)
+    channel.async_send(event_pool_listener, &buffer, &cspace)
 }
 
 pub fn channel_async_recv(
@@ -272,5 +283,60 @@ pub fn channel_async_recv(
         event_id,
     };
 
-    channel.async_recv(event_pool_listener, flags.contains(ChannelAsyncRecvFlags::AUTO_REQUE), cspace)
+    channel.async_recv(event_pool_listener, flags.contains(ChannelAsyncRecvFlags::AUTO_REQUE), &cspace)
+}
+
+pub fn channel_sync_call(
+    options: u32,
+    channel_id: usize,
+    send_buf_id: usize,
+    send_buf_offset: usize,
+    send_buf_size: usize,
+    recv_buf_id: usize,
+    recv_buf_offset: usize,
+    recv_buf_size: usize,
+    timeout: usize,
+) -> KResult<usize> {
+    todo!()
+}
+
+pub fn channel_async_call(
+    options: u32,
+    channel_id: usize,
+    send_buf_id: usize,
+    send_buf_offset: usize,
+    send_buf_size: usize,
+    event_pool_id: usize,
+    event_id: usize,
+) -> KResult<()> {
+    todo!()
+}
+
+pub fn reply_reply(
+    options: u32,
+    reply_id: usize,
+    send_buf_id: usize,
+    send_buf_offset: usize,
+    send_buf_size: usize,
+) -> KResult<usize> {
+    let weak_auto_destroy = options_weak_autodestroy(options);
+
+    let _int_disable = IntDisable::new();
+
+    let cspace = CapabilitySpace::current();
+
+    let reply = cspace
+        .get_reply_with_perms(reply_id, CapFlags::WRITE, weak_auto_destroy)?
+        .into_inner();
+
+    let send_buffer = cspace
+        .get_userspace_buffer(
+            send_buf_id,
+            send_buf_offset,
+            send_buf_size,
+            CapFlags::WRITE,
+            weak_auto_destroy,
+        )?;
+
+    reply.reply(&send_buffer, &cspace).map(Size::bytes)
 }

@@ -305,10 +305,8 @@ impl MemoryInner {
         }
     }
 
-    pub fn copy_from<T: MemoryCopySrc + ?Sized>(&self, range: impl RangeBounds<usize>, src: &T) -> Size {
-        let Some(mut writer) = self.create_memory_writer(range) else {
-            return Size::zero();
-        };
+    pub fn copy_from<T: MemoryCopySrc + ?Sized>(&self, range: impl RangeBounds<usize>, src: &T) -> KResult<Size> {
+        let mut writer = self.create_memory_writer(range).ok_or(SysErr::InvlMemZone)?;
 
         src.copy_to(&mut writer)
     }

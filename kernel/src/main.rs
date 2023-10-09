@@ -15,6 +15,7 @@
 #![feature(let_chains)]
 #![feature(try_blocks)]
 #![feature(return_position_impl_trait_in_trait)]
+#![feature(try_trait_v2)]
 #![allow(dead_code)]
 #![deny(unsafe_op_in_unsafe_fn)]
 #![feature(custom_test_frameworks)]

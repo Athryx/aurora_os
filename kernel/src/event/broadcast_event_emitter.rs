@@ -57,7 +57,11 @@ impl BroadcastEventListener {
 
                 Ok(())
             },
-            Self::EventPool { event_pool, .. } => event_pool.write_event(event_data),
+            Self::EventPool { event_pool, .. } => {
+                event_pool.write_event(event_data)?;
+
+                Ok(())
+            },
         }
     }
 }

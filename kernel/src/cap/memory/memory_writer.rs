@@ -99,7 +99,7 @@ pub trait MemoryCopySrc {
     fn size(&self) -> usize;
 
     /// Returns the number of bytes written
-    fn copy_to(&self, writer: &mut impl MemoryWriter) -> Size;
+    fn copy_to(&self, writer: &mut impl MemoryWriter) -> KResult<Size>;
 }
 
 impl MemoryCopySrc for [u8] {
@@ -107,8 +107,8 @@ impl MemoryCopySrc for [u8] {
         self.len()
     }
 
-    fn copy_to(&self, writer: &mut impl MemoryWriter) -> Size {
-        writer.write_region(self.into()).write_size
+    fn copy_to(&self, writer: &mut impl MemoryWriter) -> KResult<Size> {
+        Ok(writer.write_region(self.into()).write_size)
     }
 }
 
@@ -130,10 +130,31 @@ impl PlainMemoryWriter<'_> {
         self.memory.allocations[self.alloc_entry_index]
     }
 
-    pub fn current_offset_ptr(&self) -> *mut u8 {
+    fn current_offset_ptr(&self) -> *mut u8 {
         let dest_offset = self.offset - self.current_alloc_entry().offset;
         unsafe {
             self.current_alloc_entry().allocation.as_mut_ptr::<u8>().add(dest_offset)
+        }
+    }
+
+    pub fn push_usize_ptr(&mut self) -> Option<*mut usize> {
+        // number of bytes that need to be pushed for usize to be aligned
+        let align_amount = align_up(self.offset, size_of::<usize>()) - self.offset;
+
+        let bytes = [0u8; size_of::<usize>()];
+        let write_slice = &bytes[..align_amount];
+        if self.write_region(write_slice.into()).end_reached {
+            return None;
+        }
+
+        // this pointer will now be aligned
+        // since usize is size aligned, this will not span 2 pages, so it will be in a contigous allocation
+        let out = self.current_offset_ptr() as *mut usize;
+
+        if self.write_region(bytes.as_slice().into()).write_size.bytes() != size_of::<usize>() {
+            None
+        } else {
+            Some(out)
         }
     }
 }

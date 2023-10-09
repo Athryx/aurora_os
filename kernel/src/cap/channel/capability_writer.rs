@@ -32,7 +32,7 @@ impl<'a> CapabilityWriter<'a> {
 impl MemoryWriter for CapabilityWriter<'_> {
     fn write_region(&mut self, mut region: MemoryWriteRegion) -> WriteResult {
         if self.copy_count.is_none() {
-            // initialize copy count if it i not initialized
+            // initialize copy count if it is not initialized
 
             let Some(cap_count) = region.read_value::<usize>() else {
                 return WriteResult {
@@ -41,16 +41,14 @@ impl MemoryWriter for CapabilityWriter<'_> {
                 };
             };
 
-            let dst_count_ptr = self.inner_writer.current_offset_ptr() as *mut usize;
-
-            // write 1 usize of 0
-            let zero = usize::to_le_bytes(0);
-            let write_result = self.inner_writer.write_region(zero.as_slice().into());
-
-            // if there is not enough space for the dest count ptr, return early
-            if write_result.write_size.bytes() < size_of::<usize>() {
-                return write_result;
-            }
+            let Some(dst_count_ptr) = self.inner_writer.push_usize_ptr() else {
+                return WriteResult {
+                    // FIXME: this is not technically accurate, a few bytes could have been written,
+                    // but effectively nothing was written
+                    write_size: Size::zero(),
+                    end_reached: true,
+                }
+            };
 
             self.copy_count = Some(CapabilityCopyCount {
                 remaining_cap_count: cap_count,
@@ -113,9 +111,9 @@ impl CapabilityCopyCount {
     fn inc_copy_count(&mut self) {
         // safety: this address is ensured to be valid when constructing a capability writer
         unsafe {
-            // use write unaligned, userspace might not give us an aligned buffer
-            let old_count = ptr::read_unaligned(self.dst_count_ptr);
-            ptr::write_unaligned(self.dst_count_ptr, old_count + 1);
+            // plain writer ensures pointer it gives us is aligned
+            let old_count = ptr::read(self.dst_count_ptr);
+            ptr::write(self.dst_count_ptr, old_count + 1);
         }
     }
 

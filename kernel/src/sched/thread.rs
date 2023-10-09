@@ -7,6 +7,7 @@ use crate::arch::x64::{wrmsr, FSBASE_MSR};
 use crate::cap::CapObject;
 use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::address_space::AddressSpace;
+use crate::cap::channel::RecieveResult;
 use crate::container::Arc;
 use crate::event::{BroadcastEventEmitter, BroadcastEventListener};
 use crate::sync::IMutex;
@@ -55,10 +56,12 @@ pub enum WakeReason {
     None,
     /// Thread was woken up do to a timeout finishing
     Timeout,
-    /// Thread was woken up after sending or recieving a message from a channel
-    MsgSendRecv {
+    /// Thread was woken up after sending a message on a channel
+    MsgSend {
         msg_size: Size,
     },
+    /// Thread was woken up after recieving a message
+    MsgRecv(RecieveResult),
     /// The event pool this thread was waiting on recieved an event
     EventPoolEventRecieved {
         event_range: UVirtRange,
