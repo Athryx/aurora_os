@@ -134,6 +134,22 @@ macro_rules! syscall_7 {
 	};
 }
 
+macro_rules! syscall_8 {
+	($func:expr, $vals:expr) => {
+		$func(
+			$vals.options,
+			$vals.a1,
+			$vals.a2,
+			$vals.a3,
+			$vals.a4,
+			$vals.a5,
+			$vals.a6,
+			$vals.a7,
+			$vals.a8,
+		)
+	};
+}
+
 macro_rules! sysret_0 {
 	($ret:expr, $vals:expr) => {
 		match $ret {
@@ -221,17 +237,7 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 	}
 
     match syscall_num {
-		PRINT_DEBUG => sysret_0!(print_debug(
-			vals.options,
-			vals.a1,
-			vals.a2,
-			vals.a3,
-			vals.a4,
-			vals.a5,
-			vals.a6,
-			vals.a7,
-			vals.a8,
-		), vals),
+		PRINT_DEBUG => sysret_0!(syscall_8!(print_debug, vals), vals),
 		THREAD_GROUP_NEW => sysret_1!(syscall_2!(thread_group_new, vals), vals),
 		THREAD_GROUP_EXIT => sysret_0!(syscall_1!(thread_group_exit, vals), vals),
 		THREAD_NEW => sysret_2!(syscall_6!(thread_new, vals), vals),
@@ -261,6 +267,8 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		CHANNEL_TRY_RECV => sysret_2!(syscall_4!(channel_try_recv, vals), vals),
 		CHANNEL_SYNC_RECV => sysret_2!(syscall_5!(channel_sync_recv, vals), vals),
 		CHANNEL_ASYNC_RECV => sysret_0!(syscall_3!(channel_async_recv, vals), vals),
+		CHANNEL_SYNC_CALL => sysret_1!(syscall_8!(channel_sync_call, vals), vals),
+		CHANNEL_ASYNC_CALL => sysret_0!(syscall_6!(channel_async_call, vals), vals),
 		REPLY_REPLY => sysret_1!(syscall_4!(reply_reply, vals), vals),
 		KEY_NEW => sysret_1!(syscall_1!(key_new, vals), vals),
 		KEY_ID => sysret_1!(syscall_1!(key_id, vals), vals),

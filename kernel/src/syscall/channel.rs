@@ -193,6 +193,8 @@ pub fn channel_sync_recv(
         ChannelSyncResult::Error(error) => Err(error),
         ChannelSyncResult::Block => {
             drop(channel);
+            drop(buffer);
+            drop(cspace);
 
             let post_switch_hook = if flags.contains(ChannelSyncFlags::TIMEOUT) {
                 PostSwitchAction::SetTimeout(timeout as u64)
@@ -297,7 +299,53 @@ pub fn channel_sync_call(
     recv_buf_size: usize,
     timeout: usize,
 ) -> KResult<usize> {
-    todo!()
+    let weak_auto_destroy = options_weak_autodestroy(options);
+    let flags = ChannelSyncFlags::from_bits_truncate(options);
+
+    let int_disable = IntDisable::new();
+
+    {
+        let (channel, send_buffer, cspace) = channel_handle_args(
+            options,
+            channel_id,
+            CapFlags::PROD,
+            send_buf_id,
+            send_buf_offset,
+            send_buf_size,
+            CapFlags::READ,
+        )?;
+
+        let recv_buffer = cspace
+            .get_userspace_buffer(
+                recv_buf_id,
+                recv_buf_offset,
+                recv_buf_size,
+                CapFlags::WRITE,
+                weak_auto_destroy,
+            )?;
+        
+        channel.sync_call(&send_buffer, &recv_buffer, &cspace)?;
+    }
+
+    let post_switch_hook = if flags.contains(ChannelSyncFlags::TIMEOUT) {
+        PostSwitchAction::SetTimeout(timeout as u64)
+    } else {
+        PostSwitchAction::None
+    };
+
+    switch_current_thread_to(
+        ThreadState::Suspended,
+        int_disable,
+        post_switch_hook,
+        false,
+    ).expect("failed to suspend thread while waiting on channel");
+
+    let _int_disable = IntDisable::new();
+    match cpu_local_data().current_thread().wake_reason() {
+        WakeReason::MsgRecv(recieve_result) => Ok(recieve_result.recieve_size.bytes()),
+        WakeReason::Timeout => Err(SysErr::OkTimeout),
+        _ => unreachable!(),
+    }
 }
 
 pub fn channel_async_call(
@@ -309,7 +357,30 @@ pub fn channel_async_call(
     event_pool_id: usize,
     event_id: usize,
 ) -> KResult<()> {
-    todo!()
+    let event_id = EventId::from_u64(event_id as u64);
+
+    let _int_disable = IntDisable::new();
+
+    let (channel, buffer, cspace) = channel_handle_args(
+        options,
+        channel_id,
+        CapFlags::PROD,
+        send_buf_id,
+        send_buf_offset,
+        send_buf_size,
+        CapFlags::READ,
+    )?;
+
+    let event_pool = CapabilitySpace::current()
+        .get_event_pool_with_perms(event_pool_id, CapFlags::WRITE, options_weak_autodestroy(options))?
+        .into_inner();
+
+    let event_pool_listener = EventPoolListenerRef {
+        event_pool: Arc::downgrade(&event_pool),
+        event_id,
+    };
+
+    channel.async_call(event_pool_listener, &buffer, &cspace)
 }
 
 pub fn reply_reply(
