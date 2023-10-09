@@ -11,10 +11,12 @@ use crate::{
     EventId,
     syscall,
     sysret_0,
-    sysret_1, ChannelAsyncRecvFlags,
+    sysret_1,
+    sysret_2,
+    ChannelAsyncRecvFlags,
 };
 use crate::syscall_nums::*;
-use super::{Capability, Allocator, MessageBuffer, EventPool, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
+use super::{Capability, Allocator, MessageBuffer, EventPool, Reply, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Channel(CapId);
@@ -102,23 +104,36 @@ impl Channel {
             ))
         }
     }
+}
 
-    pub fn try_recv(&self, buffer: &MessageBuffer) -> KResult<Size> {
+#[derive(Debug)]
+pub struct RecieveResult {
+    pub recieve_size: Size,
+    pub reply: Option<Reply>,
+}
+
+impl Channel {
+    pub fn try_recv(&self, buffer: &MessageBuffer) -> KResult<RecieveResult> {
         assert!(buffer.is_writable());
 
-        unsafe {
-            sysret_1!(syscall!(
+        let (recieve_size, reply_id) = unsafe {
+            sysret_2!(syscall!(
                 CHANNEL_TRY_RECV,
                 WEAK_AUTO_DESTROY,
                 self.as_usize(),
                 buffer.memory.as_usize(),
                 buffer.offset.bytes(),
                 buffer.size.bytes()
-            )).map(Size::from_bytes)
-        }
+            ))?
+        };
+
+        Ok(RecieveResult {
+            recieve_size: Size::from_bytes(recieve_size),
+            reply: Reply::from_usize(reply_id),
+        })
     }
 
-    pub fn sync_recv(&self, buffer: &MessageBuffer, timeout: Option<u64>) -> KResult<Size> {
+    pub fn sync_recv(&self, buffer: &MessageBuffer, timeout: Option<u64>) -> KResult<RecieveResult> {
         assert!(buffer.is_writable());
 
         let flags = match timeout {
@@ -126,8 +141,8 @@ impl Channel {
             None => ChannelSyncFlags::empty(),
         };
 
-        unsafe {
-            sysret_1!(syscall!(
+        let (recieve_size, reply_id) = unsafe {
+            sysret_2!(syscall!(
                 CHANNEL_SYNC_RECV,
                 flags.bits() | WEAK_AUTO_DESTROY,
                 self.as_usize(),
@@ -135,8 +150,13 @@ impl Channel {
                 buffer.offset.bytes(),
                 buffer.size.bytes(),
                 timeout.unwrap_or_default()
-            )).map(Size::from_bytes)
-        }
+            ))?
+        };
+
+        Ok(RecieveResult {
+            recieve_size: Size::from_bytes(recieve_size),
+            reply: Reply::from_usize(reply_id),
+        })
     }
 
     pub fn async_recv(&self, event_pool: &EventPool, auto_reque: bool, event_id: EventId) -> KResult<()> {
@@ -151,6 +171,50 @@ impl Channel {
                 CHANNEL_ASYNC_RECV,
                 flags.bits() | WEAK_AUTO_DESTROY,
                 self.as_usize(),
+                event_pool.as_usize(),
+                event_id.as_u64() as usize
+            ))
+        }
+    }
+}
+
+impl Channel {
+    pub fn sync_call(&self, send_buffer: MessageBuffer, recv_buffer: MessageBuffer, timeout: Option<u64>) -> KResult<Size> {
+        assert!(send_buffer.is_readable());
+        assert!(recv_buffer.is_writable());
+
+        let flags = match timeout {
+            Some(_) => ChannelSyncFlags::TIMEOUT,
+            None => ChannelSyncFlags::empty(),
+        };
+
+        unsafe {
+            sysret_1!(syscall!(
+                CHANNEL_SYNC_CALL,
+                flags.bits() | WEAK_AUTO_DESTROY,
+                self.as_usize(),
+                send_buffer.memory.as_usize(),
+                send_buffer.offset.bytes(),
+                send_buffer.size.bytes(),
+                recv_buffer.memory.as_usize(),
+                recv_buffer.offset.bytes(),
+                recv_buffer.size.bytes(),
+                timeout.unwrap_or_default()
+            )).map(Size::from_bytes)
+        }
+    }
+
+    pub fn async_call(&self, send_buffer: MessageBuffer, event_pool: &EventPool, event_id: EventId) -> KResult<()> {
+        assert!(send_buffer.is_readable());
+
+        unsafe {
+            sysret_0!(syscall!(
+                CHANNEL_ASYNC_CALL,
+                WEAK_AUTO_DESTROY,
+                self.as_usize(),
+                send_buffer.memory.as_usize(),
+                send_buffer.offset.bytes(),
+                send_buffer.size.bytes(),
                 event_pool.as_usize(),
                 event_id.as_u64() as usize
             ))

@@ -1,12 +1,18 @@
 use serde::{Serialize, Deserialize};
+use bit_utils::Size;
 
 use crate::{
     CapId,
     CapType,
     CspaceTarget,
+    MessageBuffer,
+    KResult,
+    sysret_1,
+    syscall,
 };
+use crate::syscall_nums::*;
 
-use super::{Capability, cap_destroy};
+use super::{Capability, cap_destroy, WEAK_AUTO_DESTROY};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Reply(CapId);
@@ -30,6 +36,32 @@ impl Reply {
         } else {
             None
         }
+    }
+
+    pub fn from_usize(id: usize) -> Option<Self> {
+        let cap_id = CapId::try_from(id)?;
+
+        Self::from_cap_id(cap_id)
+    }
+
+    pub fn reply(self, send_buffer: MessageBuffer) -> KResult<Size> {
+        assert!(send_buffer.is_readable());
+
+        let reply_size = unsafe {
+            sysret_1!(syscall!(
+                REPLY_REPLY,
+                WEAK_AUTO_DESTROY,
+                self.as_usize(),
+                send_buffer.memory.as_usize(),
+                send_buffer.offset.bytes(),
+                send_buffer.size.bytes()
+            ))?
+        };
+
+        // kernel drops reply object when REPLY_REPLY is called
+        core::mem::forget(self);
+
+        Ok(Size::from_bytes(reply_size))
     }
 }
 

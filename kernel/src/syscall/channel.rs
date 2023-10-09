@@ -409,5 +409,13 @@ pub fn reply_reply(
             weak_auto_destroy,
         )?;
 
-    reply.reply(&send_buffer, &cspace).map(Size::bytes)
+    let reply_size = reply.reply(&send_buffer, &cspace)?;
+
+    // panic safety: get_reply_with_perms check reply_id is valid
+    let reply_id = CapId::try_from(reply_id).unwrap();
+
+    // ignore error because another thread might have concurrently removed reply at the same time
+    let _ = cspace.remove_reply(reply_id);
+
+    Ok(reply_size.bytes())
 }
