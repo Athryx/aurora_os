@@ -4,6 +4,7 @@ use core::sync::atomic::{AtomicU64, Ordering};
 use bytemuck::{Pod, Zeroable, AnyBitPattern, try_from_bytes};
 use bit_utils::align_of;
 use strum::FromRepr;
+use bit_utils::Size;
 
 use crate::{CapId, Reply};
 
@@ -226,27 +227,19 @@ pub trait EventSyncReturn {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable)]
 pub struct MessageSent {
-    pub message_buffer_id: usize,
-    pub message_buffer_offset: usize,
-    pub message_buffer_len: usize,
+    pub recieved_size: Size,
 }
 
 impl EventSyncReturn for MessageSent {
-    type SyncReturn = (usize, usize, usize);
+    type SyncReturn = usize;
 
     fn as_sync_return(&self) -> Self::SyncReturn {
-        (
-            self.message_buffer_id,
-            self.message_buffer_offset,
-            self.message_buffer_len
-        )
+        self.recieved_size.bytes()
     }
 
     fn from_sync_return(data: Self::SyncReturn) -> Self {
         MessageSent {
-            message_buffer_id: data.0,
-            message_buffer_offset: data.1,
-            message_buffer_len: data.2,
+            recieved_size: Size::from_bytes(data),
         }
     }
 }

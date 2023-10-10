@@ -1,9 +1,11 @@
 use derive_more::{Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Div, DivAssign};
 use serde::{Serialize, Deserialize};
+use bytemuck::{Zeroable, Pod};
 
 use crate::{PAGE_SIZE, page_aligned, align_up};
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Div, DivAssign, Serialize, Deserialize)]
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Add, AddAssign, Sub, SubAssign, Mul, MulAssign, Div, DivAssign, Serialize, Deserialize, Zeroable, Pod)]
 pub struct Size(usize);
 
 impl Size {

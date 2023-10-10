@@ -253,10 +253,7 @@ impl CapabilitySpace {
         let memory = self.get_memory_with_perms(memory_id, required_perms, weak_auto_destroy)?
             .into_inner();
 
-        let memory_cap_id = CapId::try_from(memory_id)
-            .ok_or(SysErr::InvlId)?;
-
-        Ok(UserspaceBuffer::new(memory_cap_id, memory, buffer_offset, buffer_size))
+        Ok(UserspaceBuffer::new(memory, buffer_offset, buffer_size))
     }
 
     pub fn cap_clone(

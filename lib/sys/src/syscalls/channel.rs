@@ -60,7 +60,7 @@ impl Channel {
                 CHANNEL_TRY_SEND,
                 WEAK_AUTO_DESTROY,
                 self.as_usize(),
-                buffer.memory.as_usize(),
+                usize::from(buffer.memory_id),
                 buffer.offset.bytes(),
                 buffer.size.bytes()
             )).map(Size::from_bytes)
@@ -80,7 +80,7 @@ impl Channel {
                 CHANNEL_SYNC_SEND,
                 flags.bits() | WEAK_AUTO_DESTROY,
                 self.as_usize(),
-                buffer.memory.as_usize(),
+                usize::from(buffer.memory_id),
                 buffer.offset.bytes(),
                 buffer.size.bytes(),
                 timeout.unwrap_or_default()
@@ -96,7 +96,7 @@ impl Channel {
                 CHANNEL_ASYNC_SEND,
                 WEAK_AUTO_DESTROY,
                 self.as_usize(),
-                buffer.memory.as_usize(),
+                usize::from(buffer.memory_id),
                 buffer.offset.bytes(),
                 buffer.size.bytes(),
                 event_pool.as_usize(),
@@ -121,7 +121,7 @@ impl Channel {
                 CHANNEL_TRY_RECV,
                 WEAK_AUTO_DESTROY,
                 self.as_usize(),
-                buffer.memory.as_usize(),
+                usize::from(buffer.memory_id),
                 buffer.offset.bytes(),
                 buffer.size.bytes()
             ))?
@@ -146,7 +146,7 @@ impl Channel {
                 CHANNEL_SYNC_RECV,
                 flags.bits() | WEAK_AUTO_DESTROY,
                 self.as_usize(),
-                buffer.memory.as_usize(),
+                usize::from(buffer.memory_id),
                 buffer.offset.bytes(),
                 buffer.size.bytes(),
                 timeout.unwrap_or_default()
@@ -179,7 +179,7 @@ impl Channel {
 }
 
 impl Channel {
-    pub fn sync_call(&self, send_buffer: MessageBuffer, recv_buffer: MessageBuffer, timeout: Option<u64>) -> KResult<Size> {
+    pub fn sync_call(&self, send_buffer: &MessageBuffer, recv_buffer: &MessageBuffer, timeout: Option<u64>) -> KResult<Size> {
         assert!(send_buffer.is_readable());
         assert!(recv_buffer.is_writable());
 
@@ -193,10 +193,10 @@ impl Channel {
                 CHANNEL_SYNC_CALL,
                 flags.bits() | WEAK_AUTO_DESTROY,
                 self.as_usize(),
-                send_buffer.memory.as_usize(),
+                usize::from(send_buffer.memory_id),
                 send_buffer.offset.bytes(),
                 send_buffer.size.bytes(),
-                recv_buffer.memory.as_usize(),
+                usize::from(recv_buffer.memory_id),
                 recv_buffer.offset.bytes(),
                 recv_buffer.size.bytes(),
                 timeout.unwrap_or_default()
@@ -204,7 +204,7 @@ impl Channel {
         }
     }
 
-    pub fn async_call(&self, send_buffer: MessageBuffer, event_pool: &EventPool, event_id: EventId) -> KResult<()> {
+    pub fn async_call(&self, send_buffer: &MessageBuffer, event_pool: &EventPool, event_id: EventId) -> KResult<()> {
         assert!(send_buffer.is_readable());
 
         unsafe {
@@ -212,7 +212,7 @@ impl Channel {
                 CHANNEL_ASYNC_CALL,
                 WEAK_AUTO_DESTROY,
                 self.as_usize(),
-                send_buffer.memory.as_usize(),
+                usize::from(send_buffer.memory_id),
                 send_buffer.offset.bytes(),
                 send_buffer.size.bytes(),
                 event_pool.as_usize(),

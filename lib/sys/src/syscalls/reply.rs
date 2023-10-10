@@ -44,7 +44,7 @@ impl Reply {
         Self::from_cap_id(cap_id)
     }
 
-    pub fn reply(self, send_buffer: MessageBuffer) -> KResult<Size> {
+    pub fn reply(self, send_buffer: &MessageBuffer) -> KResult<Size> {
         assert!(send_buffer.is_readable());
 
         let reply_size = unsafe {
@@ -52,7 +52,7 @@ impl Reply {
                 REPLY_REPLY,
                 WEAK_AUTO_DESTROY,
                 self.as_usize(),
-                send_buffer.memory.as_usize(),
+                usize::from(send_buffer.memory_id),
                 send_buffer.offset.bytes(),
                 send_buffer.size.bytes()
             ))?

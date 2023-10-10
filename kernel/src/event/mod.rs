@@ -1,4 +1,4 @@
-use sys::{CapId, Event, EventId, EventData};
+use sys::{Event, EventId, EventData};
 use bit_utils::Size;
 
 use crate::prelude::*;
@@ -16,7 +16,6 @@ mod queue_event_emitter;
 
 #[derive(Debug, Clone)]
 pub struct WeakUserspaceBuffer {
-    pub memory_id: CapId,
     pub memory: Weak<Memory>,
     pub offset: usize,
     pub buffer_size: usize,
@@ -25,7 +24,6 @@ pub struct WeakUserspaceBuffer {
 impl WeakUserspaceBuffer {
     pub fn upgrade(&self) -> Option<UserspaceBuffer> {
         Some(UserspaceBuffer {
-            memory_id: self.memory_id,
             memory: self.memory.upgrade()?,
             offset: self.offset,
             buffer_size: self.buffer_size,
@@ -35,17 +33,14 @@ impl WeakUserspaceBuffer {
 
 #[derive(Debug, Clone)]
 pub struct UserspaceBuffer {
-    /// The capability id the buffer was created from, stored here so send events can tell userspace correct id
-    pub memory_id: CapId,
     pub memory: Arc<Memory>,
     pub offset: usize,
     pub buffer_size: usize,
 }
 
 impl UserspaceBuffer {
-    pub fn new(memory_id: CapId, memory: Arc<Memory>, offset: usize, buffer_size: usize) -> Self {
+    pub fn new(memory: Arc<Memory>, offset: usize, buffer_size: usize) -> Self {
         UserspaceBuffer {
-            memory_id,
             memory,
             offset,
             buffer_size,
@@ -54,7 +49,6 @@ impl UserspaceBuffer {
 
     pub fn downgrade(&self) -> WeakUserspaceBuffer {
         WeakUserspaceBuffer {
-            memory_id: self.memory_id,
             memory: Arc::downgrade(&self.memory),
             offset: self.offset,
             buffer_size: self.buffer_size,

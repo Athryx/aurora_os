@@ -6,7 +6,7 @@ use alloc::rc::Rc;
 use alloc::sync::Arc;
 
 use crossbeam_queue::SegQueue;
-use sys::{EventPool, EventId, Event, CspaceTarget, CapFlags, cap_clone, EventParser, EventParseResult};
+use sys::{EventPool, Reply, EventId, Event, CspaceTarget, CapFlags, cap_clone, EventParser, EventParseResult};
 use bit_utils::Size;
 
 use crate::allocator::addr_space::{MapEventPoolArgs, RegionPadding};
@@ -46,6 +46,10 @@ impl Executor {
         })
     }
 
+    pub fn event_pool(&self) -> &EventPool {
+        &self.event_pool
+    }
+
     pub fn spawn<T: 'static>(&self, task: impl Future<Output = T> + 'static) -> JoinHandle<T> {
         let (task_handle, join_handle) = Task::new(task, self.task_queue.clone());
 
@@ -56,19 +60,40 @@ impl Executor {
         join_handle
     }
 
-    pub fn register_event_waiter(
+    pub fn register_event_waiter_oneshot(
         &self,
         event_id: EventId,
         waker: Waker,
-        recieved_event: Rc<RefCell<RecievedEvent>>,
+        event_reciever: EventReciever,
     ) {
         self.event_waiters.borrow_mut().insert(
             event_id,
             EventWaiter {
                 waker,
-                recieved_event,
+                event_reciever,
+                oneshot: true,
             },
         );
+    }
+
+    pub fn register_event_waiter_repeat(
+        &self,
+        event_id: EventId,
+        waker: Waker,
+        event_reciever: EventReciever,
+    ) {
+        self.event_waiters.borrow_mut().insert(
+            event_id,
+            EventWaiter {
+                waker,
+                event_reciever,
+                oneshot: false,
+            },
+        );
+    }
+
+    pub fn remove_event_waiter(&self, event_id: EventId) {
+        self.event_waiters.borrow_mut().remove(&event_id);
     }
 
     /// Runs all the tasks in this executor, returns on error or when the last task has completed
@@ -104,23 +129,29 @@ impl Executor {
         let event_parser = EventParser::new(unsafe { event_data.as_slice() });
 
         for event in event_parser {
-            let Some(waiter) = event_waiters.remove(&event.event_id()) else {
+            let event_id = event.event_id();
+            let Some(waiter) = event_waiters.get(&event_id) else {
                 continue;
             };
 
             match event {
                 EventParseResult::Event(event) => {
-                    *waiter.recieved_event.borrow_mut() = RecievedEvent::OwnedEvent(event);
+                    *waiter.event_reciever.0.borrow_mut() = Some(RecievedEvent::OwnedEvent(event));
                 },
-                EventParseResult::MessageRecieved(message_event) => {
-                    *waiter.recieved_event.borrow_mut() = RecievedEvent::MessageRecievedEvent(MessageRecievedEvent {
+                EventParseResult::MessageRecieved(mut message_event) => {
+                    *waiter.event_reciever.0.borrow_mut() = Some(RecievedEvent::MessageRecievedEvent(MessageRecievedEvent {
                         data: message_event.message_data.as_ptr(),
                         len: message_event.message_data.len(),
-                    });
+                        reply: message_event.reply.take(),
+                    }));
                 },
             }
 
-            waiter.waker.wake();
+            waiter.waker.wake_by_ref();
+
+            if waiter.oneshot {
+                event_waiters.remove(&event_id);
+            }
         }
 
         Ok(())
@@ -132,12 +163,16 @@ impl !Send for Executor {}
 /// Something that is waiting on an event
 struct EventWaiter {
     waker: Waker,
-    recieved_event: Rc<RefCell<RecievedEvent>>,
+    event_reciever: EventReciever,
+    // if it is oneshot, it will be removed on next event
+    oneshot: bool,
 }
 
+#[derive(Debug)]
 pub struct MessageRecievedEvent {
     data: *const u8,
     len: usize,
+    pub reply: Option<Reply>,
 }
 
 impl MessageRecievedEvent {
@@ -151,6 +186,16 @@ impl MessageRecievedEvent {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct EventReciever(Rc<RefCell<Option<RecievedEvent>>>);
+
+impl EventReciever {
+    pub fn take_event(&self) -> Option<RecievedEvent> {
+        self.0.borrow_mut().take()
+    }
+}
+
+#[derive(Debug)]
 pub enum RecievedEvent {
     OwnedEvent(Event),
     MessageRecievedEvent(MessageRecievedEvent),

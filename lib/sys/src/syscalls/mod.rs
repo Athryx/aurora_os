@@ -457,18 +457,18 @@ fn cap_destroy(
 
 /// Used for sending and recieving events
 #[derive(Debug, Clone, Copy)]
-pub struct MessageBuffer<'a> {
-    pub memory: &'a Memory,
+pub struct MessageBuffer {
+    pub memory_id: CapId,
     pub offset: Size,
     pub size: Size,
 }
 
-impl MessageBuffer<'_> {
+impl MessageBuffer {
     pub fn is_readable(&self) -> bool {
-        self.memory.cap_id().flags().contains(CapFlags::READ)
+        self.memory_id.flags().contains(CapFlags::READ)
     }
 
     pub fn is_writable(&self) -> bool {
-        self.memory.cap_id().flags().contains(CapFlags::WRITE)
+        self.memory_id.flags().contains(CapFlags::WRITE)
     }
 }

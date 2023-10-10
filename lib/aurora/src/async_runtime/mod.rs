@@ -8,6 +8,7 @@ use executor::Executor;
 
 use self::task::JoinHandle;
 
+pub mod async_sys;
 mod executor;
 mod task;
 

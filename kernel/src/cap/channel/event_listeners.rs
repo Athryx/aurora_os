@@ -83,13 +83,11 @@ impl ChannelSenderRef {
                     WakeReason::MsgSend { msg_size: write_size }
                 );
             },
-            ChannelSenderInner::EventPool {event_pool, event_id, .. } => {
+            ChannelSenderInner::EventPool { event_pool, event_id, .. } => {
                 let event_pool = event_pool.upgrade().ok_or(SysErr::InvlWeak)?;
 
                 let event_data = EventData::MessageSent(MessageSent {
-                    message_buffer_id: self.send_buffer.memory_id.into(),
-                    message_buffer_offset: self.send_buffer.offset,
-                    message_buffer_len: self.send_buffer.buffer_size,
+                    recieved_size: write_size,
                 });
 
                 let event = Event {
