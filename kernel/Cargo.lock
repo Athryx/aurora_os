@@ -326,6 +326,7 @@ dependencies = [
  "bitflags",
  "bytemuck",
  "lazy_static",
+ "paste",
  "serde",
  "spin 0.9.8",
  "strum",

@@ -16,6 +16,7 @@ use crate::{
     sysret_0,
     sysret_1,
     sysret_2,
+    ThreadExit,
 };
 use crate::syscall_nums::*;
 use super::{Capability, Allocator, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
@@ -171,6 +172,8 @@ impl Thread {
             ))
         }
     }
+
+    crate::generate_event_handlers!(ThreadExit, thread_exit, THREAD_HANDLE_THREAD_EXIT_SYNC, THREAD_HANDLE_THREAD_EXIT_ASYNC, 0);
 }
 
 #[repr(usize)]

@@ -6,6 +6,7 @@
 #![feature(slice_take)]
 #![feature(negative_impls)]
 #![feature(naked_functions)]
+#![feature(async_fn_in_trait)]
 
 extern crate alloc;
 
@@ -23,6 +24,7 @@ use env::{Namespace, THIS_NAMESPACE};
 use prelude::*;
 use thread::{ThreadLocalData, Thread};
 
+pub mod arpc;
 pub mod async_runtime;
 mod allocator;
 mod context;

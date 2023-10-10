@@ -1,9 +1,9 @@
-use sys::CapFlags;
+use sys::{CapFlags, CapDrop};
 
 use crate::alloc::HeapRef;
 use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::{Capability, StrongCapability};
-use crate::cap::drop_check::drop_check_pair;
+use crate::cap::drop_check::{drop_check_pair, DropCheckReciever};
 use crate::prelude::*;
 use crate::arch::x64::IntDisable;
 use super::options_weak_autodestroy;
@@ -41,3 +41,5 @@ pub fn drop_check_new(options: u32, allocator_id: usize, data: usize) -> KResult
 
     Ok((drop_check_id.into(), reciever_id.into()))
 }
+
+crate::generate_event_syscall!(drop_check_reciever, CapDrop, cap_drop, CapFlags::PROD, DropCheckReciever::add_drop_event_listener);

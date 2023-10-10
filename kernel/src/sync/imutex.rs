@@ -32,6 +32,10 @@ impl<T> IMutex<T> {
             self.0.force_unlock();
         }
     }
+
+    pub fn get_mut(&mut self) -> &mut T {
+        self.0.get_mut()
+    }
 }
 
 impl<T: ?Sized + Default> Default for IMutex<T> {

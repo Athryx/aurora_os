@@ -12,6 +12,8 @@ mod channel;
 pub use channel::*;
 pub mod debug;
 pub use debug::*;
+mod drop_check;
+pub use drop_check::*;
 mod event_pool;
 pub use event_pool::*;
 mod key;
@@ -271,7 +273,7 @@ macro_rules! sysret_2 {
 }
 
 const INVALID_CAPID_MESSAGE: &'static str = "invalid capid recieved from kernel";
-const WEAK_AUTO_DESTROY: u32 = 1 << 31;
+pub const WEAK_AUTO_DESTROY: u32 = 1 << 31;
 
 pub trait Capability {
     const TYPE: CapType;
@@ -471,4 +473,54 @@ impl MessageBuffer {
     pub fn is_writable(&self) -> bool {
         self.memory_id.flags().contains(CapFlags::WRITE)
     }
+}
+
+#[macro_export]
+macro_rules! generate_event_handlers {
+    (
+        $event_type:ty,
+        $event_name:ident,
+        $sync_syscall:expr,
+        $async_syscall:expr,
+        $sync_syscall_return_count:literal
+    ) => {
+        paste::paste! {
+            pub fn [<handle_ $event_name _sync>](&self, timeout: Option<u64>) -> $crate::KResult<$event_type> {
+                let flags = if timeout.is_some() {
+                    $crate::HandleEventSyncFlags::TIMEOUT
+                } else {
+                    $crate::HandleEventSyncFlags::empty()
+                };
+
+                let result = unsafe {
+                    $crate::[<sysret_ $sync_syscall_return_count>]!($crate::syscall!(
+                        $sync_syscall,
+                        flags.bits() | $crate::WEAK_AUTO_DESTROY,
+                        self.as_usize(),
+                        timeout.unwrap_or_default() as usize
+                    ))?
+                };
+
+                Ok($crate::EventSyncReturn::from_sync_return(result))
+            }
+
+            pub fn [<handle_ $event_name _async>](&self, event_pool: &$crate::EventPool, event_id: $crate::EventId, oneshot: bool) -> $crate::KResult<()> {
+                let flags = if oneshot {
+                    $crate::HandleEventAsyncFlags::empty()
+                } else {
+                    $crate::HandleEventAsyncFlags::AUTO_REQUE
+                };
+
+                unsafe {
+                    $crate::sysret_0!($crate::syscall!(
+                        $async_syscall,
+                        flags.bits() | $crate::WEAK_AUTO_DESTROY,
+                        self.as_usize(),
+                        event_pool.as_usize(),
+                        event_id.as_u64() as usize
+                    ))
+                }
+            }
+        }
+    };
 }

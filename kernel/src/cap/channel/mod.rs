@@ -433,12 +433,30 @@ impl Channel {
     }
 }
 
-#[derive(Debug, Default)]
-struct ChannelInner {
-    sender_queue: LinkedList<DefaultNode<ChannelSenderRef>>,
-    reciever_queue: LinkedList<DefaultNode<ChannelRecieverRef>>,
+impl Drop for Channel {
+    fn drop(&mut self) {
+        let inner = self.inner.get_mut();
+
+        while let Some(sender) = inner.sender_queue.pop() {
+            unsafe {
+                sender.drop_in_place(&mut self.allocator);
+            }
+        }
+
+        while let Some(reciever) = inner.reciever_queue.pop() {
+            unsafe {
+                reciever.drop_in_place(&mut self.allocator);
+            }
+        }
+    }
 }
 
 impl CapObject for Channel {
     const TYPE: CapType = CapType::Channel;
+}
+
+#[derive(Debug, Default)]
+struct ChannelInner {
+    sender_queue: LinkedList<DefaultNode<ChannelSenderRef>>,
+    reciever_queue: LinkedList<DefaultNode<ChannelRecieverRef>>,
 }

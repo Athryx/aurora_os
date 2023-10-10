@@ -43,6 +43,8 @@ pub const KEY_NEW: u32 = 38;
 pub const KEY_ID: u32 = 39;
 
 pub const DROP_CHECK_NEW: u32 = 40;
+pub const DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_SYNC: u32 = 41;
+pub const DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_ASYNC: u32 = 42;
 
 pub fn syscall_name(syscall_num: u32) -> &'static str {
     match syscall_num {
@@ -82,6 +84,8 @@ pub fn syscall_name(syscall_num: u32) -> &'static str {
         KEY_NEW => "key_new",
         KEY_ID => "key_id",
         DROP_CHECK_NEW => "drop_check_new",
+        DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_SYNC => "drop_check_reciever_handle_cap_drop_sync",
+        DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_ASYNC => "drop_check_reciever_handle_cap_drop_async",
         _ => "invalid syscall",
     }
 }

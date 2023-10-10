@@ -273,6 +273,8 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		KEY_NEW => sysret_1!(syscall_1!(key_new, vals), vals),
 		KEY_ID => sysret_1!(syscall_1!(key_id, vals), vals),
 		DROP_CHECK_NEW => sysret_2!(syscall_2!(drop_check_new, vals), vals),
+		DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_SYNC => sysret_1!(syscall_2!(drop_check_reciever_handle_cap_drop_sync, vals), vals),
+		DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_ASYNC => sysret_0!(syscall_3!(drop_check_reciever_handle_cap_drop_async, vals), vals),
         _ => vals.a1 = SysErr::InvlSyscall.num(),
     }
 }

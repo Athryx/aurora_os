@@ -215,6 +215,7 @@ impl EventId {
 create_event_types! {
     MessageSent,
     ThreadExit,
+    CapDrop,
 }
 
 pub trait EventSyncReturn {
@@ -257,5 +258,25 @@ impl EventSyncReturn for ThreadExit {
 
     fn from_sync_return(_: Self::SyncReturn) -> Self {
         ThreadExit
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct CapDrop {
+    pub data: usize
+}
+
+impl EventSyncReturn for CapDrop {
+    type SyncReturn = usize;
+
+    fn as_sync_return(&self) -> Self::SyncReturn {
+        self.data
+    }
+
+    fn from_sync_return(data: Self::SyncReturn) -> Self {
+        CapDrop {
+            data,
+        }
     }
 }
