@@ -1,5 +1,7 @@
 mod channel;
 pub use channel::*;
+mod drop_check;
+pub use drop_check::*;
 
 #[macro_export]
 macro_rules! generate_async_wrapper {
@@ -12,7 +14,7 @@ macro_rules! generate_async_wrapper {
         impl core::future::Future for $name<'_> {
             type Output = sys::KResult<$return_type>;
 
-            fn poll(self: Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> core::task::Poll<Self::Output> {
+            fn poll(self: core::pin::Pin<&mut Self>, cx: &mut core::task::Context<'_>) -> core::task::Poll<Self::Output> {
                 let this = self.get_mut();
 
                 match this {
