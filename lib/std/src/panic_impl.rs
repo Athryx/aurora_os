@@ -8,7 +8,7 @@ extern "C" fn rust_eh_personality() {}
 
 #[lang = "panic_impl"]
 #[no_mangle]
-extern "C" fn rust_begin_panic(info: &PanicInfo) -> ! {
+fn rust_begin_panic(info: &PanicInfo) -> ! {
 	dprintln!("{}", info);
 
 	aurora::process::exit();

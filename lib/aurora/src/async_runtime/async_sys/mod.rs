@@ -9,6 +9,7 @@ macro_rules! generate_async_wrapper {
         pub enum $name<'a> {
             Unpolled($data),
             Polled($crate::async_runtime::executor::EventReciever),
+            Finished,
         }
         
         impl core::future::Future for $name<'_> {
@@ -39,13 +40,21 @@ macro_rules! generate_async_wrapper {
                                 event_data: sys::EventData::$event_type(event),
                                 ..
                             })) => {
+                                *this = Self::Finished;
                                 core::task::Poll::Ready(Ok($get_return(event)))
                             },
                             None => core::task::Poll::Pending,
                             _ => panic!("invalid event recieved"),
                         }
                     },
+                    Self::Finished => core::task::Poll::Pending,
                 }
+            }
+        }
+
+        impl futures::future::FusedFuture for $name<'_> {
+            fn is_terminated(&self) -> bool {
+                matches!(self, Self::Finished)
             }
         }
         

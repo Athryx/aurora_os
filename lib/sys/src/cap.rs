@@ -116,7 +116,7 @@ impl CapId {
     /// Any newtype struct with this name will be treated as a capability by aser
     /// 
     /// This name is reserved for other structs
-    pub const SERIALIZE_NEWTYPE_NAME: &str = "__aser_cap";
+    pub const SERIALIZE_NEWTYPE_NAME: &'static str = "__aser_cap";
 }
 
 impl From<CapId> for usize {

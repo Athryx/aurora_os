@@ -1,12 +1,11 @@
-use futures::Future;
-use sys::{DropCheckReciever, CapDrop, KResult};
+use sys::{DropCheckReciever, CapDrop};
 
 use crate::generate_async_wrapper;
 
 pub struct AsyncDropCheckReciever(DropCheckReciever);
 
 impl AsyncDropCheckReciever {
-    pub fn handle_drop<'a>(&'a self) -> impl Future<Output = KResult<usize>> + 'a {
+    pub fn handle_drop(&self) -> AsyncHandleDrop {
         AsyncHandleDrop::Unpolled((&self.0,))
     }
 }

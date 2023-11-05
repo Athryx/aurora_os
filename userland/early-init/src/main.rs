@@ -53,6 +53,17 @@ enum Test {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+struct Test2 {
+    a: usize,
+    b: usize,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+struct Test3 {
+    a: usize,
+}
+
 #[no_mangle]
 pub extern "C" fn _rust_startup(
     process_data: *mut u8,
@@ -107,6 +118,14 @@ pub extern "C" fn _rust_startup(
     dprintln!("value from test {:?}", value2);
     let test2: Test = value.into_deserialize().unwrap();
     dprintln!("test from value {:?}", test2);*/
+
+    let tmp = Test2 {
+        a: 1,
+        b: 69,
+    };
+    let result: Vec<u8> = aser::to_bytes(&tmp, 0).unwrap();
+    let tmp2: Test3 = aser::from_bytes(&result).unwrap();
+    dprintln!("{tmp2:?}");
 
     loop { core::hint::spin_loop(); }
 }

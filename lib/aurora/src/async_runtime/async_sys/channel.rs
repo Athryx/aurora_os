@@ -3,6 +3,8 @@ use core::future::Future;
 use core::task::{Context, Poll};
 
 use futures::Stream;
+use futures::future::FusedFuture;
+use futures::stream::FusedStream;
 use sys::{Channel, MessageBuffer, KResult, RecieveResult, MessageSent, EventId};
 use bit_utils::Size;
 
@@ -21,19 +23,19 @@ impl AsyncChannel {
         self.0.try_recv(buffer)
     }
 
-    pub fn send<'a>(&'a self, buffer: MessageBuffer) -> impl Future<Output = KResult<Size>> + 'a {
+    pub fn send(&self, buffer: MessageBuffer) -> AsyncSend {
         AsyncSend::Unpolled((&self.0, buffer))
     }
 
-    pub fn recv<'a>(&'a self) -> impl Future<Output = KResult<MessageRecievedEvent>> + 'a {
+    pub fn recv(&self) -> AsyncRecv {
         AsyncRecv::Unpolled(&self.0)
     }
 
-    pub fn call<'a>(&'a self, buffer: MessageBuffer) -> impl Future<Output = KResult<MessageRecievedEvent>> + 'a {
+    pub fn call(&self, buffer: MessageBuffer) -> AsyncCall {
         AsyncCall::Unpolled(&self.0, buffer)
     }
 
-    pub fn recv_repeat<'a>(&'a self) -> impl Stream<Item = MessageRecievedEvent> + 'a {
+    pub fn recv_repeat(&self) -> AsyncRecvRepeat {
         AsyncRecvRepeat::Unpolled(&self.0)
     }
 }
@@ -58,6 +60,7 @@ generate_async_wrapper!(
 pub enum AsyncRecv<'a> {
     Unpolled(&'a Channel),
     Polled(EventReciever),
+    Finished,
 }
 
 impl Future for AsyncRecv<'_> {
@@ -85,13 +88,21 @@ impl Future for AsyncRecv<'_> {
             Self::Polled(event_reciever) => {
                 match event_reciever.take_event() {
                     Some(RecievedEvent::MessageRecievedEvent(event)) => {
+                        *this = Self::Finished;
                         Poll::Ready(Ok(event))
                     },
                     None => Poll::Pending,
                     _ => panic!("invalid event recieved"),
                 }
             },
+            Self::Finished => Poll::Pending,
         }
+    }
+}
+
+impl FusedFuture for AsyncRecv<'_> {
+    fn is_terminated(&self) -> bool {
+        matches!(self, Self::Finished)
     }
 }
 
@@ -100,6 +111,7 @@ impl Unpin for AsyncRecv<'_> {}
 pub enum AsyncCall<'a> {
     Unpolled(&'a Channel, MessageBuffer),
     Polled(EventReciever),
+    Finished,
 }
 
 impl Future for AsyncCall<'_> {
@@ -127,13 +139,21 @@ impl Future for AsyncCall<'_> {
             Self::Polled(event_reciever) => {
                 match event_reciever.take_event() {
                     Some(RecievedEvent::MessageRecievedEvent(event)) => {
+                        *this = Self::Finished;
                         Poll::Ready(Ok(event))
                     },
                     None => Poll::Pending,
                     _ => panic!("invalid event recieved"),
                 }
             },
+            Self::Finished => Poll::Pending,
         }
+    }
+}
+
+impl FusedFuture for AsyncCall<'_> {
+    fn is_terminated(&self) -> bool {
+        matches!(self, Self::Finished)
     }
 }
 
@@ -173,6 +193,7 @@ impl Stream for AsyncRecvRepeat<'_> {
             Self::Polled(_, event_reciever) => {
                 match event_reciever.take_event() {
                     Some(RecievedEvent::MessageRecievedEvent(event)) => {
+                        *this = Self::Closed;
                         Poll::Ready(Some(event))
                     },
                     None => Poll::Pending,
@@ -181,6 +202,12 @@ impl Stream for AsyncRecvRepeat<'_> {
             },
             Self::Closed => Poll::Ready(None),
         }
+    }
+}
+
+impl FusedStream for AsyncRecvRepeat<'_> {
+    fn is_terminated(&self) -> bool {
+        matches!(self, Self::Closed)
     }
 }
 
