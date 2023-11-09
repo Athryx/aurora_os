@@ -1,3 +1,6 @@
+mod message_vec;
+pub use message_vec::*;
+
 use core::hash::BuildHasherDefault;
 
 use hashbrown::HashMap as HashbrownMap;

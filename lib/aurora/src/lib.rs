@@ -7,6 +7,7 @@
 #![feature(negative_impls)]
 #![feature(naked_functions)]
 #![feature(async_fn_in_trait)]
+#![feature(slice_index_methods)]
 
 extern crate alloc;
 

@@ -12,6 +12,7 @@ use alloc::alloc::GlobalAlloc;
 
 use bit_utils::{PAGE_SIZE, log2_up_const, align_up, align_down, align_of, Size, MemOwner};
 use bit_utils::container::{LinkedList, ListNode, ListNodeData, CursorMut};
+use sys::{MessageBuffer, CapId, Capability};
 
 use crate::addr_space;
 use crate::allocator::addr_space::MapMemoryResult;
@@ -105,6 +106,8 @@ struct HeapZone {
     size: usize,
     free_space: Cell<usize>,
     list: LinkedList<Node>,
+    // cap id of the memory used to allocate this heap zone
+    memory_cap_id: CapId,
 }
 
 impl HeapZone {
@@ -112,15 +115,21 @@ impl HeapZone {
     unsafe fn new(size: usize) -> Option<MemOwner<Self>> {
         assert!(size >= size_of::<Self>(), "requested heapzone size is not big enough");
 
+        let mut addr_space = addr_space();
         let MapMemoryResult {
             address,
             size,
-            ..
-        } = addr_space()
+            memory,
+        } = addr_space
             .map_memory(MapMemoryArgs {
                 size: Some(Size::from_bytes(size)),
                 ..Default::default()
             }).ok()?;
+        
+        // panic safety: map_memory on success will return some memory
+        // because we request a non zero allocation size
+        let memory_cap_id = memory.unwrap().cap_id();
+        drop(addr_space);
 
         let ptr = address as *mut HeapZone;
 
@@ -129,6 +138,7 @@ impl HeapZone {
             size: size.bytes(),
             free_space: Cell::new(size.bytes() - INITIAL_CHUNK_SIZE),
             list: LinkedList::new(),
+            memory_cap_id,
         };
 
         let node = unsafe { Node::new(address + INITIAL_CHUNK_SIZE, size.bytes() - INITIAL_CHUNK_SIZE) };
@@ -148,7 +158,20 @@ impl HeapZone {
         (addr >= self.addr() + CHUNK_SIZE) && (addr + size <= self.addr() + CHUNK_SIZE + self.size)
     }
 
-    unsafe fn alloc(&mut self, layout: Layout) -> Option<NonNull<[u8]>> {
+    /// Gets the message buffer corresponding to the allocation at the given address of the given size
+    /// 
+    /// Panics if this allocation is not contianed in this heap zone
+    fn message_buffer_for_allocation(&self, addr: usize, size: usize) -> MessageBuffer {
+        assert!(self.contains(addr, size));
+
+        MessageBuffer {
+            memory_id: self.memory_cap_id,
+            offset: Size::from_bytes(addr - self.addr()),
+            size: Size::from_bytes(size),
+        }
+    }
+
+    unsafe fn alloc(&mut self, layout: Layout) -> Option<(NonNull<[u8]>, MessageBuffer)> {
         let size = layout.size();
         let align = layout.align();
 
@@ -167,24 +190,26 @@ impl HeapZone {
                         let alloc_size = old_size - free_zone.size();
                         self.free_space.set(self.free_space() - alloc_size);
 
-                        return Some(
+                        return Some((
                             NonNull::slice_from_raw_parts(
                                 NonNull::new(addr as *mut u8).unwrap(),
                                 alloc_size,
                             ),
-                        );
+                            self.message_buffer_for_allocation(addr, alloc_size),
+                        ));
                     },
                     ResizeResult::Remove(addr) => {
                         cursor.remove_prev();
 
                         self.free_space.set(self.free_space() - old_size);
 
-                        return Some(
+                        return Some((
                             NonNull::slice_from_raw_parts(
                                 NonNull::new(addr as *mut u8).unwrap(),
                                 old_size,
                             ),
-                        );
+                            self.message_buffer_for_allocation(addr, old_size),
+                        ));
                     },
                     ResizeResult::NoCapacity => (),
                 }
@@ -274,14 +299,14 @@ impl LinkedListAllocatorInner {
         }
     }
 
-    pub fn alloc(&mut self, layout: Layout) -> Option<NonNull<[u8]>> {
+    pub fn alloc(&mut self, layout: Layout) -> Option<(NonNull<[u8]>, MessageBuffer)> {
         let size = layout.size();
         let align = layout.align();
 
         for z in self.list.iter_mut() {
             if z.free_space() >= size {
-                if let Some(allocation) = unsafe { z.alloc(layout) } {
-                    return Some(allocation);
+                if let allocation @ Some(_) = unsafe { z.alloc(layout) } {
+                    return allocation;
                 }
             }
         }
@@ -351,13 +376,49 @@ impl LinkedListAllocator {
             Some(NonNull::slice_from_raw_parts(allocation_start, size))
         }
     }
+
+    /// Allocates memory and also reports the message buffer of the given allocation
+    pub fn alloc_with_message_buffer(&self, layout: Layout) -> Option<(NonNull<[u8]>, MessageBuffer)> {
+        self.inner.lock().alloc(layout)
+    }
+
+    pub unsafe fn dealloc(&self, allocation: NonNull<u8>, layout: Layout) {
+        unsafe {
+            self.inner.lock().dealloc(allocation, layout);
+        }
+    }
+
+    pub unsafe fn realloc_with_message_buffer(
+        &self,
+        allocation: NonNull<u8>,
+        old_layout: Layout,
+        new_layout: Layout,
+    ) -> Option<(NonNull<[u8]>, MessageBuffer)> {
+        let (mut mem, message_buffer) = self.alloc_with_message_buffer(new_layout)?;
+
+        let mut allocation_slice = NonNull::slice_from_raw_parts(
+            allocation,
+            old_layout.size(),
+        );
+
+        // safety: realloc should be called with valid `allocation` pointer
+        unsafe {
+            let dest_slice = &mut mem.as_mut()[..allocation_slice.len()];
+            dest_slice.copy_from_slice(allocation_slice.as_mut());
+        }
+
+        unsafe {
+            self.dealloc(allocation, old_layout);
+        }
+        Some((mem, message_buffer))
+    }
 }
 
 // TODO: add specialized realloc method
 unsafe impl GlobalAlloc for LinkedListAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         match self.inner.lock().alloc(layout) {
-            Some(ptr) => ptr.as_ptr().as_mut_ptr(),
+            Some((ptr, _)) => ptr.as_ptr().as_mut_ptr(),
             None => null_mut(),
         }
     }
@@ -379,3 +440,7 @@ impl Drop for LinkedListAllocator {
 
 #[global_allocator]
 static ALLOCATOR: LinkedListAllocator = LinkedListAllocator::new();
+
+pub fn allocator() -> &'static LinkedListAllocator {
+    &ALLOCATOR
+}

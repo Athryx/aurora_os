@@ -22,7 +22,7 @@ pub unsafe trait HeapAllocator: Send + Sync {
             old_layout.size(),
         );
 
-        // safety: deallocagte should be called with valid `allocation` pointer
+        // safety: realloc should be called with valid `allocation` pointer
         unsafe {
             let dest_slice = &mut mem.as_mut()[..allocation_slice.len()];
             dest_slice.copy_from_slice(allocation_slice.as_mut());
