@@ -24,8 +24,6 @@ mod ser;
 pub use ser::{Serializer, to_bytes, to_bytes_count_cap};
 mod de;
 pub use de::{Deserializer, from_bytes};
-//mod unserialized_data;
-//pub use unserialized_data::UnserializedData;
 #[cfg(feature = "alloc")]
 mod value;
 #[cfg(feature = "alloc")]
