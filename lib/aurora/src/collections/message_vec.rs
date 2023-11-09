@@ -10,6 +10,7 @@ use core::mem::size_of;
 
 use aser::ByteBuf;
 use sys::MessageBuffer;
+use bit_utils::Size;
 
 use crate::allocator::allocator;
 
@@ -156,7 +157,11 @@ impl<T> MessageVec<T> {
     }
 
     pub fn message_buffer(&self) -> Option<MessageBuffer> {
-        self.inner.message_buffer
+        let mut buffer = self.inner.message_buffer?;
+        // change buffer size to only include the piece of message vec
+        // actually in use, not the total allocated region
+        buffer.size = Size::from_bytes(size_of::<T>() * self.len);
+        Some(buffer)
     }
 
     pub fn clear(&mut self) {
