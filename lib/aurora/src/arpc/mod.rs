@@ -1,16 +1,17 @@
+use serde::{Serialize, Deserialize};
 use sys::Reply;
 use futures::{select_biased, StreamExt};
 
 use crate::async_runtime::async_sys::{AsyncChannel, AsyncDropCheckReciever};
 
-pub struct RpcCallData<'a> {
-    service_id: u64,
-    method_id: u32,
-    data: &'a [u8],
+#[derive(Serialize, Deserialize)]
+pub struct RpcCallData {
+    pub service_id: u64,
+    pub method_id: u32,
 }
 
 pub trait RpcService {
-    async fn call(&self, rpc_data: RpcCallData, reply: Reply);
+    fn call(&self, data: &[u8], reply: Reply);
 }
 
 pub async fn make_rpc_service<T: RpcService>(
@@ -32,6 +33,11 @@ pub async fn make_rpc_service<T: RpcService>(
                 let Some(reply) = message.reply.take() else {
                     continue;
                 };
+
+                // safety: the event pool should not yet have been invalidated since we just recived the event
+                unsafe {
+                    service.call(message.as_slice(), reply);
+                }
             },
             _ = drop_future => break,
         }
