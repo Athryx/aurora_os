@@ -115,13 +115,13 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
             items.extend(quote! {
                 fn #method_wrapper_ident(&self, data: &[u8], reply: sys::Reply) {
                     let Ok(message) = aser::from_bytes::<#message_struct_ident>(data) else {
-                        // FIXME: reply with error
+                        aurora::arpc::respond_error(reply, aurora::arpc::RpcError::SerializationError);
                         return;
                     };
 
                     aurora::async_runtime::spawn(async {
                         let result = #trait_ident::#method_ident(self, #(message.args.#arg_struct_fields),*).await;
-                        // FIXME: write to reply
+                        aurora::arpc::respond_success(reply, result);
                     });
                 }
             });
@@ -129,12 +129,12 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
             items.extend(quote! {
                 fn #method_wrapper_ident(&self, data: &[u8], reply: sys::Reply) {
                     let Ok(message) = aser::from_bytes::<#message_struct_ident>(data) else {
-                        // FIXME: reply with error
+                        aurora::arpc::respond_error(reply, aurora::arpc::RpcError::SerializationError);
                         return;
                     };
 
                     let result = #trait_ident::#method_ident(self, #(message.args.#arg_struct_fields),*);
-                    // FIXME: write to reply
+                    aurora::arpc::respond_success(reply, result);
                 }
             });
         }
@@ -178,8 +178,7 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
                     let reply = sys::Reply::from_cap_id(reply_id).unwrap();
                     match call_data.method_id {
                         #(#method_ids => #trait_ident::#wrapper_idents(self, data, reply)),*,
-                        // FIXME: send error about bad method id
-                        _ => (),
+                        _ => aurora::arpc::respond_error(reply, aurora::arpc::RpcError::InvalidMethodId),
                     }
 
                     true
@@ -188,16 +187,16 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
 
             fn call(&self, data: &[u8], reply: sys::Reply) {
                 let Ok(call_data) = aser::from_bytes::<aurora::arpc::RpcCallData>(data) else {
-                    // FIXME: respond with error
+                    aurora::arpc::respond_error(reply, aurora::arpc::RpcError::SerializationError);
                     return;
                 };
 
                 let cap_id = sys::Capability::cap_id(&reply);
                 core::mem::forget(reply);
 
-                if #trait_ident::call_inner(self, &call_data, data, cap_id) {
+                if !#trait_ident::call_inner(self, &call_data, data, cap_id) {
                     let reply = sys::Reply::from_cap_id(cap_id).unwrap();
-                    // FIXME: send error, incorrect service id
+                    aurora::arpc::respond_error(reply, aurora::arpc::RpcError::InvalidServiceId);
                 }
             }
         }

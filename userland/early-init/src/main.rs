@@ -16,6 +16,7 @@ use aurora::prelude::*;
 use aurora::process::{exit, Command};
 use aser::from_bytes;
 use sys::InitInfo;
+use arpc_derive::{arpc_interface, arpc_impl};
 
 mod initrd;
 
@@ -62,6 +63,20 @@ struct Test2 {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 struct Test3 {
     a: usize,
+}
+
+#[arpc_interface(0)]
+trait AddService {
+    fn add(&self, a: usize, b: usize) -> usize;
+}
+
+struct Service;
+
+#[arpc_impl]
+impl AddService for Service {
+    fn add(&self, a: usize, b: usize) -> usize {
+        a + b
+    }
 }
 
 #[no_mangle]
