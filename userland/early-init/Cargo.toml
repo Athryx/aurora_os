@@ -7,9 +7,9 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-aurora = { path = "../../lib/aurora" }
-aser = { path = "../../lib/aser" }
-sys = { path = "../../lib/sys" }
+aurora = { path = "../aurora" }
+aser = { path = "../aser" }
+sys = { path = "../sys" }
 serde = { version = "1.0.163", default-features = false, features = ["derive", "alloc"] }
 
 [panic.dev]
