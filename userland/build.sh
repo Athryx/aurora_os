@@ -1,27 +1,23 @@
 #!/bin/sh
 
-SUBDIRS="early-init fs-server"
-
 cd $(dirname $0)
 
-# used by subdir build scripts
-export TARGET=$(realpath x86_64-os-userland.json)
-export SYSROOT=$(realpath sysroot)
-export GEN_SYSROOT=$(realpath gen-sysroot.sh)
+[[ $1 = clean ]] && { cargo clean; exit 0; }
+[[ $1 = fmt ]] && { cargo fmt; exit 0; }
+[[ $1 = release ]] && RFLAG=--release
 
-for SUBDIR in $SUBDIRS
-do
-	if ! $SUBDIR/build.sh $1
-	then
-		echo "$SUBDIR build failed"
-		exit 1
-	fi
-done
+if [[ $1 = test ]]
+then
+	# TODO
+	exit 0
+else
+  cargo build $RFLAG || exit 1
 
-[[ $1 = clean ]] && exit 0
-[[ $1 = sysroot ]] && exit 0
-[[ $1 = fmt ]] && exit 0
+  # Change these to x86_64-os-kernel for kernel
+  TARGET_DIR=target/x86_64-os-userland/debug
+  [[ $1 = release ]] && TARGET_DIR=target/x86_64-os-userland/release
+fi
 
-gen-initrd -n --init early-init/early-init.bin --fs fs-server/fs-server.bin --part-list part-list -o initrd
+gen-initrd -n --init $TARGET_DIR/early-init --fs $TARGET_DIR/fs-server --part-list part-list -o initrd
 
 exit 0

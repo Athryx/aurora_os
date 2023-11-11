@@ -14,7 +14,6 @@ use thiserror_no_std::Error;
 use bytemuck::bytes_of;
 
 use crate::{prelude::*, this_context};
-use crate::collections::HashMap;
 
 const DEFAULT_STACK_SIZE: Size = Size::from_pages(64);
 const DEFAULT_STACK_PADDING: Size = Size::from_pages(1024);
