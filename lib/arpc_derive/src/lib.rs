@@ -119,6 +119,7 @@ impl Parse for Args {
 pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let args = parse_macro_input!(args as Args);
     let service_id = args.service_id;
+    let client_struct_ident = format_ident!("{}", args.name);
 
     let input = parse_macro_input!(input as syn::ItemTrait);
     let trait_ident = input.ident;
@@ -279,6 +280,8 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
         #trait_vis trait #trait_ident: #supertraits {
             #items
 
+            type Client: aurora::arpc::RpcClient = #client_struct_ident;
+
             fn call_inner(&self, call_data: &aurora::arpc::RpcCallMethod, data: &[u8], reply_id: sys::CapId) -> bool {
                 if call_data.service_id != #service_id {
                     #(
@@ -316,7 +319,6 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
         }
     });
 
-    let client_struct_ident = format_ident!("{}", args.name);
     let client_async_trait = format_ident!("{}Async", args.name);
     let resolve_client_macro_ident = client_resolve_macro_name(&trait_ident);
     let impl_client_macro_ident = client_impl_macro_name(&trait_ident);
@@ -363,6 +365,12 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
 
             pub fn endpoint(&self) -> &aurora::arpc::ClientRpcEndpoint {
                 &self.0
+            }
+        }
+
+        impl aurora::arpc::RpcClient for #client_struct_ident {
+            fn from_endpoint(endpoint: aurora::arpc::ClientRpcEndpoint) -> Self {
+                Self(endpoint)
             }
         }
 
@@ -416,6 +424,8 @@ pub fn arpc_impl(_args: proc_macro::TokenStream, input: proc_macro::TokenStream)
         #input
 
         impl aurora::arpc::RpcService for #impl_type {
+            type Client = <Self as #arpc_trait>::Client;
+
             fn call(&self, data: &[u8], reply: sys::Reply) {
                 #arpc_trait::call(self, data, reply);
             }

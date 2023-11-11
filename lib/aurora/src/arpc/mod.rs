@@ -4,7 +4,7 @@ use sys::{Reply, DropCheck, KResult, Channel, CapFlags, CspaceTarget, SysErr, ca
 use futures::{select_biased, StreamExt};
 pub use arpc_derive::{arpc_interface, arpc_impl};
 
-use crate::{async_runtime::async_sys::{AsyncChannel, AsyncDropCheckReciever}, collections::MessageVec, this_context};
+use crate::{async_runtime::async_sys::{AsyncChannel, AsyncDropCheckReciever}, async_runtime, collections::MessageVec, this_context};
 
 /// A version of `RpcCall` which doesn't contain the arguments
 /// 
@@ -56,7 +56,13 @@ pub fn respond_error(reply: Reply, error: RpcError) {
     let _ = reply.reply(&response_data.message_buffer().unwrap());
 }
 
+pub trait RpcClient {
+    fn from_endpoint(endpoint: ClientRpcEndpoint) -> Self;
+}
+
 pub trait RpcService {
+    type Client: RpcClient;
+
     fn call(&self, data: &[u8], reply: Reply);
 }
 
@@ -113,6 +119,16 @@ fn make_endpoints() -> KResult<(ClientRpcEndpoint, ServerRpcEndpoint)> {
     };
 
     Ok((client_endpoint, server_endpoint))
+}
+
+pub fn launch_service<T: RpcService + 'static>(service: T) -> KResult<T::Client> {
+    let (client_endpoint, server_endpoint) = make_endpoints()?;
+
+    let client = T::Client::from_endpoint(client_endpoint);
+
+    async_runtime::spawn(run_rpc_service(server_endpoint, service));
+
+    Ok(client)
 }
 
 pub async fn run_rpc_service<T: RpcService>(

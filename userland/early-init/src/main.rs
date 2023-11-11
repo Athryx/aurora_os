@@ -5,6 +5,7 @@
 #![feature(async_fn_in_trait)]
 #![feature(decl_macro)]
 #![feature(trait_alias)]
+#![feature(associated_type_defaults)]
 
 extern crate alloc;
 
@@ -19,6 +20,7 @@ use aurora::prelude::*;
 use aurora::process::{exit, Command};
 use aser::from_bytes;
 use sys::InitInfo;
+use aurora::arpc::{arpc_interface, arpc_impl};
 
 mod initrd;
 
@@ -65,6 +67,20 @@ struct Test2 {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 struct Test3 {
     a: usize,
+}
+
+#[arpc_interface(service_id = 0, name = "Add")]
+trait AddService {
+    fn add(&self, a: usize, b: usize) -> usize;
+}
+
+struct Adder;
+
+#[arpc_impl]
+impl AddService for Adder {
+    fn add(&self, a: usize, b: usize) -> usize {
+        a + b
+    }
 }
 
 
