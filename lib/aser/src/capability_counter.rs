@@ -135,12 +135,24 @@ impl Serializer for &'_ mut CapabilityCounter {
 
     fn serialize_newtype_struct<T: ?Sized>(
         self,
-        name: &'static str,
+        _name: &'static str,
         value: &T,
     ) -> Result<Self::Ok, Self::Error>
     where
         T: serde::Serialize {
-        if name == CapId::SERIALIZE_NEWTYPE_NAME {
+        value.serialize(self)
+    }
+
+    fn serialize_newtype_variant<T: ?Sized>(
+        self,
+        _name: &'static str,
+        variant_index: u32,
+        _variant: &'static str,
+        value: &T,
+    ) -> Result<Self::Ok, Self::Error>
+    where
+        T: serde::Serialize {
+        if variant_index == CapId::SERIALIZE_ENUM_VARIANT {
             let mut capability_serializer = CapabilitySerializer::default();
             value.serialize(&mut capability_serializer)?;
             let _ = capability_serializer.get_capability()?;
@@ -150,18 +162,6 @@ impl Serializer for &'_ mut CapabilityCounter {
         } else {
             value.serialize(self)
         }
-    }
-
-    fn serialize_newtype_variant<T: ?Sized>(
-        self,
-        _name: &'static str,
-        _variant_index: u32,
-        _variant: &'static str,
-        value: &T,
-    ) -> Result<Self::Ok, Self::Error>
-    where
-        T: serde::Serialize {
-        value.serialize(self)
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {

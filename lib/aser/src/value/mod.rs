@@ -105,6 +105,7 @@ pub enum Value {
     Sequence(Vec<Value>),
     Map(BTreeMap<Value, Value>),
     Capability(CapId),
+    Newtype(Box<Value>),
     EnumVariant {
         variant_index: u32,
         value: Box<Value>,
@@ -150,10 +151,13 @@ impl Serialize for Value {
 
                 map_serializer.end()
             },
-            Self::Capability(cap_id) => serializer.serialize_newtype_struct(
-                CapId::SERIALIZE_NEWTYPE_NAME,
-                &usize::from(*cap_id)
+            Self::Capability(cap_id) => serializer.serialize_newtype_variant(
+                "CapId",
+                CapId::SERIALIZE_ENUM_VARIANT,
+                "CapId",
+                &(usize::from(*cap_id) as u64),
             ),
+            Self::Newtype(value) => serializer.serialize_newtype_struct("", &value),
             Self::EnumVariant {
                 variant_index,
                 value,
@@ -279,22 +283,30 @@ impl<'de> Visitor<'de> for ValueVisitor {
         Ok(Value::Map(map))
     }
 
-    // This will only be called for capabilities, aser does not normally care about newtype structs
     fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
         where
             D: Deserializer<'de>, {
-        let id = u64::deserialize(deserializer)? as usize;
+        let value = Box::new(
+            deserializer.deserialize_any(ValueVisitor)?
+        );
 
-        let cap_id = CapId::try_from(id).ok_or(D::Error::custom("invalid capid"))?;
-        Ok(Value::Capability(cap_id))
+        Ok(Value::Newtype(value))
     }
 
     fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
         where
             A: EnumAccess<'de>, {
         let (variant_index, variant_access) = data.variant()?;
-        let value = Box::new(variant_access.newtype_variant()?);
 
-        Ok(Value::EnumVariant { variant_index, value })
+        if variant_index == CapId::SERIALIZE_ENUM_VARIANT {
+            let cap_id = variant_access.newtype_variant::<u64>()?;
+
+            let cap_id = CapId::try_from(cap_id as usize).ok_or(A::Error::custom("invalid capid"))?;
+            Ok(Value::Capability(cap_id))
+        } else {
+            let value = Box::new(variant_access.newtype_variant()?);
+
+            Ok(Value::EnumVariant { variant_index, value })
+        }
     }
 }

@@ -1,6 +1,6 @@
 use bitflags::bitflags;
 use bit_utils::get_bits;
-use serde::{Serialize, Deserialize, de::{Visitor, Error}};
+use serde::{Serialize, Deserialize, de::{Visitor, Error, EnumAccess, VariantAccess}};
 
 bitflags! {
     pub struct CapFlags: usize {
@@ -113,10 +113,10 @@ impl CapId {
     }
 
 
-    /// Any newtype struct with this name will be treated as a capability by aser
+    /// Newtype enum with this variant will be treated as a capability by aser
     /// 
-    /// This name is reserved for other structs
-    pub const SERIALIZE_NEWTYPE_NAME: &'static str = "__aser_cap";
+    /// This variant is reserved for other enums
+    pub const SERIALIZE_ENUM_VARIANT: u32 = 2987132124;
 }
 
 impl From<CapId> for usize {
@@ -129,7 +129,12 @@ impl Serialize for CapId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer {
-        serializer.serialize_newtype_struct(Self::SERIALIZE_NEWTYPE_NAME, &self.0)
+        serializer.serialize_newtype_variant(
+            "CapId",
+            Self::SERIALIZE_ENUM_VARIANT,
+            "CapId",
+            &self.0,
+        )
     }
 }
 
@@ -137,7 +142,7 @@ impl<'de> Deserialize<'de> for CapId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: serde::Deserializer<'de> {
-        deserializer.deserialize_newtype_struct(Self::SERIALIZE_NEWTYPE_NAME, CapIdVisitor)
+        deserializer.deserialize_enum("CapId", &[], CapIdVisitor)
     }
 }
 
@@ -149,6 +154,19 @@ impl<'de> Visitor<'de> for CapIdVisitor {
     fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
         crate::dprintln!("expecting");
         formatter.write_str("a valid 64 bit capability id")
+    }
+
+    fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>
+    where
+        A: EnumAccess<'de> {
+        let (varient_index, varient_access) = data.variant::<u32>()?;
+        if varient_index != CapId::SERIALIZE_ENUM_VARIANT {
+            Err(A::Error::custom("invalid capid enum variant"))
+        } else {
+            let cap_id = varient_access.newtype_variant::<u64>()?;
+
+            CapId::try_from(cap_id as usize).ok_or(A::Error::custom("invalid capid"))
+        }
     }
 
     fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>

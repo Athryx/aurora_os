@@ -7,11 +7,15 @@ use serde::{
     forward_to_deserialize_any,
 };
 
-use crate::AserError;
+use crate::{AserError, capability_deserializer::CapabilityDeserializer};
 use super::{Value, Integer, Float};
 
 impl<'de> Deserializer<'de> for &'de Value {
     type Error = AserError;
+
+    fn is_human_readable(&self) -> bool {
+        false
+    }
 
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
         where
@@ -43,7 +47,10 @@ impl<'de> Deserializer<'de> for &'de Value {
                 keys: map.keys(),
                 values: map.values(),
             }),
-            Value::Capability(cap_id) => visitor.visit_newtype_struct(usize::from(*cap_id).into_deserializer()),
+            Value::Capability(cap_id) => visitor.visit_enum(CapabilityDeserializer {
+                cap_id: usize::from(*cap_id) as u64,
+            }),
+            Value::Newtype(value) => visitor.visit_newtype_struct(value.as_ref()),
             Value::EnumVariant {
                 variant_index,
                 value,

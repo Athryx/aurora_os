@@ -21,6 +21,7 @@ pub use byte_buf::ByteBuf;
 mod capability_counter;
 pub use capability_counter::count_capabilties;
 mod capability_serializer;
+mod capability_deserializer;
 mod ser;
 pub use ser::{Serializer, to_bytes, to_bytes_count_cap};
 mod de;
@@ -138,18 +139,20 @@ enum DataType {
     Bytes16 = 21,
     Bytes32 = 22,
     Bytes64 = 23,
-    SequenceStart = 24,
-    SequenceEnd = 25,
-    MapStart = 26,
-    MapEnd = 27,
+    /// A newtype, used only for newtype structs, not newtype variants
+    Newtype = 24,
+    SequenceStart = 25,
+    SequenceEnd = 26,
+    MapStart = 27,
+    MapEnd = 28,
     /// Enum member, followed by 32 bit index
-    Variant = 28,
+    Variant = 29,
     /// Newtype enum member with a value, which can be any type
     /// 
     /// Followed by 32 bit inedex and another value
-    VariantValue = 29,
+    VariantValue = 30,
     /// Followed by 16 bit index into capability array
-    Capability = 30,
+    Capability = 31,
     Filler = 0xff,
 }
 

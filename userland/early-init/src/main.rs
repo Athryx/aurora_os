@@ -84,6 +84,9 @@ enum Test {
     }
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+struct New(Test);
+
 
 #[no_mangle]
 pub extern "C" fn _rust_startup(
@@ -127,31 +130,31 @@ pub extern "C" fn _rust_startup(
         .expect("failed to start fs server");
 
 
-    /*let tmp = Test::D {
+    let tmp = Test::D {
         bruh: 8,
         a: false,
         hi: 12309470182309128,
     };
     //let tmp = Test::B(69);
     //let tmp = Test::A;
-    let result: Vec<u8> = aser::to_bytes(&tmp, 0).unwrap();
+    /*let result: Vec<u8> = aser::to_bytes(&New(tmp), 0).unwrap();
     dprintln!("test to bytes {:?}", result);
-    let tmp: Test = aser::from_bytes(&result).unwrap();
+    let tmp: New = aser::from_bytes(&result).unwrap();
     dprintln!("test from bytes {:?}", tmp);
     let value: aser::Value = aser::from_bytes(&result).unwrap();
     dprintln!("value from bytes {:?}", value);
     let value2 = aser::Value::from_serialize(&tmp);
     dprintln!("value from test {:?}", value2);
-    let test2: Test = value.into_deserialize().unwrap();
+    let test2: New = value.into_deserialize().unwrap();
     dprintln!("test from value {:?}", test2);*/
 
-    let tmp = Test2 {
+    /*let tmp = Test2 {
         a: 1,
         b: 69,
     };
     let result: Vec<u8> = aser::to_bytes(&tmp, 0).unwrap();
     let tmp2: Test3 = aser::from_bytes(&result).unwrap();
-    dprintln!("{tmp2:?}");
+    dprintln!("{tmp2:?}");*/
 
     loop { core::hint::spin_loop(); }
 }

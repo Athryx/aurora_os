@@ -289,22 +289,13 @@ impl<'a, B: ByteBuf> ser::Serializer for &'a mut Serializer<B> {
 
     fn serialize_newtype_struct<T: ?Sized>(
         self,
-        name: &'static str,
+        _name: &'static str,
         value: &T,
     ) -> Result<Self::Ok, Self::Error>
     where
         T: serde::Serialize {
-        if name == CapId::SERIALIZE_NEWTYPE_NAME {
-            self.push_type(DataType::Capability);
-            self.push_u16((self.capability_index / 8) as u16);
-
-            let mut capability_serializer = CapabilitySerializer::default();
-            value.serialize(&mut capability_serializer)?;
-            
-            self.push_capability(capability_serializer.get_capability()?)
-        } else {
-            value.serialize(self)
-        }
+        self.push_type(DataType::Newtype);
+        value.serialize(self)
     }
 
     fn serialize_newtype_variant<T: ?Sized>(
@@ -316,10 +307,20 @@ impl<'a, B: ByteBuf> ser::Serializer for &'a mut Serializer<B> {
     ) -> Result<Self::Ok, Self::Error>
     where
         T: serde::Serialize {
-        self.push_type(DataType::VariantValue);
-        self.push_u32(variant_index);
+        if variant_index == CapId::SERIALIZE_ENUM_VARIANT {
+            self.push_type(DataType::Capability);
+            self.push_u16(self.capability_index as u16 - 1);
 
-        value.serialize(self)
+            let mut capability_serializer = CapabilitySerializer::default();
+            value.serialize(&mut capability_serializer)?;
+            
+            self.push_capability(capability_serializer.get_capability()?)
+        } else {
+            self.push_type(DataType::VariantValue);
+            self.push_u32(variant_index);
+
+            value.serialize(self)
+        }
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {

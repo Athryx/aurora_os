@@ -139,17 +139,9 @@ impl<'a> Serializer for ValueSerializer {
     ) -> Result<Self::Ok, Self::Error>
     where
         T: serde::Serialize {
-        if name == CapId::SERIALIZE_NEWTYPE_NAME {
-            let mut capability_serializer = CapabilitySerializer::default();
-            value.serialize(&mut capability_serializer)?;
-
-            let cap_id = CapId::try_from(capability_serializer.get_capability()? as usize)
-                .ok_or(AserError::InvalidCapabilityId)?;
-
-            Ok(Value::Capability(cap_id))
-        } else {
-            value.serialize(self)
-        }
+        Ok(Value::Newtype(
+            Box::new(value.serialize(self)?),
+        ))
     }
 
     fn serialize_newtype_variant<T: ?Sized>(
@@ -161,10 +153,20 @@ impl<'a> Serializer for ValueSerializer {
     ) -> Result<Self::Ok, Self::Error>
     where
         T: serde::Serialize {
-        Ok(Value::EnumVariant {
-            variant_index,
-            value: Box::new(value.serialize(self)?),
-        })
+        if variant_index == CapId::SERIALIZE_ENUM_VARIANT {
+            let mut capability_serializer = CapabilitySerializer::default();
+            value.serialize(&mut capability_serializer)?;
+
+            let cap_id = CapId::try_from(capability_serializer.get_capability()? as usize)
+                .ok_or(AserError::InvalidCapabilityId)?;
+
+            Ok(Value::Capability(cap_id))
+        } else {
+            Ok(Value::EnumVariant {
+                variant_index,
+                value: Box::new(value.serialize(self)?),
+            })
+        }
     }
 
     fn serialize_seq(self, _len: Option<usize>) -> Result<Self::SerializeSeq, Self::Error> {

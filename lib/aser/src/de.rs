@@ -1,5 +1,6 @@
 use serde::{de::{self, Visitor, SeqAccess, MapAccess, EnumAccess, VariantAccess, IntoDeserializer}, forward_to_deserialize_any, Deserialize};
 
+use super::capability_deserializer::CapabilityDeserializer;
 use super::{AserError, DataType};
 
 pub fn from_bytes<'a, T: Deserialize<'a>>(bytes: &'a [u8]) -> Result<T, AserError> {
@@ -92,6 +93,10 @@ impl<'de> Deserializer<'de> {
 impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     type Error = AserError;
 
+    fn is_human_readable(&self) -> bool {
+        false
+    }
+
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de> {
@@ -163,6 +168,8 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
                 visitor.visit_borrowed_bytes(self.take_bytes(num_bytes)?)
             },
 
+            DataType::Newtype => visitor.visit_newtype_struct(self),
+
             DataType::SequenceStart => visitor.visit_seq(SequenceDeserializer::try_from(self)?),
             DataType::SequenceEnd => Err(AserError::UnexpectedTerminator),
 
@@ -183,7 +190,11 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
                 let value = *self.capabilities.get(index as usize)
                     .ok_or(AserError::InvalidCapabilityIndex)?;
 
-                visitor.visit_newtype_struct(value.into_deserializer())
+                let cap_deserializer = CapabilityDeserializer {
+                    cap_id: value,
+                };
+
+                visitor.visit_enum(cap_deserializer)
             },
         }
     }
@@ -329,7 +340,6 @@ impl<'a, 'de> VariantAccess<'de> for EnumDeserializer<'a, 'de> {
         } else {
             Ok(())
         }
-        
     }
 
     fn newtype_variant_seed<T>(self, seed: T) -> Result<T::Value, Self::Error>
