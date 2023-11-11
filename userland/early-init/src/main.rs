@@ -2,6 +2,9 @@
 #![no_main]
 
 #![feature(naked_functions)]
+#![feature(async_fn_in_trait)]
+#![feature(decl_macro)]
+#![feature(trait_alias)]
 
 extern crate alloc;
 
@@ -16,7 +19,6 @@ use aurora::prelude::*;
 use aurora::process::{exit, Command};
 use aser::from_bytes;
 use sys::InitInfo;
-use arpc_derive::{arpc_interface, arpc_impl};
 
 mod initrd;
 
@@ -65,19 +67,6 @@ struct Test3 {
     a: usize,
 }
 
-#[arpc_interface(0)]
-trait AddService {
-    fn add(&self, a: usize, b: usize) -> usize;
-}
-
-struct Service;
-
-#[arpc_impl]
-impl AddService for Service {
-    fn add(&self, a: usize, b: usize) -> usize {
-        a + b
-    }
-}
 
 #[no_mangle]
 pub extern "C" fn _rust_startup(

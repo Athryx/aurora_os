@@ -1,14 +1,26 @@
 use serde::{Serialize, Deserialize};
 use thiserror_no_std::Error;
-use sys::Reply;
+use sys::{Reply, DropCheck, KResult, Channel, CapFlags, CspaceTarget, SysErr, cap_clone};
 use futures::{select_biased, StreamExt};
+pub use arpc_derive::{arpc_interface, arpc_impl};
 
-use crate::{async_runtime::async_sys::{AsyncChannel, AsyncDropCheckReciever}, collections::MessageVec};
+use crate::{async_runtime::async_sys::{AsyncChannel, AsyncDropCheckReciever}, collections::MessageVec, this_context};
 
+/// A version of `RpcCall` which doesn't contain the arguments
+/// 
+/// This is so we can check which method is called first,
+/// and let that method deserialize the data it is expecting
 #[derive(Serialize, Deserialize)]
-pub struct RpcCallData {
+pub struct RpcCallMethod {
     pub service_id: u64,
     pub method_id: u32,
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct RpcCall<T> {
+    pub service_id: u64,
+    pub method_id: u32,
+    pub args: T,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Error)]
@@ -19,6 +31,8 @@ pub enum RpcError {
     InvalidMethodId,
     #[error("Failed to deserialize rpc method arguments")]
     SerializationError,
+    #[error("A system error occure: {0}")]
+    SysErr(#[from] SysErr),
 }
 
 pub fn respond_success<T: Serialize>(reply: Reply, data: T) {
@@ -46,13 +60,67 @@ pub trait RpcService {
     fn call(&self, data: &[u8], reply: Reply);
 }
 
-pub async fn make_rpc_service<T: RpcService>(
+#[derive(Serialize, Deserialize)]
+pub struct ClientRpcEndpoint {
+    channel: AsyncChannel,
+    drop_check: DropCheck,
+}
+
+impl ClientRpcEndpoint {
+    pub async fn call<T: Serialize, U: for<'de> Deserialize<'de>>(&self, data: RpcCall<T>) -> Result<U, RpcError> {
+        let serialized_data: MessageVec<u8> = aser::to_bytes_count_cap(&data)
+            .or(Err(RpcError::SerializationError))?;
+
+        // panic safety: the serialized data should have non zero length
+        let response = self.channel.call(serialized_data.message_buffer().unwrap()).await?;
+
+        let response = unsafe {
+            // safety: this is called as soon as await resolves
+            aser::from_bytes(response.as_slice())
+                .or(Err(RpcError::SerializationError))?
+        };
+
+        response
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct ServerRpcEndpoint {
     channel: AsyncChannel,
     drop_check_reciever: AsyncDropCheckReciever,
+}
+
+/// Creates a client and server endpoint for rpc
+fn make_endpoints() -> KResult<(ClientRpcEndpoint, ServerRpcEndpoint)> {
+    let server_channel = Channel::new(CapFlags::all(), &this_context().allocator)?;
+    let client_channel = cap_clone(
+        CspaceTarget::Current,
+        CspaceTarget::Current,
+        &server_channel,
+        CapFlags::READ | CapFlags::PROD | CapFlags::UPGRADE,
+    )?;
+
+    let (drop_check, drop_check_reciever) = DropCheck::new(&this_context().allocator, 0)?;
+
+    let client_endpoint = ClientRpcEndpoint {
+        channel: client_channel.into(),
+        drop_check,
+    };
+
+    let server_endpoint = ServerRpcEndpoint {
+        channel: server_channel.into(),
+        drop_check_reciever: drop_check_reciever.into(),
+    };
+
+    Ok((client_endpoint, server_endpoint))
+}
+
+pub async fn run_rpc_service<T: RpcService>(
+    server_endpoint: ServerRpcEndpoint,
     service: T,
 ) {
-    let mut message_stream = channel.recv_repeat();
-    let mut drop_future = drop_check_reciever.handle_drop();
+    let mut message_stream = server_endpoint.channel.recv_repeat();
+    let mut drop_future = server_endpoint.drop_check_reciever.handle_drop();
 
     loop {
         select_biased! {

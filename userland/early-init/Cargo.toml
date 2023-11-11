@@ -12,9 +12,6 @@ aser = { path = "../../lib/aser" }
 sys = { path = "../../lib/sys" }
 serde = { version = "1.0.163", default-features = false, features = ["derive", "alloc"] }
 
-# TEMP
-arpc_derive = { path = "../../lib/arpc_derive" }
-
 [panic.dev]
 panic = "abort"
 

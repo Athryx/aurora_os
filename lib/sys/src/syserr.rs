@@ -1,10 +1,12 @@
 use core::fmt;
 
+use serde::{Serialize, Deserialize};
+
 /// Result type returned by syscalls
 pub type KResult<T> = Result<T, SysErr>;
 
 /// Error codes returned by syscalls
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(usize)]
 pub enum SysErr {
     Ok = 0,

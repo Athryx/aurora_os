@@ -1,7 +1,9 @@
+use serde::{Serialize, Deserialize};
 use sys::{DropCheckReciever, CapDrop};
 
 use crate::generate_async_wrapper;
 
+#[derive(Serialize, Deserialize)]
 pub struct AsyncDropCheckReciever(DropCheckReciever);
 
 impl AsyncDropCheckReciever {

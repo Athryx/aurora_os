@@ -5,6 +5,7 @@ use core::task::{Context, Poll};
 use futures::Stream;
 use futures::future::FusedFuture;
 use futures::stream::FusedStream;
+use serde::{Serialize, Deserialize};
 use sys::{Channel, MessageBuffer, KResult, RecieveResult, MessageSent, EventId};
 use bit_utils::Size;
 
@@ -12,6 +13,7 @@ use crate::async_runtime::EXECUTOR;
 use crate::async_runtime::executor::{EventReciever, RecievedEvent, MessageRecievedEvent};
 use crate::generate_async_wrapper;
 
+#[derive(Serialize, Deserialize)]
 pub struct AsyncChannel(Channel);
 
 impl AsyncChannel {
