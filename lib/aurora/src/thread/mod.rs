@@ -1,14 +1,22 @@
 use core::arch::asm;
 use core::sync::atomic::{Ordering, AtomicU8, AtomicU64};
+use core::mem::size_of;
+use core::ptr;
 use alloc::{sync::Arc, string::String};
 
 use sys::syscall_nums::{MEMORY_UNMAP, THREAD_DESTROY};
-use sys::{CapId, Capability, Thread as SysThread};
+use sys::{CapId, Capability, Thread as SysThread, MemoryMappingFlags, SysErr};
+use bit_utils::Size;
 
 mod thread_local_data;
 pub use thread_local_data::{LocalKey, ThreadLocalData};
 
+use crate::prelude::*;
+use crate::allocator::addr_space::{MapMemoryArgs, MapMemoryResult};
+use crate::sync::Mutex;
 use crate::{process, addr_space, this_context};
+
+const DEFAULT_STACK_SIZE: Size = Size::from_pages(1000);
 
 /// An opaque, unique identifier for a thread
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -65,6 +73,142 @@ pub fn current() -> Thread {
 /// Cooperatively gives up the calling threads timeslice to the OS scheduler
 pub fn yield_now() {
     sys::Thread::yield_current();
+}
+
+/// An owned permission to join on a thread (block on its termination)
+pub struct JoinHandle<T> {
+    thread: Thread,
+    /// Returns value of thread
+    /// 
+    // TODO: make this into just unsafe cell, technically mutex is not needed because thread join synchronizes writes
+    result: Arc<Mutex<Option<T>>>,
+}
+
+impl<T> JoinHandle<T> {
+    /// Extracts a handle to the underlying thread
+    pub fn thread(&self) -> &Thread {
+        &self.thread
+    }
+
+    /// Waits for the associated thread to finish
+    /// 
+    /// This function will return immediately if the associated thread has already finished
+    pub fn join(self) -> T {
+        match self.thread.0.thread.handle_thread_exit_sync(None) {
+            // thread has exited
+            Ok(_) => (),
+            // the thread id was not valid, which at this point means the thread already exited
+            // TODO: stop thread later being dropped, that is just an extra syscall for nothing
+            Err(SysErr::InvlId) => (),
+            Err(_) => panic!("could not join on thread"),
+        }
+
+        self.result.lock().take().expect("thread join did not return value")
+    }
+
+    /// Checks if the associated thread has finished running its main function
+    pub fn is_finished(&self) -> bool {
+        // if the refcount is only 1, the other thread has dropped its result
+        // this is ok to check this way because real std library does the same,
+        // and it only guarentees the rust closure has stopped running
+        Arc::strong_count(&self.result) == 1
+    }
+}
+
+pub fn spawn<F, T>(f: F) -> JoinHandle<T>
+where
+    F: FnOnce() -> T + Send + 'static,
+    T: Send + 'static {
+    
+    let MapMemoryResult {
+        address,
+        size,
+        ..
+    } = addr_space().map_memory(MapMemoryArgs {
+        size: Some(DEFAULT_STACK_SIZE),
+        flags: MemoryMappingFlags::READ | MemoryMappingFlags::WRITE,
+        ..Default::default()
+    }).expect("failed to map new thread stack");
+
+    // there will be 1 pointer on the stack
+    let rsp = address + size.bytes() - size_of::<usize>();
+
+    let context = this_context();
+    let sys_thread = SysThread::new(
+        &context.allocator,
+        &context.thread_group,
+        &context.address_space,
+        &context.capability_space,
+        thread_spawn_asm as usize,
+        rsp,
+        sys::ThreadStartMode::Suspended,
+    ).expect("failed to spawn thread");
+
+    let thread = Thread::new(None, sys_thread, address);
+    let join_result = Arc::new(Mutex::new(None));
+
+    let joind_handle = JoinHandle {
+        thread: thread.clone(),
+        result: join_result.clone(),
+    };
+
+    let closure = move || {
+        let result = f();
+        *join_result.lock() = Some(result);
+    };
+
+    let startup_data = Box::new(ThreadStartupData {
+        thread: thread.clone(),
+        closure: Box::new(closure),
+    });
+
+    let startup_data_ptr = Box::leak(startup_data) as *mut _;
+
+    // write startup data and startup fn pointer to stack
+    let stack_ptr = rsp as *mut usize;
+    unsafe {
+        ptr::write(stack_ptr, startup_data_ptr as usize);
+    }
+
+    // start the thread now
+    thread.0.thread.resume().expect("failed to start thread");
+
+    joind_handle
+}
+
+struct ThreadStartupData {
+    thread: Thread,
+    closure: Box<dyn FnOnce()>,
+}
+
+#[no_mangle]
+unsafe extern "C" fn thread_startup(data: *mut ThreadStartupData) -> ! {
+    {
+        let ThreadStartupData {
+            thread,
+            closure,
+        } = unsafe { *Box::from_raw(data) };
+
+        ThreadLocalData::init(thread);
+
+        // run thread function and report result to join
+        closure();
+    }
+
+    // exit will take care of dropping thread local data and deallocating stack
+    // everything else is dropepd by now
+    exit();
+}
+
+#[naked]
+unsafe extern "C" fn thread_spawn_asm() -> ! {
+    unsafe {
+        asm!(
+            "pop rdi", // get pointer to startup data
+            "call thread_startup", // call startup function, stack should be 16 byte aligned at this point
+            options(noreturn),
+        )
+    }
 }
 
 // start at 1 for the initial thread
