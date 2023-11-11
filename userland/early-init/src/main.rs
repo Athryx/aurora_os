@@ -20,6 +20,7 @@ use aurora::prelude::*;
 use aurora::process::{exit, Command};
 use aser::from_bytes;
 use sys::InitInfo;
+use aurora::arpc;
 use aurora::arpc::{arpc_interface, arpc_impl};
 
 mod initrd;
@@ -47,18 +48,6 @@ pub extern "C" fn _aurora_startup() {
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-enum Test {
-    A,
-    B(i32),
-    C(u8, u8),
-    D {
-        bruh: u8,
-        a: bool,
-        hi: i128,
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 struct Test2 {
     a: usize,
     b: usize,
@@ -80,6 +69,18 @@ struct Adder;
 impl AddService for Adder {
     fn add(&self, a: usize, b: usize) -> usize {
         a + b
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+enum Test {
+    A,
+    B(i32),
+    C(u8, u8),
+    D {
+        bruh: u8,
+        a: bool,
+        hi: i128,
     }
 }
 
@@ -115,8 +116,13 @@ pub extern "C" fn _rust_startup(
         initrd::parse_initrd(init_info.initrd_address)
     };
 
+    // this is rpc channel used to control fs server
+    let (fs_client_endpoint, fs_server_endpoint) = arpc::make_endpoints()
+        .expect("failed to make fs server rpc endpoints");
+
     dprintln!("starting fs server...");
     let fs_server = Command::from_bytes(initrd_info.fs_server.into())
+        .named_arg("server_endpoint".to_owned(), &fs_server_endpoint)
         .spawn()
         .expect("failed to start fs server");
 

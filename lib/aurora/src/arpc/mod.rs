@@ -97,7 +97,7 @@ pub struct ServerRpcEndpoint {
 }
 
 /// Creates a client and server endpoint for rpc
-fn make_endpoints() -> KResult<(ClientRpcEndpoint, ServerRpcEndpoint)> {
+pub fn make_endpoints() -> KResult<(ClientRpcEndpoint, ServerRpcEndpoint)> {
     let server_channel = Channel::new(CapFlags::all(), &this_context().allocator)?;
     let client_channel = cap_clone(
         CspaceTarget::Current,

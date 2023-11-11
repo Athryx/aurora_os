@@ -95,7 +95,13 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
     fn deserialize_any<V>(self, visitor: V) -> Result<V::Value, Self::Error>
     where
         V: Visitor<'de> {
+        while let DataType::Filler = self.peek_data_type()? {
+            self.take_data_type()?;
+        }
+
         match self.take_data_type()? {
+            DataType::Filler => panic!("unexpected filler"),
+
             DataType::Null => visitor.visit_unit(),
 
             DataType::True => visitor.visit_bool(true),
@@ -178,7 +184,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
                     .ok_or(AserError::InvalidCapabilityIndex)?;
 
                 visitor.visit_newtype_struct(value.into_deserializer())
-            }
+            },
         }
     }
 

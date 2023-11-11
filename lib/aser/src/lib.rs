@@ -8,6 +8,7 @@
 extern crate alloc;
 
 use core::fmt::Display;
+use core::mem::size_of;
 #[cfg(feature = "alloc")]
 use alloc::string::{String, ToString};
 
@@ -149,6 +150,7 @@ enum DataType {
     VariantValue = 29,
     /// Followed by 16 bit index into capability array
     Capability = 30,
+    Filler = 0xff,
 }
 
 #[derive(Debug, Error)]
@@ -165,16 +167,20 @@ pub enum AserCloneCapsError {
 type CloneCapsResult<T> = core::result::Result<T, AserCloneCapsError>;
 
 fn get_usize(data: &[u8], index: usize) -> CloneCapsResult<usize> {
-    let bytes = data.get(index..(index + 8))
+    let offset = index * size_of::<usize>();
+
+    let bytes = data.get(offset..(offset + 8))
         .ok_or(AserCloneCapsError::EndOfInput)?;
 
     Ok(usize::from_le_bytes(bytes.try_into().unwrap()))
 }
 
 fn set_usize(data: &mut [u8], index: usize, num: usize) -> CloneCapsResult<()> {
+    let offset = index * size_of::<usize>();
+
     let bytes = num.to_le_bytes();
 
-    let data = data.get_mut(index..(index + 8))
+    let data = data.get_mut(offset..(offset + 8))
         .ok_or(AserCloneCapsError::EndOfInput)?;
 
     data.copy_from_slice(&bytes);
@@ -191,6 +197,7 @@ pub fn clone_caps_to_cspace(cspace: CspaceTarget, data: &mut [u8]) -> CloneCapsR
 
     for i in 1..(cap_count + 1) {
         let cap = get_usize(data, i)?;
+
         let cap_id = CapId::try_from(cap)
             .ok_or(AserCloneCapsError::InvalidCapabilityId)?;
 

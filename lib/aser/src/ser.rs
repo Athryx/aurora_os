@@ -5,7 +5,7 @@ use sys::CapId;
 
 use crate::ByteBuf;
 
-use super::{AserError, DataType, capability_serializer::CapabilitySerializer, count_capabilties};
+use super::{AserError, DataType, capability_serializer::CapabilitySerializer, count_capabilties, get_usize, set_usize};
 
 pub fn to_bytes<T: Serialize, B: ByteBuf>(data: &T, num_capabilities: usize) -> Result<B, AserError> {
     let mut serializer = Serializer::new(num_capabilities);
@@ -36,13 +36,14 @@ impl<B: ByteBuf> Serializer<B> {
     pub fn new(num_capabilties: usize) -> Self {
         let mut buf = B::default();
 
-        buf.extend_from_slice(&num_capabilties.to_le_bytes());
-        for _ in 0..num_capabilties * 8 {
-            buf.push(0);
+        buf.extend_from_slice(&0usize.to_le_bytes());
+        for _ in 0..(num_capabilties * 8) {
+            // filler byte for capabilties that end up being not set
+            buf.push(DataType::Filler as u8);
         }
 
         Serializer {
-            capability_index: 0,
+            capability_index: 1,
             data_offset: buf.len(),
             buf,
         }
@@ -69,14 +70,16 @@ impl<B: ByteBuf> Serializer<B> {
     }
 
     fn push_capability(&mut self, cap_id: u64) -> Result<(), AserError> {
-        if self.capability_index >= self.data_offset {
+        if self.capability_index * 8 >= self.data_offset {
             return Err(AserError::TooManyCapabilities);
         }
 
-        let dest_slice = &mut self.buf.as_slice()[self.capability_index..self.capability_index + 8];
-        dest_slice.copy_from_slice(&cap_id.to_le_bytes());
+        set_usize(self.buf.as_slice(), self.capability_index, cap_id as usize).unwrap();
 
-        self.capability_index += 8;
+        let cap_count = get_usize(self.buf.as_slice(), 0).unwrap();
+        set_usize(self.buf.as_slice(), 0, cap_count + 1).unwrap();
+
+        self.capability_index += 1;
 
         Ok(())
     }

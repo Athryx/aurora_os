@@ -57,35 +57,19 @@ impl ProcessDataSource {
     }
 }
 
-#[derive(Default)]
-struct ArgsBuilder {
-    positional_args: Vec<Value>,
-    named_args: HashMap<String, Value>,
-}
-
-impl From<&ArgsBuilder> for Args {
-    fn from(value: &ArgsBuilder) -> Self {
-        Args {
-            positional_args: value.positional_args.clone(),
-            named_args: Value::from_serialize(&value.named_args)
-                .expect("failed to build arguments for new process"),
-        }
-    }
-}
-
 /// Used to execute other processess
 /// 
 /// Functions similarly to the standard library's Command
 pub struct Command {
     process_data: ProcessDataSource,
-    args: ArgsBuilder,
+    args: Args,
 }
 
 impl Command {
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
         Command {
             process_data: ProcessDataSource::Bytes(bytes),
-            args: ArgsBuilder::default(),
+            args: Args::default(),
         }
     }
 
@@ -115,7 +99,9 @@ impl Command {
 
     pub fn spawn(&mut self) -> Result<Child, ProcessError> {
         let namespace = Namespace {
-            args: Args::from(&self.args),
+            // it is fine for only data to be cloned,
+            // spawn_process will transfer necessary capabilities
+            args: self.args.clone_data(),
         };
 
         let exe_data = self.process_data.bytes();

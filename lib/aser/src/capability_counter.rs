@@ -144,6 +144,7 @@ impl Serializer for &'_ mut CapabilityCounter {
             let mut capability_serializer = CapabilitySerializer::default();
             value.serialize(&mut capability_serializer)?;
             let _ = capability_serializer.get_capability()?;
+            self.count += 1;
 
             Ok(())
         } else {

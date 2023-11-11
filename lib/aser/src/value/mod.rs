@@ -9,7 +9,7 @@ use serde::{
     Deserialize,
     Deserializer,
     ser::{SerializeTuple, SerializeMap},
-    de::{Visitor, SeqAccess, MapAccess, EnumAccess, VariantAccess},
+    de::{Visitor, SeqAccess, MapAccess, EnumAccess, VariantAccess, Error},
 };
 
 use super::AserError;
@@ -283,7 +283,10 @@ impl<'de> Visitor<'de> for ValueVisitor {
     fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
         where
             D: Deserializer<'de>, {
-        Ok(Value::Capability(CapId::deserialize(deserializer)?))
+        let id = u64::deserialize(deserializer)? as usize;
+
+        let cap_id = CapId::try_from(id).ok_or(D::Error::custom("invalid capid"))?;
+        Ok(Value::Capability(cap_id))
     }
 
     fn visit_enum<A>(self, data: A) -> Result<Self::Value, A::Error>

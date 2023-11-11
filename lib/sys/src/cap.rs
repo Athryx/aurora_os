@@ -147,6 +147,7 @@ impl<'de> Visitor<'de> for CapIdVisitor {
     type Value = CapId;
 
     fn expecting(&self, formatter: &mut core::fmt::Formatter) -> core::fmt::Result {
+        crate::dprintln!("expecting");
         formatter.write_str("a valid 64 bit capability id")
     }
 
