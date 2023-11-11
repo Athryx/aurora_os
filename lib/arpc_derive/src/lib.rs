@@ -366,6 +366,12 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
             }
         }
 
+        impl From<aurora::arpc::ClientRpcEndpoint> for #client_struct_ident {
+            fn from(endpoint: aurora::arpc::ClientRpcEndpoint) -> Self {
+                Self(endpoint)
+            }
+        }
+
         #(
             // generate aliases for client supertraits so we know what they are clled
             #supertrait_paths::#supertrait_resolve_macros!(#supertrait_aliases);
