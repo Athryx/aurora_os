@@ -5,9 +5,12 @@ resolver = "2"
 members = [
   "early-init",
   "fs-server",
+  "arpc",
   "arpc_derive",
   "aser",
+  "asynca",
   "aurora",
+  "aurora_core",
   "bit_utils",
   "std",
   "sys",

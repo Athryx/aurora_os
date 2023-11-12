@@ -20,8 +20,7 @@ use aurora::prelude::*;
 use aurora::process::{exit, Command};
 use aser::from_bytes;
 use sys::InitInfo;
-use aurora::arpc;
-use aurora::arpc::{arpc_interface, arpc_impl};
+use arpc::{arpc_interface, arpc_impl};
 
 mod initrd;
 
@@ -99,10 +98,10 @@ pub extern "C" fn _rust_startup(
         slice::from_raw_parts(process_data, process_data_size)
     };
 
-    let (process_init_data, memory_entries) = aurora::process_data_from_slice(process_data)
+    let (process_init_data, memory_entries) = aurora_core::process_data_from_slice(process_data)
         .expect("invalid process data array passed into program");
 
-    aurora::init_allocation(process_init_data, memory_entries)
+    aurora_core::init_allocation(process_init_data, memory_entries)
         .expect("failed to initialize aurora lib allocaror");
 
     let init_data = unsafe {

@@ -1,10 +1,12 @@
+#![no_std]
+
 use serde::{Serialize, Deserialize};
 use thiserror_no_std::Error;
 use sys::{Reply, DropCheck, KResult, Channel, CapFlags, CspaceTarget, SysErr, cap_clone};
 use futures::{select_biased, StreamExt};
+use aurora_core::{this_context, collections::MessageVec};
+use asynca::async_sys::{AsyncChannel, AsyncDropCheckReciever};
 pub use arpc_derive::{arpc_interface, arpc_impl};
-
-use crate::{async_runtime::async_sys::{AsyncChannel, AsyncDropCheckReciever}, async_runtime, collections::MessageVec, this_context};
 
 /// A version of `RpcCall` which doesn't contain the arguments
 /// 
@@ -126,7 +128,7 @@ pub fn launch_service<T: RpcService + 'static>(service: T) -> KResult<T::Client>
 
     let client = T::Client::from_endpoint(client_endpoint);
 
-    async_runtime::spawn(run_rpc_service(server_endpoint, service));
+    asynca::spawn(run_rpc_service(server_endpoint, service));
 
     Ok(client)
 }

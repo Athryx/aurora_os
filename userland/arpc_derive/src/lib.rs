@@ -194,27 +194,27 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
         if is_async(signature) {
             items.extend(quote! {
                 fn #method_wrapper_ident(&self, data: &[u8], reply: sys::Reply) {
-                    let Ok(message) = aser::from_bytes::<aurora::arpc::RpcCall<#args_struct_ident>>(data) else {
-                        aurora::arpc::respond_error(reply, aurora::arpc::RpcError::SerializationError);
+                    let Ok(message) = aser::from_bytes::<arpc::RpcCall<#args_struct_ident>>(data) else {
+                        arpc::respond_error(reply, arpc::RpcError::SerializationError);
                         return;
                     };
 
-                    aurora::async_runtime::spawn(async {
+                    asynca::spawn(async {
                         let result = #trait_ident::#method_ident(self, #(message.args.#arg_struct_fields),*).await;
-                        aurora::arpc::respond_success(reply, result);
+                        arpc::respond_success(reply, result);
                     });
                 }
             });
         } else {
             items.extend(quote! {
                 fn #method_wrapper_ident(&self, data: &[u8], reply: sys::Reply) {
-                    let Ok(message) = aser::from_bytes::<aurora::arpc::RpcCall<#args_struct_ident>>(data) else {
-                        aurora::arpc::respond_error(reply, aurora::arpc::RpcError::SerializationError);
+                    let Ok(message) = aser::from_bytes::<arpc::RpcCall<#args_struct_ident>>(data) else {
+                        arpc::respond_error(reply, arpc::RpcError::SerializationError);
                         return;
                     };
 
                     let result = #trait_ident::#method_ident(self, #(message.args.#arg_struct_fields),*);
-                    aurora::arpc::respond_success(reply, result);
+                    arpc::respond_success(reply, result);
                 }
             });
         }
@@ -241,7 +241,7 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
         client_async_impls.extend(quote! {
             #client_async_signature {
                 let args = #args_struct_ident(#(#args),*);
-                let message = aurora::arpc::RpcCall {
+                let message = arpc::RpcCall {
                     service_id: #service_id,
                     method_id: #method_id,
                     args,
@@ -280,9 +280,9 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
         #trait_vis trait #trait_ident: #supertraits {
             #items
 
-            type Client: aurora::arpc::RpcClient = #client_struct_ident;
+            type Client: arpc::RpcClient = #client_struct_ident;
 
-            fn call_inner(&self, call_data: &aurora::arpc::RpcCallMethod, data: &[u8], reply_id: sys::CapId) -> bool {
+            fn call_inner(&self, call_data: &arpc::RpcCallMethod, data: &[u8], reply_id: sys::CapId) -> bool {
                 if call_data.service_id != #service_id {
                     #(
                         if #arpc_supertraits::call_inner(self, call_data, data, reply_id) {
@@ -295,7 +295,7 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
                     let reply = sys::Reply::from_cap_id(reply_id).unwrap();
                     match call_data.method_id {
                         #(#method_ids => #trait_ident::#wrapper_idents(self, data, reply),)*
-                        _ => aurora::arpc::respond_error(reply, aurora::arpc::RpcError::InvalidMethodId),
+                        _ => arpc::respond_error(reply, arpc::RpcError::InvalidMethodId),
                     }
 
                     true
@@ -303,8 +303,8 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
             }
 
             fn call(&self, data: &[u8], reply: sys::Reply) {
-                let Ok(call_data) = aser::from_bytes::<aurora::arpc::RpcCallMethod>(data) else {
-                    aurora::arpc::respond_error(reply, aurora::arpc::RpcError::SerializationError);
+                let Ok(call_data) = aser::from_bytes::<arpc::RpcCallMethod>(data) else {
+                    arpc::respond_error(reply, arpc::RpcError::SerializationError);
                     return;
                 };
 
@@ -313,7 +313,7 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
 
                 if !#trait_ident::call_inner(self, &call_data, data, cap_id) {
                     let reply = sys::Reply::from_cap_id(cap_id).unwrap();
-                    aurora::arpc::respond_error(reply, aurora::arpc::RpcError::InvalidServiceId);
+                    arpc::respond_error(reply, arpc::RpcError::InvalidServiceId);
                 }
             }
         }
@@ -356,26 +356,26 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
 
     out.extend(quote! {
         #[derive(serde::Serialize, serde::Deserialize)]
-        pub struct #client_struct_ident(aurora::arpc::ClientRpcEndpoint);
+        pub struct #client_struct_ident(arpc::ClientRpcEndpoint);
 
         impl #client_struct_ident {
-            pub fn into_endpoint(self) -> aurora::arpc::ClientRpcEndpoint {
+            pub fn into_endpoint(self) -> arpc::ClientRpcEndpoint {
                 self.0
             }
 
-            pub fn endpoint(&self) -> &aurora::arpc::ClientRpcEndpoint {
+            pub fn endpoint(&self) -> &arpc::ClientRpcEndpoint {
                 &self.0
             }
         }
 
-        impl aurora::arpc::RpcClient for #client_struct_ident {
-            fn from_endpoint(endpoint: aurora::arpc::ClientRpcEndpoint) -> Self {
+        impl arpc::RpcClient for #client_struct_ident {
+            fn from_endpoint(endpoint: arpc::ClientRpcEndpoint) -> Self {
                 Self(endpoint)
             }
         }
 
-        impl From<aurora::arpc::ClientRpcEndpoint> for #client_struct_ident {
-            fn from(endpoint: aurora::arpc::ClientRpcEndpoint) -> Self {
+        impl From<arpc::ClientRpcEndpoint> for #client_struct_ident {
+            fn from(endpoint: arpc::ClientRpcEndpoint) -> Self {
                 Self(endpoint)
             }
         }
@@ -423,7 +423,7 @@ pub fn arpc_impl(_args: proc_macro::TokenStream, input: proc_macro::TokenStream)
     quote! {
         #input
 
-        impl aurora::arpc::RpcService for #impl_type {
+        impl arpc::RpcService for #impl_type {
             type Client = <Self as #arpc_trait>::Client;
 
             fn call(&self, data: &[u8], reply: sys::Reply) {

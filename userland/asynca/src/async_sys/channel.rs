@@ -9,8 +9,8 @@ use serde::{Serialize, Deserialize};
 use sys::{Channel, MessageBuffer, KResult, RecieveResult, MessageSent, EventId};
 use bit_utils::Size;
 
-use crate::async_runtime::EXECUTOR;
-use crate::async_runtime::executor::{EventReciever, RecievedEvent, MessageRecievedEvent};
+use crate::EXECUTOR;
+use crate::executor::{EventReciever, RecievedEvent, MessageRecievedEvent};
 use crate::generate_async_wrapper;
 
 #[derive(Serialize, Deserialize)]

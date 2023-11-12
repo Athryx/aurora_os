@@ -1,9 +1,15 @@
+#![no_std]
+
+#![feature(negative_impls)]
+
+extern crate alloc;
+
 use core::future::Future;
 
 use thiserror_no_std::Error;
 use sys::SysErr;
+use aurora_core::allocator::addr_space::AddrSpaceError;
 
-use crate::allocator::addr_space::AddrSpaceError;
 use executor::Executor;
 
 use self::task::JoinHandle;
@@ -20,7 +26,7 @@ pub enum AsyncError {
     SysErr(#[from] SysErr),
 }
 
-crate::thread_local! {
+aurora_core::thread_local! {
     pub static EXECUTOR: Executor = Executor::new().expect("failed to initialize async executor");
 }
 

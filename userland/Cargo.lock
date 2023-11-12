@@ -3,6 +3,20 @@
 version = 3
 
 [[package]]
+name = "arpc"
+version = "0.1.0"
+dependencies = [
+ "arpc_derive",
+ "aser",
+ "asynca",
+ "aurora_core",
+ "futures",
+ "serde",
+ "sys",
+ "thiserror-no-std",
+]
+
+[[package]]
 name = "arpc_derive"
 version = "0.1.0"
 dependencies = [
@@ -23,23 +37,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "asynca"
+version = "0.1.0"
+dependencies = [
+ "aurora_core",
+ "bit_utils",
+ "crossbeam-queue",
+ "futures",
+ "serde",
+ "sys",
+ "thiserror-no-std",
+]
+
+[[package]]
 name = "aurora"
 version = "0.1.0"
 dependencies = [
- "arpc_derive",
+ "aser",
+ "aurora_core",
+ "serde",
+ "thiserror-no-std",
+]
+
+[[package]]
+name = "aurora_core"
+version = "0.1.0"
+dependencies = [
  "aser",
  "bit_utils",
  "bytemuck",
- "crossbeam-queue",
  "elf",
- "futures",
  "hashbrown",
- "num_enum",
  "rand_chacha",
  "rand_core",
  "rustc-hash",
- "scopeguard",
- "serde",
  "spin 0.9.8",
  "sys",
  "thiserror-no-std",
@@ -143,8 +174,10 @@ dependencies = [
 name = "early-init"
 version = "0.1.0"
 dependencies = [
+ "arpc",
  "aser",
  "aurora",
+ "aurora_core",
  "serde",
  "sys",
 ]
@@ -159,6 +192,8 @@ checksum = "7f6e7d85896690fe195447717af8eceae0593ac2196fd42fe88c184e904406ce"
 name = "fs-server"
 version = "0.1.0"
 dependencies = [
+ "arpc",
+ "asynca",
  "aurora",
  "std",
 ]
@@ -421,6 +456,7 @@ name = "std"
 version = "0.1.0"
 dependencies = [
  "aurora",
+ "aurora_core",
 ]
 
 [[package]]

@@ -9,6 +9,8 @@ edition = "2021"
 [dependencies]
 std = { path = "../std" }
 aurora = { path = "../aurora" }
+asynca = { path = "../asynca" }
+arpc = { path = "../arpc" }
 
 [panic.dev]
 panic = "abort"

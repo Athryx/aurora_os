@@ -1,22 +1,20 @@
 use core::mem::size_of;
 
 use crate::allocator::addr_space::{RemoteAddrSpaceManager, AddrSpaceError, MapMemoryArgs, RegionPadding, MappingTarget};
-use crate::env::{Args, Namespace};
 
-use aser::{Value, to_bytes_count_cap, AserError, AserCloneCapsError};
+use aser::{AserError, AserCloneCapsError};
 use bit_utils::{align_down, PAGE_SIZE, align_up, Size};
 use elf::abi::{PT_LOAD, PF_R, PF_W, PF_X};
 use elf::{ElfBytes, ParseError};
 use elf::endian::NativeEndian;
-use serde::Serialize;
 use sys::{CapFlags, SysErr, Thread, AddressSpace, ThreadStartMode, MemoryMappingFlags, ProcessInitData, ProcessMemoryEntry, cap_clone, CspaceTarget, Capability, StackInfo};
 use thiserror_no_std::Error;
 use bytemuck::bytes_of;
 
 use crate::{prelude::*, this_context};
 
-const DEFAULT_STACK_SIZE: Size = Size::from_pages(64);
-const DEFAULT_STACK_PADDING: Size = Size::from_pages(1024);
+pub(crate) const DEFAULT_STACK_SIZE: Size = Size::from_pages(64);
+pub(crate) const DEFAULT_STACK_PADDING: Size = Size::from_pages(1024);
 
 /// Terminates the current process
 pub fn exit() -> ! {
@@ -43,75 +41,9 @@ pub enum ProcessError {
     TransferCapError(#[from] AserCloneCapsError),
 }
 
-/// Where the elf data to launc hthe process is comming from
-enum ProcessDataSource {
-    Bytes(Vec<u8>),
-}
-
-impl ProcessDataSource {
-    fn bytes(&mut self) -> &[u8] {
-        match self {
-            Self::Bytes(data) => data,
-        }
-    }
-}
-
-/// Used to execute other processess
-/// 
-/// Functions similarly to the standard library's Command
-pub struct Command {
-    process_data: ProcessDataSource,
-    args: Args,
-}
-
-impl Command {
-    pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        Command {
-            process_data: ProcessDataSource::Bytes(bytes),
-            args: Args::default(),
-        }
-    }
-
-    pub fn arg<T: Serialize>(&mut self, arg: &T) -> &mut Self {
-        self.args.positional_args.push(
-            Value::from_serialize(arg).expect("failed to serialize process argument"),
-        );
-        self
-    }
-
-    pub fn args<T: Serialize, I: IntoIterator<Item = T>>(&mut self, args: I) -> &mut Self {
-        for arg in args {
-            self.arg(&arg);
-        }
-
-        self
-    }
-
-    pub fn named_arg<T: Serialize>(&mut self, arg_name: String, arg: &T) -> &mut Self {
-        let arg_value = Value::from_serialize(arg)
-            .expect("failed to serialize process argument");
-
-        self.args.named_args.insert(arg_name, arg_value);
-
-        self
-    }
-
-    pub fn spawn(&mut self) -> Result<Child, ProcessError> {
-        let namespace = Namespace {
-            // it is fine for only data to be cloned,
-            // spawn_process will transfer necessary capabilities
-            args: self.args.clone_data(),
-        };
-
-        let exe_data = self.process_data.bytes();
-
-        spawn_process(exe_data, &namespace)
-    }
-}
-
 pub struct Child {}
 
-fn spawn_process(exe_data: &[u8], namespace: &Namespace) -> Result<Child, ProcessError> {
+pub fn spawn_process(exe_data: &[u8], namespace_data: &mut [u8]) -> Result<Child, ProcessError> {
     let aslr_seed = gen_aslr_seed();
 
     let allocator = &this_context().allocator;
@@ -188,8 +120,6 @@ fn spawn_process(exe_data: &[u8], namespace: &Namespace) -> Result<Child, Proces
     let rsp = stack.remote_address + stack.size.bytes() - size_of::<StackInfo>();
 
 
-    let mut namespace_data: Vec<u8> = to_bytes_count_cap(&namespace)?;
-
     let startup_data_size = calc_process_startup_data_size(
         &manager,
         namespace_data.len()
@@ -229,7 +159,7 @@ fn spawn_process(exe_data: &[u8], namespace: &Namespace) -> Result<Child, Proces
     let main_thread_id = cap_clone(dst_cspace, CspaceTarget::Current, &thread, CapFlags::all())?
         .into_cap_id()
         .into();
-    aser::clone_caps_to_cspace(dst_cspace, &mut namespace_data)?;
+    aser::clone_caps_to_cspace(dst_cspace, namespace_data)?;
 
     let process_init_data = ProcessInitData {
         thread_group_id,

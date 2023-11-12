@@ -1,0 +1,19 @@
+[package]
+name = "aurora_core"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+sys = { path = "../sys" }
+bit_utils = { path = "../bit_utils" }
+aser = { path = "../aser" }
+spin = { version = "0.9.2", features = ["mutex", "spin_mutex", "once"] }
+thiserror-no-std = "2.0.2"
+rand_core = { version = "0.6.4", default-features = false }
+rand_chacha = { version = "0.3.1", default-features = false }
+hashbrown = { version = "0.14.0", default-features = false, features = ["inline-more", "serde"]}
+rustc-hash = { version = "1.1.0", default-features = false}
+elf = { version = "0.7.2", default-features = false }
+bytemuck = { version = "1.13.1", features = ["derive"] }

@@ -6,7 +6,6 @@ use alloc::{sync::Arc, string::String};
 
 use sys::syscall_nums::{MEMORY_UNMAP, THREAD_DESTROY};
 use sys::{CapId, Capability, Thread as SysThread, MemoryMappingFlags, SysErr};
-use bit_utils::Size;
 
 mod thread_local_data;
 pub use thread_local_data::{LocalKey, ThreadLocalData};
@@ -15,8 +14,6 @@ use crate::prelude::*;
 use crate::allocator::addr_space::{MapMemoryArgs, MapMemoryResult};
 use crate::sync::Mutex;
 use crate::{process, addr_space, this_context};
-
-const DEFAULT_STACK_SIZE: Size = Size::from_pages(1000);
 
 /// An opaque, unique identifier for a thread
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -125,7 +122,7 @@ where
         size,
         ..
     } = addr_space().map_memory(MapMemoryArgs {
-        size: Some(DEFAULT_STACK_SIZE),
+        size: Some(process::DEFAULT_STACK_SIZE),
         flags: MemoryMappingFlags::READ | MemoryMappingFlags::WRITE,
         ..Default::default()
     }).expect("failed to map new thread stack");

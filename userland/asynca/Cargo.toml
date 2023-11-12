@@ -1,13 +1,16 @@
 [package]
-name = "aurora"
+name = "asynca"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+sys = { path = "../sys" }
+bit_utils = { path = "../bit_utils" }
 aurora_core = { path = "../aurora_core" }
-aser = { path = "../aser" }
 thiserror-no-std = "2.0.2"
 serde = { version = "1.0.163", default-features = false, features = ["alloc", "derive"] }
+crossbeam-queue = { version = "0.3.8", default-features = false, features = ["alloc"] }
+futures = { version = "0.3.28", default-features = false, features = ["async-await"] }
 

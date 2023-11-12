@@ -11,7 +11,7 @@ use alloc::task::Wake;
 
 use crossbeam_queue::SegQueue;
 
-use crate::prelude::*;
+use aurora_core::prelude::*;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct TaskId(u64);

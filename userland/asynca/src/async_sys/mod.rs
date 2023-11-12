@@ -8,7 +8,7 @@ macro_rules! generate_async_wrapper {
     ($name:ident, $data:ty, $return_type:ty, $event_type:ident, $action:expr, $get_return:expr,) => {
         pub enum $name<'a> {
             Unpolled($data),
-            Polled($crate::async_runtime::executor::EventReciever),
+            Polled($crate::executor::EventReciever),
             Finished,
         }
         
@@ -20,11 +20,11 @@ macro_rules! generate_async_wrapper {
 
                 match this {
                     Self::Unpolled(data) => {
-                        let event_reciever = $crate::async_runtime::EXECUTOR.with(|executor| {
+                        let event_reciever = $crate::EXECUTOR.with(|executor| {
                             let event_id = sys::EventId::new();
                             $action(*data, executor.event_pool(), event_id)?;
 
-                            let event_reciever = $crate::async_runtime::executor::EventReciever::default();
+                            let event_reciever = $crate::executor::EventReciever::default();
                             executor.register_event_waiter_oneshot(event_id, cx.waker().clone(), event_reciever.clone());
         
                             Ok(event_reciever)
@@ -36,7 +36,7 @@ macro_rules! generate_async_wrapper {
                     },
                     Self::Polled(event_reciever) => {
                         match event_reciever.take_event() {
-                            Some($crate::async_runtime::executor::RecievedEvent::OwnedEvent(sys::Event {
+                            Some($crate::executor::RecievedEvent::OwnedEvent(sys::Event {
                                 event_data: sys::EventData::$event_type(event),
                                 ..
                             })) => {

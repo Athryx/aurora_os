@@ -1,10 +1,9 @@
 use thiserror_no_std::Error;
 use aser::{Value, AserError};
 use serde::{Serialize, Deserialize};
-
-use crate::prelude::*;
-use crate::collections::HashMap;
-use crate::sync::Once;
+use aurora_core::prelude::*;
+use aurora_core::collections::HashMap;
+use aurora_core::sync::Once;
 
 #[derive(Debug, Error)]
 pub enum EnvError {
@@ -14,7 +13,7 @@ pub enum EnvError {
     InvalidNamedArg,
 }
 
-pub(super) static THIS_NAMESPACE: Once<Namespace> = Once::new();
+static THIS_NAMESPACE: Once<Namespace> = Once::new();
 
 pub fn this_namespace() -> &'static Namespace {
     THIS_NAMESPACE.get().expect("namespace not initialized")
@@ -26,13 +25,13 @@ pub fn args() -> &'static Args {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Namespace {
-    pub(super) args: Args,
+    pub(crate) args: Args,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Args {
-    pub(super) positional_args: Vec<Value>,
-    pub(super) named_args: HashMap<String, Value>,
+    pub(crate) positional_args: Vec<Value>,
+    pub(crate) named_args: HashMap<String, Value>,
 }
 
 impl Args {
@@ -48,4 +47,10 @@ impl Args {
         let value = self.named_args.get(name).ok_or(EnvError::InvalidNamedArg)?;
         Ok(value.into_deserialize()?)
     }
+}
+
+pub fn init_namespace(namespace_data: &[u8]) -> Result<(), EnvError> {
+    let namespace: Namespace = aser::from_bytes(namespace_data)?;
+    THIS_NAMESPACE.call_once(|| namespace);
+    Ok(())
 }

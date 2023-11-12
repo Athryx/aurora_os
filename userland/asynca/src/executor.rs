@@ -8,10 +8,10 @@ use alloc::sync::Arc;
 use crossbeam_queue::SegQueue;
 use sys::{EventPool, Reply, EventId, Event, CspaceTarget, CapFlags, cap_clone, EventParser, EventParseResult};
 use bit_utils::Size;
+use aurora_core::allocator::addr_space::{MapEventPoolArgs, RegionPadding};
+use aurora_core::{prelude::*, this_context, addr_space};
+use aurora_core::collections::HashMap;
 
-use crate::allocator::addr_space::{MapEventPoolArgs, RegionPadding};
-use crate::{prelude::*, this_context, addr_space};
-use crate::collections::HashMap;
 use super::AsyncError;
 use super::task::{TaskId, Task, JoinHandle, TaskHandle};
 
