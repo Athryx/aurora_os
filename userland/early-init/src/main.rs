@@ -12,15 +12,14 @@ extern crate alloc;
 use core::arch::asm;
 use core::panic::PanicInfo;
 use core::slice;
-use alloc::vec::Vec;
 
 use serde::{Serialize, Deserialize};
-
 use aurora::prelude::*;
 use aurora::process::{exit, Command};
 use aser::from_bytes;
 use sys::InitInfo;
 use arpc::{arpc_interface, arpc_impl};
+use fs_server::{Fs, FsAsync};
 
 mod initrd;
 
@@ -128,15 +127,22 @@ pub extern "C" fn _rust_startup(
         .spawn()
         .expect("failed to start fs server");
 
+    let fs_client = Fs::from(fs_client_endpoint);
 
-    let tmp = Test::D {
+    asynca::block_in_place(async move {
+        let result = fs_client.add(1, 2).await;
+        dprintln!("result: {result}");
+    });
+
+
+    /*let tmp = Test::D {
         bruh: 8,
         a: false,
         hi: 12309470182309128,
     };
     //let tmp = Test::B(69);
     //let tmp = Test::A;
-    /*let result: Vec<u8> = aser::to_bytes(&New(tmp), 0).unwrap();
+    let result: Vec<u8> = aser::to_bytes(&New(tmp), 0).unwrap();
     dprintln!("test to bytes {:?}", result);
     let tmp: New = aser::from_bytes(&result).unwrap();
     dprintln!("test from bytes {:?}", tmp);
@@ -155,5 +161,8 @@ pub extern "C" fn _rust_startup(
     let tmp2: Test3 = aser::from_bytes(&result).unwrap();
     dprintln!("{tmp2:?}");*/
 
+    // TODO: exit thread
+    // can't use regular process exit here because that will terminate root thread group,
+    // and kill every thread and process on the system
     loop { core::hint::spin_loop(); }
 }

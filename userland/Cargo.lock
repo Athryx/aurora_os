@@ -176,8 +176,10 @@ version = "0.1.0"
 dependencies = [
  "arpc",
  "aser",
+ "asynca",
  "aurora",
  "aurora_core",
+ "fs-server",
  "serde",
  "sys",
 ]
@@ -195,6 +197,7 @@ dependencies = [
  "arpc",
  "asynca",
  "aurora",
+ "serde",
  "std",
 ]
 

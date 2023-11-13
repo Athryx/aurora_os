@@ -12,6 +12,8 @@ aurora = { path = "../aurora" }
 aser = { path = "../aser" }
 sys = { path = "../sys" }
 arpc = { path = "../arpc" }
+asynca = { path = "../asynca" }
+fs-server = { path = "../fs-server" }
 serde = { version = "1.0.163", default-features = false, features = ["derive", "alloc"] }
 
 [panic.dev]

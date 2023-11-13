@@ -11,6 +11,7 @@ std = { path = "../std" }
 aurora = { path = "../aurora" }
 asynca = { path = "../asynca" }
 arpc = { path = "../arpc" }
+serde = { version = "1.0.163", default-features = false, features = ["alloc", "derive"] }
 
 [panic.dev]
 panic = "abort"

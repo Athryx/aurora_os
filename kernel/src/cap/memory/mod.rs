@@ -109,6 +109,10 @@ impl MemoryInner {
     }
 
     /// Iterates over the regions that would need to be mapped for a virtual mapping at `base_addr` of size `mapping_page_size`
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if mapping offset and size are out of bounds of this memory writer
     pub fn iter_mapped_regions(
         &self,
         base_addr: VirtAddr,
@@ -365,7 +369,11 @@ pub struct MappedRegionsIterator<'a> {
     end_range_offset: usize,
     allocations: &'a [AllocationEntry],
 
+    /// Current allocation index
     index: usize,
+    /// Offset from start of iteration range
+    /// 
+    /// This will be 0 even if start_range_offset is non zero
     current_offset: usize,
 }
 
@@ -416,15 +424,18 @@ impl Iterator for MappedRegionsIterator<'_> {
 
             (virt_range, phys_addr)
         } else if self.index == 0 {
+            // first range, just consider start offset
             let virt_range = AVirtRange::new(self.base_addr, allocation.size() - self.start_range_offset);
             let phys_addr = allocation.addr().to_phys() + self.start_range_offset;
 
             (virt_range, phys_addr)
         } else if self.index == self.allocations.len() - 1 {
+            // last range, just consider end offset
             let virt_range = AVirtRange::new(self.base_addr + self.current_offset, allocation.size() - self.end_range_offset);
 
             (virt_range, allocation.addr().to_phys())
         } else {
+            // middle allocation, do not have to worry about start or end offset
             (
                 AVirtRange::new(self.base_addr + self.current_offset, allocation.size()),
                 allocation.addr().to_phys(),

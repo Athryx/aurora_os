@@ -6,3 +6,5 @@ some allocation methods are unsafe even though they are marked safe
 
 things to check:
 make a version of Once and Lazy that disables interrupts and only use that
+
+some panics possible to trigger from userspace in memory writer

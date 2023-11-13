@@ -193,8 +193,8 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
 
         if is_async(signature) {
             items.extend(quote! {
-                fn #method_wrapper_ident(&self, data: &[u8], reply: sys::Reply) {
-                    let Ok(message) = aser::from_bytes::<arpc::RpcCall<#args_struct_ident>>(data) else {
+                fn #method_wrapper_ident(&self, data: &[u8], reply: arpc::sys::Reply) {
+                    let Ok(message) = arpc::aser::from_bytes::<arpc::RpcCall<#args_struct_ident>>(data) else {
                         arpc::respond_error(reply, arpc::RpcError::SerializationError);
                         return;
                     };
@@ -207,8 +207,8 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
             });
         } else {
             items.extend(quote! {
-                fn #method_wrapper_ident(&self, data: &[u8], reply: sys::Reply) {
-                    let Ok(message) = aser::from_bytes::<arpc::RpcCall<#args_struct_ident>>(data) else {
+                fn #method_wrapper_ident(&self, data: &[u8], reply: arpc::sys::Reply) {
+                    let Ok(message) = arpc::aser::from_bytes::<arpc::RpcCall<#args_struct_ident>>(data) else {
                         arpc::respond_error(reply, arpc::RpcError::SerializationError);
                         return;
                     };
@@ -282,7 +282,7 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
 
             type Client: arpc::RpcClient = #client_struct_ident;
 
-            fn call_inner(&self, call_data: &arpc::RpcCallMethod, data: &[u8], reply_id: sys::CapId) -> bool {
+            fn call_inner(&self, call_data: &arpc::RpcCallMethod, data: &[u8], reply_id: arpc::sys::CapId) -> bool {
                 if call_data.service_id != #service_id {
                     #(
                         if #arpc_supertraits::call_inner(self, call_data, data, reply_id) {
@@ -292,7 +292,7 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
 
                     false
                 } else {
-                    let reply = sys::Reply::from_cap_id(reply_id).unwrap();
+                    let reply = arpc::sys::Reply::from_cap_id(reply_id).unwrap();
                     match call_data.method_id {
                         #(#method_ids => #trait_ident::#wrapper_idents(self, data, reply),)*
                         _ => arpc::respond_error(reply, arpc::RpcError::InvalidMethodId),
@@ -302,17 +302,17 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
                 }
             }
 
-            fn call(&self, data: &[u8], reply: sys::Reply) {
-                let Ok(call_data) = aser::from_bytes::<arpc::RpcCallMethod>(data) else {
+            fn call(&self, data: &[u8], reply: arpc::sys::Reply) {
+                let Ok(call_data) = arpc::aser::from_bytes::<arpc::RpcCallMethod>(data) else {
                     arpc::respond_error(reply, arpc::RpcError::SerializationError);
                     return;
                 };
 
-                let cap_id = sys::Capability::cap_id(&reply);
+                let cap_id = arpc::sys::Capability::cap_id(&reply);
                 core::mem::forget(reply);
 
                 if !#trait_ident::call_inner(self, &call_data, data, cap_id) {
-                    let reply = sys::Reply::from_cap_id(cap_id).unwrap();
+                    let reply = arpc::sys::Reply::from_cap_id(cap_id).unwrap();
                     arpc::respond_error(reply, arpc::RpcError::InvalidServiceId);
                 }
             }
@@ -426,7 +426,7 @@ pub fn arpc_impl(_args: proc_macro::TokenStream, input: proc_macro::TokenStream)
         impl arpc::RpcService for #impl_type {
             type Client = <Self as #arpc_trait>::Client;
 
-            fn call(&self, data: &[u8], reply: sys::Reply) {
+            fn call(&self, data: &[u8], reply: arpc::sys::Reply) {
                 #arpc_trait::call(self, data, reply);
             }
         }

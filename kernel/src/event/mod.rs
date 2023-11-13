@@ -94,6 +94,7 @@ impl MemoryCopySrc for UserspaceBuffer {
     fn copy_to(&self, writer: &mut impl MemoryWriter) -> KResult<Size> {
         let memory_lock = self.memory.inner_read();
 
+        // FIXME: this can panic if memory is shrunk after userspace buffer is created
         let region_iterator = memory_lock.iter_mapped_regions(
             VirtAddr::new(0),
             Size::from_bytes(self.offset),

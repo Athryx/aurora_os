@@ -7,6 +7,9 @@ use futures::{select_biased, StreamExt};
 use aurora_core::{this_context, collections::MessageVec};
 use asynca::async_sys::{AsyncChannel, AsyncDropCheckReciever};
 pub use arpc_derive::{arpc_interface, arpc_impl};
+// reexport sys and aser for arpc_derive macro so dependancy on sys is not required
+pub use sys;
+pub use aser;
 
 /// A version of `RpcCall` which doesn't contain the arguments
 /// 
@@ -33,7 +36,7 @@ pub enum RpcError {
     InvalidMethodId,
     #[error("Failed to deserialize rpc method arguments")]
     SerializationError,
-    #[error("A system error occure: {0}")]
+    #[error("A system error occured: {0}")]
     SysErr(#[from] SysErr),
 }
 
