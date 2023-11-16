@@ -4,7 +4,7 @@ use core::iter::FusedIterator;
 use core::marker::PhantomData;
 use core::ops::{Deref, DerefMut, Index, IndexMut};
 use core::ptr::NonNull;
-use core::slice::SliceIndex;
+use core::slice::{SliceIndex, Iter, IterMut};
 use core::cmp::max;
 
 use aser::ByteBuf;
@@ -288,17 +288,11 @@ impl<T> Vec<T> {
     }
 
     pub fn iter(&self) -> Iter<T> {
-        Iter {
-            inner: RawIter::new(self.as_slice()),
-            marker: PhantomData,
-        }
+        self.as_slice().iter()
     }
 
-    pub fn iter_mut(&self) -> IterMut<T> {
-        IterMut {
-            inner: RawIter::new(self.as_slice()),
-            marker: PhantomData,
-        }
+    pub fn iter_mut(&mut self) -> IterMut<T> {
+        self.as_mut_slice().iter_mut()
     }
 
     pub fn into_iter(self) -> IntoIter<T> {
@@ -472,59 +466,6 @@ impl<T> DoubleEndedIterator for RawIter<T> {
 
 impl<T> ExactSizeIterator for RawIter<T> {}
 impl<T> FusedIterator for RawIter<T> {}
-
-#[derive(Clone)]
-pub struct Iter<'a, T: 'a> {
-    inner: RawIter<T>,
-    marker: PhantomData<&'a T>,
-}
-
-impl<'a, T> Iterator for Iter<'a, T> {
-    type Item = &'a T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        unsafe { self.inner.next().map(|ptr| ptr.as_ref().unwrap()) }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.inner.size_hint()
-    }
-}
-
-impl<T> DoubleEndedIterator for Iter<'_, T> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        unsafe { self.inner.next_back().map(|ptr| ptr.as_ref().unwrap()) }
-    }
-}
-
-impl<T> ExactSizeIterator for Iter<'_, T> {}
-impl<T> FusedIterator for Iter<'_, T> {}
-
-pub struct IterMut<'a, T: 'a> {
-    inner: RawIter<T>,
-    marker: PhantomData<&'a T>,
-}
-
-impl<'a, T> Iterator for IterMut<'a, T> {
-    type Item = &'a mut T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        unsafe { self.inner.next().map(|ptr| ptr.as_mut().unwrap()) }
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        self.inner.size_hint()
-    }
-}
-
-impl<T> DoubleEndedIterator for IterMut<'_, T> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        unsafe { self.inner.next_back().map(|ptr| ptr.as_mut().unwrap()) }
-    }
-}
-
-impl<T> ExactSizeIterator for IterMut<'_, T> {}
-impl<T> FusedIterator for IterMut<'_, T> {}
 
 pub struct IntoIter<T> {
     inner: RawIter<T>,

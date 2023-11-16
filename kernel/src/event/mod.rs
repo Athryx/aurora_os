@@ -3,7 +3,7 @@ use bit_utils::Size;
 
 use crate::prelude::*;
 use crate::container::Weak;
-use crate::cap::memory::{Memory, MemoryCopySrc, MemoryWriter, MemoryWriteRegion};
+use crate::cap::memory::{Memory, MemoryCopySrc, MemoryWriter, PlainMemoryCopySrc};
 use crate::cap::channel::{CapabilityWriter, CapabilityTransferInfo};
 use crate::container::Arc;
 
@@ -61,7 +61,7 @@ impl UserspaceBuffer {
     /// 
     /// Number of bytes written
     pub fn copy_from<T: MemoryCopySrc + ?Sized>(&self, src: &T) -> KResult<Size> {
-        let memory_lock = self.memory.inner_read();
+        let mut memory_lock = self.memory.inner_write();
 
         memory_lock.copy_from(self.offset..(self.offset + self.buffer_size), src)
     }
@@ -72,7 +72,7 @@ impl UserspaceBuffer {
         src_buffer: &T,
         cap_transfer_info: CapabilityTransferInfo,
     ) -> KResult<Size> {
-        let memory_lock = self.memory.inner_read();
+        let mut memory_lock = self.memory.inner_write();
         let output_writer = memory_lock.create_memory_writer(
             self.offset..(self.offset + self.buffer_size),
         ).ok_or(SysErr::InvlMemZone)?;
@@ -92,30 +92,16 @@ impl MemoryCopySrc for UserspaceBuffer {
     }
 
     fn copy_to(&self, writer: &mut impl MemoryWriter) -> KResult<Size> {
-        let memory_lock = self.memory.inner_read();
+        let mut memory_lock = self.memory.inner_write();
 
-        // FIXME: this can panic if memory is shrunk after userspace buffer is created
-        let region_iterator = memory_lock.iter_mapped_regions(
-            VirtAddr::new(0),
-            Size::from_bytes(self.offset),
-            Size::from_bytes(self.buffer_size),
-        );
+        let Some(memory_writer) = memory_lock.create_memory_writer(self.offset..(self.offset + self.buffer_size)) else {
+            // buffer no longer maps to valid region, so no bytes can be written
+            // currently not really considered an error
+            return Ok(Size::zero());
+        };
 
-        let mut write_size = Size::zero();
-        for (vrange, _) in region_iterator {
-            // safety: write region is created and used while we still have memory lock, it will remain valid
-            let write_result = unsafe {
-                writer.write_region(MemoryWriteRegion::from_vrange(vrange.as_unaligned()))
-            };
-
-            write_size += write_result.write_size;
-
-            if write_result.end_reached {
-                break;
-            }
-        }
-
-        Ok(write_size)
+        let copy_src = PlainMemoryCopySrc::from(memory_writer);
+        copy_src.copy_to(writer)
     }
 }
 

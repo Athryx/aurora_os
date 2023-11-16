@@ -65,6 +65,10 @@ impl<T: ?Sized> Arc<T> {
         this.inner().weak.fetch_add(1, Ordering::Relaxed);
         unsafe { Weak::from_ptr(this.ptr.as_ptr()) }
     }
+
+    pub fn strong_count(this: &Self) -> usize {
+        this.inner().strong.load(Ordering::Acquire)
+    }
 }
 
 impl<T> Arc<T> {
@@ -89,6 +93,26 @@ impl<T> Arc<T> {
         }
 
         unsafe { Ok(Self::from_ptr(ptr)) }
+    }
+
+    pub fn into_inner(this: Self) -> Option<T> {
+        // Make sure that the ordinary `Drop` implementation isn’t called as well
+        let this = core::mem::ManuallyDrop::new(this);
+
+        // Following the implementation of `drop` and `drop_slow`
+        if this.inner().strong.fetch_sub(1, Ordering::Release) != 1 {
+            return None;
+        }
+
+        fence(Ordering::Acquire);
+
+        let inner = unsafe { ptr::read(this.ptr.as_ptr()) };
+
+        unsafe {
+            drop(Weak::from_ptr(this.ptr.as_ptr()));
+        }
+
+        Some(inner.data)
     }
 }
 

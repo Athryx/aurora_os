@@ -1,8 +1,9 @@
-use sys::{MemoryResizeFlags, MemoryMapFlags, MemoryUpdateMappingFlags};
+use sys::{MemoryNewFlags, MemoryResizeFlags, MemoryMapFlags, MemoryUpdateMappingFlags};
 
 use crate::alloc::{PaRef, HeapRef};
 use crate::cap::address_space::AddressSpace;
 use crate::cap::capability_space::CapabilitySpace;
+use crate::cap::memory::{PageSource, MapMemoryArgs, UpdateValue, UpdateMappingAgs};
 use crate::cap::{StrongCapability, Capability};
 use crate::cap::{CapFlags, memory::Memory};
 use crate::vmem_manager::PageMappingFlags;
@@ -55,7 +56,14 @@ pub fn address_space_new(options: u32, allocator_id: usize) -> KResult<usize> {
 /// size: size of the new memory capability in pages
 pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<(usize, usize)> {
     let weak_auto_destroy = options_weak_autodestroy(options);
-    let mem_cap_flags = CapFlags::from_bits_truncate(get_bits(options as usize, 0..4));
+    let flags = MemoryNewFlags::from_bits_truncate(options);
+
+    let page_source = match (flags.contains(MemoryNewFlags::LAZY_ALLOC), flags.contains(MemoryNewFlags::ZEROED)) {
+        (false, false) => PageSource::Owned,
+        (false, true) => PageSource::OwnedZeroed,
+        (true, false) => PageSource::LazyAlloc,
+        (true, true) => PageSource::LazyZeroAlloc,
+    };
 
     let _int_disable = IntDisable::new();
 
@@ -69,10 +77,10 @@ pub fn memory_new(options: u32, allocator_id: usize, pages: usize) -> KResult<(u
 
     let memory = StrongCapability::new_flags(
         Arc::new(
-            Memory::new(page_allocator, heap_allocator.clone(), pages)?,
+            Memory::new_with_page_source(page_allocator, heap_allocator.clone(), pages, page_source)?,
             heap_allocator,
         )?,
-        mem_cap_flags,
+        CapFlags::all(),
     );
 
     let size = memory.inner().inner_read().size();
@@ -135,6 +143,7 @@ pub fn memory_map(
     memory_id: usize,
     addr: usize,
     max_size: usize,
+    offset: usize,
 ) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
     let addr = VirtAddr::try_new_aligned(addr)?;
@@ -151,6 +160,8 @@ pub fn memory_map(
     } else {
         None
     };
+
+    let offset = Size::try_from_pages(offset).ok_or(SysErr::Overflow)?;
 
     let mut required_cap_flags = CapFlags::empty();
     if map_flags.contains(PageMappingFlags::READ | PageMappingFlags::EXEC) {
@@ -172,8 +183,12 @@ pub fn memory_map(
         .get_memory_with_perms(memory_id, required_cap_flags, weak_auto_destroy)?
         .into_inner();
 
-    addr_space.map_memory(memory, addr, max_size, map_flags)
-        .map(Size::bytes)
+    Memory::map_memory(memory, addr_space, MapMemoryArgs {
+        map_addr: addr,
+        map_size: max_size,
+        offset,
+        flags: map_flags,
+    }).map(Size::pages_rounded)
 }
 
 /// Unmaps memory mapped by [`memory_map`]
@@ -188,6 +203,7 @@ pub fn memory_map(
 /// # Syserr Code
 /// InvlOp: `mem` is not mapped into `process` address space
 /// InvlWeak: `mem` is a weak capability
+// FIXME: make work with event pool and rename
 pub fn memory_unmap(
     options: u32,
     addr_space_id: usize,
@@ -202,7 +218,9 @@ pub fn memory_unmap(
         .get_address_space_with_perms(addr_space_id, CapFlags::WRITE, weak_auto_destroy)?
         .into_inner();
 
-    addr_space.unmap_memory(address)
+    let memory = addr_space.memory_at_addr(address)?;
+
+    memory.unmap_memory(&addr_space, address)
 }
 
 /// Updates memory mappings created by [`memory_map`]
@@ -230,17 +248,28 @@ pub fn memory_update_mapping(
     new_page_size: usize,
 ) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
-    let flags = MemoryUpdateMappingFlags::from_bits_truncate(options);
+    let map_flags = PageMappingFlags::from_bits_truncate((options & 0b111) as usize)
+        | PageMappingFlags::USER;
+    let other_flags = MemoryUpdateMappingFlags::from_bits_truncate(options);
 
     let address = VirtAddr::try_new_aligned(address)?;
 
-    let max_size_pages = if flags.contains(MemoryUpdateMappingFlags::UPDATE_SIZE) {
-        let size = Size::try_from_pages(new_page_size)
-            .ok_or(SysErr::Overflow)?;
+    let size = if other_flags.contains(MemoryUpdateMappingFlags::UPDATE_SIZE) {
+        let new_size = if other_flags.contains(MemoryUpdateMappingFlags::EXACT_SIZE) {
+            Some(Size::try_from_pages(new_page_size).ok_or(SysErr::Overflow)?)
+        } else {
+            None
+        };
 
-        Some(size)
+        UpdateValue::Change(new_size)
     } else {
-        None
+        UpdateValue::KeepSame
+    };
+
+    let flags = if other_flags.contains(MemoryUpdateMappingFlags::UPDATE_FLAGS) {
+        UpdateValue::Change(map_flags)
+    } else {
+        UpdateValue::KeepSame
     };
 
     let _int_disable = IntDisable::new();
@@ -249,8 +278,12 @@ pub fn memory_update_mapping(
         .get_address_space_with_perms(addr_space_id, CapFlags::WRITE, weak_auto_destroy)?
         .into_inner();
 
-    addr_space.update_memory_mapping(address, max_size_pages)
-        .map(Size::bytes)
+    let memory = addr_space.memory_at_addr(address)?;
+
+    memory.update_mapping(&addr_space, address, UpdateMappingAgs {
+        size,
+        flags,
+    }).map(Size::pages_rounded)
 }
 
 /// Resizes the memory capability referenced by `memory`
@@ -276,12 +309,18 @@ pub fn memory_update_mapping(
 /// The new size of the memory capability in pages
 pub fn memory_resize(
     options: u32,
-    addr_space_id: usize,
     memory_id: usize,
     new_page_size: usize,
 ) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
     let flags = MemoryResizeFlags::from_bits_truncate(options);
+
+    let page_source = match (flags.contains(MemoryResizeFlags::LAZY_ALLOC), flags.contains(MemoryResizeFlags::ZEROED)) {
+        (false, false) => PageSource::Owned,
+        (false, true) => PageSource::OwnedZeroed,
+        (true, false) => PageSource::LazyAlloc,
+        (true, true) => PageSource::LazyZeroAlloc,
+    };
 
     let new_page_size = Size::try_from_pages(new_page_size)
         .ok_or(SysErr::Overflow)?;
@@ -290,14 +329,17 @@ pub fn memory_resize(
 
     let cspace = CapabilitySpace::current();
 
-    let addr_space = cspace
-        .get_address_space_with_perms(addr_space_id, CapFlags::WRITE, weak_auto_destroy)?
-        .into_inner();
-
     let memory = cspace
         .get_memory_with_perms(memory_id, CapFlags::PROD, weak_auto_destroy)?
         .into_inner();
 
-    addr_space.resize_memory(memory, new_page_size, flags)
-        .map(Size::bytes)
+    if flags.contains(MemoryResizeFlags::IN_PLACE) {
+        memory.resize_in_place(
+            new_page_size,
+            flags.contains(MemoryResizeFlags::GROW_MAPPING),
+            page_source,
+        )
+    } else {
+        memory.resize(new_page_size, page_source)
+    }.map(Size::pages_rounded)
 }

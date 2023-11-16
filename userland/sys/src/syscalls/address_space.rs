@@ -8,7 +8,6 @@ use crate::{
     MemoryMappingFlags,
     MemoryMapFlags,
     MemoryUpdateMappingFlags,
-    MemoryResizeFlags,
     CspaceTarget,
     syscall,
     sysret_0,
@@ -62,7 +61,7 @@ impl AddressSpace {
         ))
     }
 
-    pub fn map_memory(&self, memory: &Memory, address: usize, max_size: Option<Size>, flags: MemoryMappingFlags) -> KResult<Size> {
+    pub fn map_memory(&self, memory: &Memory, address: usize, max_size: Option<Size>, map_offset: Size, flags: MemoryMappingFlags) -> KResult<Size> {
         let mut flags = flags.bits() | WEAK_AUTO_DESTROY;
         if max_size.is_some() {
             flags |= MemoryMapFlags::MAX_SIZE.bits()
@@ -75,7 +74,8 @@ impl AddressSpace {
                 self.as_usize(),
                 memory.as_usize(),
                 address,
-                max_size.unwrap_or_default().pages_rounded()
+                max_size.unwrap_or_default().pages_rounded(),
+                map_offset.pages_rounded()
             )).map(Size::from_pages)
         }
     }
@@ -102,38 +102,52 @@ impl AddressSpace {
             ))
         }
     }
+}
 
-    pub fn update_memory_mapping(&self, address: usize, new_map_size: Option<Size>) -> KResult<Size> {
+#[derive(Debug, Clone, Copy, Default)]
+pub enum UpdateVal<T> {
+    Change(T),
+    #[default]
+    KeepSame,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UpdateMappingArgs {
+    pub map_size: UpdateVal<Option<Size>>,
+    pub flags: UpdateVal<MemoryMappingFlags>,
+}
+
+impl AddressSpace {
+    pub fn update_memory_mapping(&self, address: usize, args: UpdateMappingArgs) -> KResult<Size> {
         let mut flags = MemoryUpdateMappingFlags::empty();
-        if new_map_size.is_some() {
+
+        let map_size = if let UpdateVal::Change(map_size) = args.map_size {
             flags |= MemoryUpdateMappingFlags::UPDATE_SIZE;
-        }
+            if let Some(map_size) = map_size {
+                flags |= MemoryUpdateMappingFlags::EXACT_SIZE;
+                map_size
+            } else {
+                Size::zero()
+            }
+        } else {
+            Size::zero()
+        };
+
+        let map_flags = if let UpdateVal::Change(map_flags) = args.flags {
+            flags |= MemoryUpdateMappingFlags::UPDATE_FLAGS;
+            map_flags
+        } else {
+            MemoryMappingFlags::empty()
+        };
 
         unsafe {
             sysret_1!(syscall!(
                 MEMORY_UPDATE_MAPPING,
-                flags.bits() | WEAK_AUTO_DESTROY,
+                map_flags.bits() | flags.bits() | WEAK_AUTO_DESTROY,
                 self.as_usize(),
                 address,
-                new_map_size.unwrap_or_default().pages_rounded()
+                map_size.pages_rounded()
             )).map(Size::from_pages)
         }
-    }
-
-    pub fn resize_memory(&self, memory: &mut Memory, new_size: Size, flags: MemoryResizeFlags) -> KResult<usize> {
-        let new_size = unsafe {
-            sysret_1!(syscall!(
-                MEMORY_RESIZE,
-                flags.bits(),
-                self.as_usize(),
-                memory.as_usize(),
-                new_size.pages_rounded()
-            ))
-        }?;
-
-        // panic safety: from_pages can panic, but syscall should not return invalid number of pages
-        memory.size = Some(Size::from_pages(new_size));
-
-        Ok(new_size)
     }
 }

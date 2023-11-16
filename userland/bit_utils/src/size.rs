@@ -68,9 +68,3 @@ impl Size {
         page_aligned(self.0)
     }
 }
-
-/*impl Mul<usize> for Size {
-    fn mul(self, rhs: usize) -> Self::Output {
-        Size(self.0 * rhs)
-    }
-}*/

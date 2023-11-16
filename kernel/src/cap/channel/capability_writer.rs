@@ -1,7 +1,7 @@
 use sys::{CapId, CapFlags};
 
 use crate::prelude::*;
-use crate::cap::memory::{MemoryWriter, PlainMemoryWriter, WriteResult, MemoryWriteRegion};
+use crate::cap::memory::{MemoryWriter, WriteResult, MemoryWriteRegion};
 use crate::cap::capability_space::{CapabilitySpace, CapCloneWeakness};
 
 #[derive(Clone, Copy)]
@@ -13,14 +13,14 @@ pub struct CapabilityTransferInfo<'a> {
 /// A MemoryWriter which also transfers capabilities
 /// 
 /// This is used to transfer capabilities when they are sent over a channel
-pub struct CapabilityWriter<'a> {
+pub struct CapabilityWriter<'a, T> {
     cap_transfer_info: CapabilityTransferInfo<'a>,
     copy_count: Option<CapabilityCopyCount>,
-    inner_writer: PlainMemoryWriter<'a>,
+    inner_writer: T,
 }
 
-impl<'a> CapabilityWriter<'a> {
-    pub fn new(cap_transfer_info: CapabilityTransferInfo<'a>, output_writer: PlainMemoryWriter<'a>) -> Self {
+impl<'a, T> CapabilityWriter<'a, T> {
+    pub fn new(cap_transfer_info: CapabilityTransferInfo<'a>, output_writer: T) -> Self {
         CapabilityWriter {
             cap_transfer_info,
             copy_count: None,
@@ -29,25 +29,28 @@ impl<'a> CapabilityWriter<'a> {
     }
 }
 
-impl MemoryWriter for CapabilityWriter<'_> {
-    fn write_region(&mut self, mut region: MemoryWriteRegion) -> WriteResult {
+impl<T: MemoryWriter> MemoryWriter for CapabilityWriter<'_, T> {
+    fn current_ptr(&mut self) -> KResult<*mut u8> {
+        self.inner_writer.current_ptr()
+    }
+
+    fn write_region(&mut self, mut region: MemoryWriteRegion) -> KResult<WriteResult> {
         if self.copy_count.is_none() {
             // initialize copy count if it is not initialized
-
             let Some(cap_count) = region.read_value::<usize>() else {
-                return WriteResult {
+                return Ok(WriteResult {
                     write_size: Size::zero(),
                     end_reached: true,
-                };
+                });
             };
 
-            let Some(dst_count_ptr) = self.inner_writer.push_usize_ptr() else {
-                return WriteResult {
+            let Some(dst_count_ptr) = self.inner_writer.push_usize_ptr()? else {
+                return Ok(WriteResult {
                     // FIXME: this is not technically accurate, a few bytes could have been written,
                     // but effectively nothing was written
                     write_size: Size::zero(),
                     end_reached: true,
-                }
+                })
             };
 
             self.copy_count = Some(CapabilityCopyCount {
@@ -82,15 +85,15 @@ impl MemoryWriter for CapabilityWriter<'_> {
             let new_cap_id = new_cap_id.unwrap_or(CapId::null());
             let new_cap_id_bytes = usize::from(new_cap_id).to_le_bytes();
 
-            let write_result = self.inner_writer.write_region(new_cap_id_bytes.as_slice().into());
+            let write_result = self.inner_writer.write_region(new_cap_id_bytes.as_slice().into())?;
 
             write_size += write_result.write_size;
         }
 
-        let mut inner_write_result = self.inner_writer.write_region(region);
+        let mut inner_write_result = self.inner_writer.write_region(region)?;
         inner_write_result.write_size += write_size;
 
-        inner_write_result
+        Ok(inner_write_result)
     }
 }
 

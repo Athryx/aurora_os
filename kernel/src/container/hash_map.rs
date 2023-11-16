@@ -1,6 +1,7 @@
 use core::hash::{Hash, Hasher};
 use core::iter::FusedIterator;
 use core::ops::{Index, IndexMut};
+use core::slice;
 use core::fmt;
 
 use siphasher::sip::SipHasher;
@@ -190,7 +191,7 @@ impl<K: Eq + Hash, V> IndexMut<&K> for HashMap<K, V> {
     }
 }
 
-pub struct Iter<'a, K: Hash + Eq, V>(vec::Iter<'a, HashMapCell<K, V>>);
+pub struct Iter<'a, K: Hash + Eq, V>(slice::Iter<'a, HashMapCell<K, V>>);
 
 impl<'a, K: Hash + Eq, V> Iterator for Iter<'a, K, V> {
     type Item = (&'a K, &'a V);
@@ -207,7 +208,7 @@ impl<'a, K: Hash + Eq, V> Iterator for Iter<'a, K, V> {
 
 impl<K: Hash + Eq, V> FusedIterator for Iter<'_, K, V> {}
 
-pub struct IterMut<'a, K: Hash + Eq, V>(vec::IterMut<'a, HashMapCell<K, V>>);
+pub struct IterMut<'a, K: Hash + Eq, V>(slice::IterMut<'a, HashMapCell<K, V>>);
 
 impl<'a, K: Hash + Eq, V> Iterator for IterMut<'a, K, V> {
     type Item = (&'a K, &'a mut V);

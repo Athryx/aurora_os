@@ -109,6 +109,15 @@ impl Default for MemoryMappingFlags {
 }
 
 bitflags! {
+    pub struct MemoryNewFlags: u32 {
+        /// Memory will be allocated when it is first accessed
+        const LAZY_ALLOC = 1;
+        /// Memory will be zeroed
+        const ZEROED = 1 << 1;
+    }
+}
+
+bitflags! {
     /// The first three bits of flags are the same as MemoryMappingFlags, additonal options are here
     pub struct MemoryMapFlags: u32 {
         const MAX_SIZE = 1 << 3;
@@ -117,15 +126,25 @@ bitflags! {
 
 bitflags! {
     pub struct MemoryUpdateMappingFlags: u32 {
-        const UPDATE_SIZE = 1;
+        // first 3 bits are used by memory mapping flags
+        const UPDATE_SIZE = 1 << 3;
+        const EXACT_SIZE = 1 << 4;
+        const UPDATE_FLAGS = 1 << 5;
     }
 }
 
 bitflags! {
     /// Used by memory_resize syscall
     pub struct MemoryResizeFlags: u32 {
-        const IN_PLACE = 1;
-        const GROW_MAPPING = 1 << 1;
+        /// New memory will be allocated when it is first accessed
+        const LAZY_ALLOC = 1;
+        /// New memory will be zeroed
+        const ZEROED = 1 << 1;
+        /// Allows resizing memory if it is only mapped once
+        const IN_PLACE = 1 << 2;
+        /// If memory is increased in size, and in place is specified,
+        /// the in place mapping is increased to the end of the memory capability
+        const GROW_MAPPING = 1 << 3;
     }
 }
 

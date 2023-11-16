@@ -190,7 +190,12 @@ impl PageTable {
     /// # Panics
     /// 
     /// panics if `index` is out of the page table bounds
-	pub fn add_entry(&mut self, index: usize, ptr: PageTablePointer) {
+	/// 
+	/// # Safety
+	/// 
+	/// page tables cannot form a loop, it must be a tree
+	/// (so a page table cannot have itself added as a child entry)
+	pub unsafe fn add_entry(&mut self, index: usize, ptr: PageTablePointer) {
 		if !self.0[index].flags().present() {
 			self.inc_entry_count(1);
 		}
@@ -213,12 +218,17 @@ impl PageTable {
 		allocer: &mut PaRef,
 		flags: PageTableFlags,
 	) -> Option<&'a mut PageTable> {
+		// safety: page tables form a tree (no recursive mapping)
+		// so if we have mutable access to this table, it is not possible to get
+		// mutable access to underlyinh pagetables any other way
 		if self.present(index) {
 			unsafe { self.0[index].as_mut_ptr().as_mut() }
 		} else {
 			let mut out = PageTable::new(allocer, flags)?;
-			self.add_entry(index, out);
-			unsafe { out.as_mut_ptr().as_mut() }
+			unsafe {
+				self.add_entry(index, out);
+				out.as_mut_ptr().as_mut()
+			}
 		}
 	}
 

@@ -3,14 +3,14 @@ use core::cmp::{max, min};
 use sys::{CapType, CapId, EventId, MESSAGE_RECIEVED_NUM};
 
 use crate::alloc::{PaRef, HeapRef};
-use crate::cap::address_space::{MappingId, AddressSpaceInner};
-use crate::cap::memory::{MemoryInner, MemoryCopySrc, PlainMemoryWriter, MemoryWriter};
+use crate::cap::address_space::{MappingId, AddressSpaceInner, AddrSpaceMapping};
+use crate::cap::memory::{MemoryCopySrc, MemoryWriter};
 use crate::prelude::*;
 use crate::sched::{ThreadRef, WakeReason};
 use crate::sync::IMutex;
 use crate::container::{Arc, Weak};
-use crate::cap::{CapObject, address_space::AddressSpace, memory::Memory};
-use crate::vmem_manager::PageMappingFlags;
+use crate::cap::{CapObject, address_space::{AddressSpace, EventPoolMapping as AddrSpaceEventPoolMapping}, memory::{MemoryWriteRegion, WriteResult, Page}};
+use crate::vmem_manager::{PageMappingFlags, MapAction};
 use crate::cap::channel::{CapabilityTransferInfo, CapabilityWriter};
 
 /// Communicates to calling thread what it needs to do after calling [`await_event`]
@@ -28,6 +28,9 @@ pub enum AwaitStatus {
 pub struct EventPool {
     inner: IMutex<EventPoolInner>,
     id: MappingId,
+    // TODO: remove mapping id
+    // it is no longer used for anything in event pool but many addr space methods
+    // assume each mapping has a map id so it is easier to keep then to remove
     max_size: Size,
 }
 
@@ -38,7 +41,7 @@ impl EventPool {
                 mapping: None,
                 waiting_thread: None,
                 mapped_buffer: EventBuffer::new(page_allocator.clone(), heap_allocator.clone(), max_size)?,
-                map_size: None,
+                is_buffer_mapped: true,
                 write_buffer: EventBuffer::new(page_allocator, heap_allocator, max_size)?,
             }),
             id: MappingId::new(),
@@ -117,6 +120,34 @@ impl EventPool {
         self.inner.lock().wake_listener()
     }
 
+    pub fn map_event_pool(this: Arc<Self>, address_space: Arc<AddressSpace>, address: VirtAddr) -> KResult<Size> {
+        let mut inner = this.inner.lock();
+        let mut addr_space_inner = address_space.inner();
+
+        if inner.mapping.is_some() {
+            // event pool is already mapped
+            return Err(SysErr::InvlOp);
+        }
+
+        let max_size = this.max_size;
+
+        addr_space_inner.mappings.insert_mapping(
+            AddrSpaceMapping::EventPool(
+                AddrSpaceEventPoolMapping {
+                    event_pool: this.clone(),
+                    map_range: AVirtRange::new(address, max_size.pages_rounded()),
+                }
+            ),
+        )?;
+
+        inner.mapping = Some(EventPoolMapping {
+            address_space: Arc::downgrade(&address_space),
+            mapped_address: address,
+        });
+
+        Ok(max_size)
+    }
+
     /// Tells the event pool where in memory it is mapped
     /// 
     /// Souldn't be used directly, use [`AddressSpace::map_event_pool`] instead
@@ -162,8 +193,7 @@ struct EventPoolInner {
     waiting_thread: Option<ThreadRef>,
     /// The event buffer currently mapped in userspace
     mapped_buffer: EventBuffer,
-    /// Size of the currently mapped buffer, or None if nothing is mapped (happens before await_event is called once)
-    map_size: Option<Size>,
+    is_buffer_mapped: bool,
     /// The event buffer where new events will be written, currentyl unmapped
     write_buffer: EventBuffer,
 }
@@ -196,21 +226,28 @@ impl EventPoolInner {
         self.unmap_mapped_buffer(&mut addr_space_inner)?;
 
         // map new memory
-        let memory_inner = self.write_buffer.memory.inner_read();
         let event_size = Size::from_bytes(self.write_buffer.current_event_offset);
-        let new_map_size = event_size.as_aligned();
+        // aligns size up
+        let map_page_count = event_size.as_aligned().pages_rounded();
 
-        addr_space_inner.addr_space.map_many(
-            memory_inner.iter_mapped_regions(
-                map_addr,
-                Size::zero(),
-                new_map_size,
-            ),
-            PageMappingFlags::READ | PageMappingFlags::WRITE | PageMappingFlags::USER,
-        )?;
-        drop(memory_inner);
+        let mapping_iter = self.write_buffer.pages
+            .iter()
+            .take(map_page_count)
+            .enumerate()
+            .map(|(i, page)| {
+                MapAction {
+                    virt_addr: map_addr + PAGE_SIZE * i,
+                    phys_addr: page.phys_addr(),
+                    flags: PageMappingFlags::READ | PageMappingFlags::USER,
+                }
+            });
 
-        self.map_size = Some(new_map_size);
+        // safety: we are only mapping allocated pages that we own
+        unsafe {
+            addr_space_inner.addr_space.map_many(mapping_iter)?;
+        }
+
+        self.is_buffer_mapped = true;
 
         core::mem::swap(&mut self.mapped_buffer, &mut self.write_buffer);
 
@@ -224,19 +261,15 @@ impl EventPoolInner {
         let map_addr = self.mapping.as_ref()
             .ok_or(SysErr::InvlOp)?.mapped_address;
 
-        // map size will be some only if buffer is currently mapped
-        if let Some(map_size) = self.map_size {
-            let memory_inner = self.mapped_buffer.memory.inner_read();
-
-            for (virt_range, _) in memory_inner.iter_mapped_regions(
-                map_addr,
-                Size::zero(),
-                map_size,
-            ) {
-                // this should not fail because we ensure that memory was already mapped
-                addr_space.addr_space.unmap_memory(virt_range)
-                    .expect("failed to unmap memory that szhould have been mapped");
+        if self.is_buffer_mapped {
+            for i in 0..self.mapped_buffer.pages.len() {
+                unsafe {
+                    addr_space.addr_space.unmap_page(map_addr + PAGE_SIZE * i)
+                        .expect("tried to unmap event buffer page which was not mapped");
+                }
             }
+
+            self.is_buffer_mapped = false;
         }
         self.mapped_buffer.current_event_offset = 0;
 
@@ -251,12 +284,19 @@ impl EventPoolInner {
     }
 }
 
+#[derive(Debug)]
+struct EventPoolMapping {
+    address_space: Weak<AddressSpace>,
+    mapped_address: VirtAddr,
+}
+
 /// Region of memory that events can be pushed into
 /// 
 /// This a stack
 #[derive(Debug)]
 struct EventBuffer {
-    memory: Memory,
+    pages: Vec<Page>,
+    page_allocator: PaRef,
     /// Offset in memory of the top fo the stack, this is kept 8 byte aligned
     current_event_offset: usize,
     /// Maximum size event buffer is allowed to grow to
@@ -266,25 +306,49 @@ struct EventBuffer {
 impl EventBuffer {
     pub fn new(page_allocator: PaRef, heap_allocator: HeapRef, max_size: Size) -> KResult<Self> {
         Ok(EventBuffer {
-            // TODO: don't have event buffer start out at 1 page size
-            memory: Memory::new(page_allocator, heap_allocator, 1)?,
+            pages: Vec::new(heap_allocator),
+            page_allocator,
             current_event_offset: 0,
             max_size,
         })
+    }
+
+    fn current_capacity(&self) -> Size {
+        Size::from_pages(self.pages.len())
+    }
+
+    /// Resizes this event buffer to have `page_count` pages of capacity
+    /// 
+    /// # Safety
+    /// 
+    /// this event buffet must not be mapped
+    unsafe fn resize(&mut self, page_count: usize) -> KResult<()> {
+        // reduce page count if it is too big
+        while self.pages.len() > page_count {
+            self.pages.pop().unwrap();
+        }
+
+        // allocate new pages if page count is currently not enough
+        while self.pages.len() < page_count {
+            let new_page = Page::new(self.page_allocator.clone())?;
+            self.pages.push(new_page)?;
+        }
+
+        Ok(())
     }
 
     /// Ensures the event buffer has enough capacity to write `write_size` more bytes in the event buffer
     /// 
     /// # Safety
     /// 
-    /// `memory` must not be mapped
-    pub unsafe fn ensure_capacity(&self, memory: &mut MemoryInner, write_size: usize) -> KResult<()> {
+    /// this event buffer must not be mapped
+    pub unsafe fn ensure_capacity(&mut self, write_size: usize) -> KResult<()> {
         let required_capacity = align_up(self.current_event_offset + write_size, PAGE_SIZE);
         if required_capacity > self.max_size.bytes() {
             return Err(SysErr::OutOfCapacity);
         }
 
-        let current_capacity = memory.size().bytes();
+        let current_capacity = self.current_capacity().bytes();
 
         if write_size > current_capacity {
             let new_size = max(
@@ -295,7 +359,7 @@ impl EventBuffer {
 
             // safety: caller ensures this buffer is not mapped
             unsafe {
-                memory.resize_out_of_place(new_size / PAGE_SIZE)?;
+                self.resize(new_size / PAGE_SIZE)?;
             }
         }
 
@@ -307,14 +371,17 @@ impl EventBuffer {
     /// # Safety
     /// 
     /// This event buffer must not be mapped
-    unsafe fn get_writer<'a>(&self, memory: &'a mut MemoryInner, write_size: usize) -> KResult<PlainMemoryWriter<'a>> {
+    unsafe fn get_writer(&mut self, write_size: usize) -> KResult<EventBufferWriter> {
         // safety: caller ensures this buffer is not mapped
         unsafe {
-            self.ensure_capacity(memory, write_size)?;
+            self.ensure_capacity(write_size)?;
         }
 
-        // panic safety: ensure capacity allocates enough capacity so this shouldn't fail
-        Ok(memory.create_memory_writer(self.current_event_offset..).unwrap())
+        Ok(EventBufferWriter {
+            event_buffer: self,
+            current_page_index: self.current_event_offset / PAGE_SIZE,
+            current_offset: self.current_event_offset % PAGE_SIZE,
+        })
     }
 
     /// Writes the event into this buffer
@@ -325,11 +392,10 @@ impl EventBuffer {
     // FIXME: report when memory region is exhausted, and no more data could be written
     pub unsafe fn write_event<T: MemoryCopySrc + ?Sized>(&mut self, event_data: &T) -> KResult<Size> {
         let desired_write_size = align_up(event_data.size(), size_of::<usize>());
-        let mut memory = self.memory.inner_write();
 
         // safety: caller ensures this buffer is not mapped
         let mut writer = unsafe {
-            self.get_writer(&mut memory, desired_write_size)?
+            self.get_writer(desired_write_size)?
         };
 
         let actual_write_size = event_data.copy_to(&mut writer)?;
@@ -339,6 +405,11 @@ impl EventBuffer {
         Ok(actual_write_size)
     }
 
+    /// Writes a channel event into this buffer and transfers capabilities over
+    /// 
+    /// # Safety
+    /// 
+    /// This event buffer must not be mapped
     // FIXME: report when memory region is exhausted, and no more data could be written
     pub unsafe fn write_channel_event<T: MemoryCopySrc + ?Sized>(
         &mut self,
@@ -350,28 +421,27 @@ impl EventBuffer {
         let desired_write_size = 4 * size_of::<usize>() // 1 word for tag, 1 for event id, 1 for reply capid, 1 for data size
             + align_up(event_data.size(), size_of::<usize>());
 
-        let mut memory = self.memory.inner_write();
-
         // safety: caller ensures this buffer is not mapped
         let mut inner_writer = unsafe {
-            self.get_writer(&mut memory, desired_write_size)?
+            self.get_writer(desired_write_size)?
         };
 
         let mut actual_write_size = Size::zero();
 
         let mut write_usize = |n: usize| {
             let bytes = n.to_le_bytes();
-            actual_write_size += inner_writer.write_region(bytes.as_slice().into()).write_size;
+            actual_write_size += inner_writer.write_region(bytes.as_slice().into())?.write_size;
+            Ok(())
         };
 
-        write_usize(MESSAGE_RECIEVED_NUM);
-        write_usize(event_id.as_u64() as usize);
-        
+        write_usize(MESSAGE_RECIEVED_NUM)?;
+        write_usize(event_id.as_u64() as usize)?;
+
         let cap_id = reply_cap_id.unwrap_or(CapId::null()).into();
-        write_usize(cap_id);
+        write_usize(cap_id)?;
 
         // panic safety: get writer ensures the writer is big enough
-        let write_size_ptr = inner_writer.push_usize_ptr().unwrap();
+        let write_size_ptr = inner_writer.push_usize_ptr()?.unwrap();
 
         let mut cap_writer = CapabilityWriter::new(cap_transfer_info, inner_writer);
         let event_write_size = event_data.copy_to(&mut cap_writer)?;
@@ -388,8 +458,57 @@ impl EventBuffer {
     }
 }
 
-#[derive(Debug)]
-struct EventPoolMapping {
-    address_space: Weak<AddressSpace>,
-    mapped_address: VirtAddr,
+pub struct EventBufferWriter<'a> {
+    event_buffer: &'a EventBuffer,
+    current_page_index: usize,
+    current_offset: usize,
+}
+
+impl MemoryWriter for EventBufferWriter<'_> {
+    fn current_ptr(&mut self) -> KResult<*mut u8> {
+        let page = &self.event_buffer.pages[self.current_page_index];
+
+        unsafe {
+            Ok(page.allocation().as_mut_ptr::<u8>().add(self.current_offset))
+        }
+    }
+
+    fn write_region(&mut self, region: MemoryWriteRegion) -> KResult<WriteResult> {
+        let mut src_offset = 0;
+
+        loop {
+            if self.current_page_index == self.event_buffer.pages.len() {
+                // no more space left to write events
+                return Ok(WriteResult {
+                    write_size: Size::from_bytes(src_offset),
+                    end_reached: true,
+                });
+            }
+
+            let write_size = min(PAGE_SIZE - self.current_offset, region.size());
+
+            unsafe {
+                let src_ptr = region.ptr().add(src_offset);
+                let dst_ptr = self.current_ptr()?;
+                core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, write_size);
+            }
+
+            // update dst offset
+            self.current_offset += write_size;
+            if self.current_offset == PAGE_SIZE {
+                // finished writing to current page, move to next one
+                self.current_offset = 0;
+                self.current_page_index += 1;
+            }
+
+            src_offset += write_size;
+            if src_offset == region.size() {
+                // finished writing this region
+                return Ok(WriteResult {
+                    write_size: Size::from_bytes(region.size()),
+                    end_reached: false,
+                });
+            }
+        }
+    }
 }

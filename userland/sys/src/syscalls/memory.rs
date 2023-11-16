@@ -4,12 +4,13 @@ use bit_utils::Size;
 use crate::{
     CapId,
     CapType,
-    CapFlags,
     KResult,
     CspaceTarget,
     syscall,
     sysret_1,
     sysret_2,
+    MemoryNewFlags,
+    MemoryResizeFlags,
 };
 use crate::syscall_nums::*;
 use super::{Capability, Allocator, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
@@ -45,7 +46,7 @@ impl Memory {
         }
     }
 
-    pub fn new(flags: CapFlags, allocator: &Allocator, size: Size) -> KResult<Self> {
+    pub fn new(allocator: &Allocator, size: Size, flags: MemoryNewFlags) -> KResult<Self> {
         unsafe {
             sysret_2!(syscall!(
                 MEMORY_NEW,
@@ -86,6 +87,22 @@ impl Memory {
             Some(size) => Ok(size),
             None => self.refresh_size()
         }
+    }
+
+    pub fn resize(&mut self, new_size: Size, flags: MemoryResizeFlags) -> KResult<usize> {
+        let new_size = unsafe {
+            sysret_1!(syscall!(
+                MEMORY_RESIZE,
+                flags.bits(),
+                self.as_usize(),
+                new_size.pages_rounded()
+            ))
+        }?;
+
+        // panic safety: from_pages can panic, but syscall should not return invalid number of pages
+        self.size = Some(Size::from_pages(new_size));
+
+        Ok(new_size)
     }
 }
 

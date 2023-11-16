@@ -16,6 +16,8 @@
     - this option is called code model
     - should set vma to 0xffffffff80000000, and use mcmodel kernel
 - use Size type from bit_utils in more places in kernel
+    - also add a PageSize type which is guarenteed to be page aligned size
+        - also add a PageSize type which is guarenteed to be page aligned size
 - use strum for enum convert from int
 - maybe look into enumflags2 for syscall options
 - maybe: figure out why disk image is so big?

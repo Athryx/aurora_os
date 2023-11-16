@@ -2,19 +2,16 @@ use core::ops::{RangeBounds, Bound};
 
 use crate::prelude::*;
 use crate::alloc::{PaRef, HeapRef};
-use crate::mem::{Allocation, PageLayout};
 use crate::sync::{IrwLock, IrwLockReadGuard, IrwLockWriteGuard};
+use crate::container::{Weak, Arc, HashMap};
+use crate::vmem_manager::{PageMappingFlags, MapAction, VirtAddrSpace};
+use super::address_space::{AddressSpace, AddrSpaceMapping, MemoryMapping as AddrSpaceMemoryMapping, AddressSpaceInner};
 use super::{CapObject, CapType, address_space::MappingId};
 
 mod memory_writer;
 pub use memory_writer::*;
-
-#[derive(Debug, Clone, Copy)]
-struct AllocationEntry {
-    allocation: Allocation,
-    /// Offset from the start of memory capabity of this entry in bytes
-    offset: usize,
-}
+mod page;
+pub use page::*;
 
 /// A capability that represents memory that can be mapped into a process
 #[derive(Debug)]
@@ -25,33 +22,223 @@ pub struct Memory {
 
 impl Memory {
     /// Returns an error is pages is size 0
-    pub fn new(mut page_allocator: PaRef, heap_allocator: HeapRef, pages: usize) -> KResult<Self> {
-        if pages == 0 {
+    pub fn new_with_page_source(
+        page_allocator: PaRef,
+        heap_allocator: HeapRef,
+        page_count: usize,
+        page_source: PageSource,
+    ) -> KResult<Self> {
+        if page_count == 0 {
             return Err(SysErr::InvlArgs);
         }
 
-        let first_allocation = page_allocator.alloc(
-            PageLayout::from_size_align(pages * PAGE_SIZE, PAGE_SIZE)
-                .expect("could not create page layout for Memory capability"),
-        ).ok_or(SysErr::OutOfMem)?;
+        let size = Size::try_from_pages(page_count).ok_or(SysErr::Overflow)?;
 
-        let mut allocations = Vec::new(heap_allocator);
-        allocations.push(AllocationEntry {
-            allocation: first_allocation,
-            offset: 0,
-        })?;
+        let mut pages = Vec::try_with_capacity(heap_allocator.clone(), page_count)?;
+
+        for _ in 0..page_count {
+            pages.push(page_source.get_page_data(&page_allocator)?)?;
+        }
 
         let inner = MemoryInner {
-            allocations,
-            size: first_allocation.size(),
+            pages,
+            size,
             page_allocator,
-            map_ref_count: 0,
+            mappings: HashMap::new(heap_allocator),
         };
 
         Ok(Memory {
             id: MappingId::new(),
             inner: IrwLock::new(inner),
         })
+    }
+
+    /// Maps this memory capability into the given addr_spce at the given location
+    /// 
+    /// # Returns
+    /// 
+    /// returns the size of the mapping
+    /// 
+    /// # Locking
+    /// 
+    /// acquires the memory inner lock for write
+    /// then acquires the addr_space inner lock
+    pub fn map_memory(this: Arc<Self>, addr_space: Arc<AddressSpace>, args: MapMemoryArgs) -> KResult<Size> {
+        let mut inner = this.inner_write();
+        let mut addr_space_inner = addr_space.inner();
+
+        let location = inner.map_memory_args_to_location(args)
+            .ok_or(SysErr::InvlArgs)?;
+
+        // do this first to make sure mapping is valid region
+        let _ = inner.mapping_iter(location)
+            .ok_or(SysErr::InvlMemZone)?;
+
+        let mapping_id = MappingId::new();
+        let mapping = AddrSpaceMemoryMapping {
+            memory: this.clone(),
+            location,
+            mapping_id,
+        };
+
+        addr_space_inner.mappings.insert_mapping(AddrSpaceMapping::Memory(mapping))?;
+
+        let mapping = MemoryMapping {
+            addr_space: Arc::downgrade(&addr_space),
+            location,
+        };
+        let result = inner.mappings.insert(mapping_id, mapping);
+
+        if let Err(error) = result {
+            // panic safety: this mapping was just inserted
+            addr_space_inner.mappings.remove_mapping_from_id(mapping_id).unwrap();
+            return Err(error);
+        }
+
+        let mapping_iter = inner.mapping_iter(location)
+            .ok_or(SysErr::InvlMemZone)?;
+
+        // safety: mapping_iter ensures the regions are valid to map
+        let result = unsafe {
+            addr_space_inner.addr_space.map_many(mapping_iter)
+        };
+
+        if let Err(error) = result {
+            // panic safety: these mappings were just inserted
+            addr_space_inner.mappings.remove_mapping_from_id(mapping_id).unwrap();
+            inner.mappings.remove(&mapping_id).unwrap();
+            return Err(error);
+        }
+
+        Ok(location.map_size)
+    }
+
+    /// Maps this memory capability from the given addr_spce at the given address
+    /// 
+    /// # Locking
+    /// 
+    /// acquires the memory inner lock for write
+    /// then acquires the addr_space inner lock
+    pub fn unmap_memory(&self, address_space: &AddressSpace, address: VirtAddr) -> KResult<()> {
+        let mut inner = self.inner_write();
+        let mut addr_space_inner = address_space.inner();
+
+        inner.unmap_memory_inner(&mut addr_space_inner, address)
+    }
+
+    pub fn update_mapping(&self, address_space: &AddressSpace, address: VirtAddr, args: UpdateMappingAgs) -> KResult<Size> {
+        let mut inner = self.inner_write();
+        let mut addr_space_inner = address_space.inner();
+
+        inner.update_mapping_inner(&mut addr_space_inner, address, args)
+    }
+
+    pub fn resize(&self, new_size: Size, page_source: PageSource) -> KResult<Size> {
+        let mut inner = self.inner_write();
+
+        if inner.mappings.len() != 0 {
+            // cannot resize memory if it is mapped
+            return Err(SysErr::InvlOp);
+        }
+
+        // safety: this memory is not maped anywhere
+        unsafe {
+            inner.resize_with_page_source(new_size.pages_rounded(), page_source)?;
+        }
+
+        Ok(inner.size)
+    }
+
+    /// Resizes the memory capability to the new size
+    /// 
+    /// If the memory is mapped in 1 place, and the memory size is increased, and extend mapping is true,
+    /// the 1 mapping will have its size extended to the end of the memory capability
+    /// It is possible for the mapping extending operation to fail, and resize_in_place to report failure,
+    /// but the memory may still have increased in size
+    /// 
+    /// # Returns
+    /// 
+    /// The new size of the memory
+    pub fn resize_in_place(&self, new_size: Size, extend_mapping: bool, page_source: PageSource) -> KResult<Size> {
+        if new_size.pages_rounded() == 0 {
+            return Err(SysErr::InvlArgs);
+        }
+
+        let mut inner = self.inner_write();
+
+        if inner.size == new_size {
+            return Ok(inner.size)
+        }
+
+        if inner.mappings.len() == 0 {
+            // safety: this memory is not maped anywhere
+            unsafe {
+                inner.resize_with_page_source(new_size.pages_rounded(), page_source)?;
+                Ok(inner.size)
+            }
+        } else if inner.mappings.len() == 1 {
+            // panic safety: this iterator will yield 1 element
+            let (_, mapping) = inner.mappings.iter().next().unwrap();
+            let map_addr = mapping.location.map_addr;
+
+            let Some(addr_space) = mapping.addr_space.upgrade() else {
+                // safety: this memory is not maped anywhere if address space if dropped
+                unsafe {
+                    inner.resize_with_page_source(new_size.pages_rounded(), page_source)?;
+                    return Ok(inner.size)
+                }
+            };
+
+            let mut addr_space_inner = addr_space.inner();
+
+            if new_size > inner.size {
+                // grow memory
+                unsafe {
+                    inner.resize_with_page_source(new_size.pages_rounded(), page_source)?;
+                }
+
+                if extend_mapping {
+                    inner.update_mapping_inner(&mut addr_space_inner, map_addr, UpdateMappingAgs {
+                        size: UpdateValue::Change(None),
+                        ..Default::default()
+                    })?;
+                }
+            } else if new_size < inner.size {
+                // shrink memory
+                // the end page index of the mapping
+                let mapping_end_index = mapping.location.offset.pages_rounded() + mapping.location.map_size.pages_rounded();
+                
+                if mapping_end_index <= new_size.pages_rounded() {
+                    // we do not shrink smaller than the mapping, it is ok to shrink without updating mapping
+                    unsafe {
+                        inner.resize_with_page_source(new_size.pages_rounded(), page_source)?;
+                    }
+                } else {
+                    let mapping_decrease_amount = mapping_end_index - new_size.pages_rounded();
+
+                    if mapping_decrease_amount >= mapping.location.map_size.pages_rounded() {
+                        // the mapping needs to be unmapped, it is entirely past the new end of the memory capability
+                        inner.unmap_memory_inner(&mut addr_space_inner, map_addr)?;
+                    } else {
+                        let new_mapping_size = mapping.location.map_size.pages_rounded() - mapping_decrease_amount;
+                        inner.update_mapping_inner(&mut addr_space_inner, map_addr, UpdateMappingAgs {
+                            size: UpdateValue::Change(Some(Size::from_pages(new_mapping_size))),
+                            ..Default::default()
+                        })?;
+                    }
+
+                    // safety: it is now safe to shrink pages because mappings have been shrunk
+                    unsafe {
+                        inner.resize_with_page_source(new_size.pages_rounded(), page_source)?;
+                    }
+                }
+            }
+
+            Ok(inner.size)
+        } else {
+            // cannot resize if memory is mapped in more than 1 place
+            Err(SysErr::InvlOp)
+        }
     }
 
     pub fn id(&self) -> MappingId {
@@ -71,251 +258,276 @@ impl CapObject for Memory {
     const TYPE: CapType = CapType::Memory;
 }
 
+/// A location where a memory capability is mapped in an address space
+#[derive(Debug, Clone, Copy)]
+pub struct MemoryMappingLocation {
+    pub map_addr: VirtAddr,
+    pub map_size: Size,
+    /// Offset into memory capability where mapping is from
+    pub offset: Size,
+    pub flags: PageMappingFlags,
+}
+
+impl MemoryMappingLocation {
+    pub fn map_range(&self) -> AVirtRange {
+        AVirtRange::new(self.map_addr, self.offset.bytes())
+    }
+}
+
+#[derive(Debug)]
+struct MemoryMapping {
+    addr_space: Weak<AddressSpace>,
+    location: MemoryMappingLocation,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MapMemoryArgs {
+    pub map_addr: VirtAddr,
+    pub map_size: Option<Size>,
+    pub offset: Size,
+    pub flags: PageMappingFlags,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub enum UpdateValue<T> {
+    Change(T),
+    #[default]
+    KeepSame,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct UpdateMappingAgs {
+    pub size: UpdateValue<Option<Size>>,
+    pub flags: UpdateValue<PageMappingFlags>,
+}
+
 #[derive(Debug)]
 pub struct MemoryInner {
-    allocations: Vec<AllocationEntry>,
+    pages: Vec<PageData>,
     /// Total size of all allocations
-    size: usize,
+    size: Size,
     page_allocator: PaRef,
-    /// This is the number of locations the memory capability is currently mapped in
-    // TODO: maybe make this an atomic usize, so this can be incramented and decramented without needing write access in memory map and unmap
-    pub map_ref_count: usize,
+    /// All places where this memory capability is currently mapped
+    mappings: HashMap<MappingId, MemoryMapping>,
 }
 
 impl MemoryInner {
     /// Returns the total size of this memory
     pub fn size(&self) -> Size {
-        Size::from_bytes(self.size)
+        self.size
     }
 
-    // TODO: remove
-    fn size_pages(&self) -> usize {
-        self.size / PAGE_SIZE
-    }
-
-    /// Finds the index into the allocations array that the given offset from the start of the memory capability would be contained in
-    fn allocation_index_of_offset(&self, offset: usize) -> Option<usize> {
+    pub fn get_map_size(&self, map_size: Option<Size>, offset: Size) -> Option<Size> {
         if offset >= self.size {
             return None;
         }
 
-        match self.allocations.binary_search_by_key(&offset, |entry| entry.offset) {
-            Ok(i) => Some(i),
-            Err(i) => {
-                // i cannot be 0 because the first allocation entry has offset 0
-                Some(i - 1)
-            }
-        }
-    }
-
-    /// Iterates over the regions that would need to be mapped for a virtual mapping at `base_addr` of size `mapping_page_size`
-    /// 
-    /// # Panics
-    /// 
-    /// Panics if mapping offset and size are out of bounds of this memory writer
-    pub fn iter_mapped_regions(
-        &self,
-        base_addr: VirtAddr,
-        mapping_offset: Size,
-        mapping_size: Size,
-    ) -> MappedRegionsIterator {
-        assert!(mapping_offset.bytes() + mapping_size.bytes() <= self.size);
-
-        let start_offset = mapping_offset.bytes();
-        let end_offset = start_offset + mapping_size.bytes();
-
-        let start_index = self.allocation_index_of_offset(start_offset).unwrap();
-        let end_index = self.allocation_index_of_offset(end_offset - 1).unwrap();
-
-        let start_allocation_entry = &self.allocations[start_index];
-        let end_allocation_entry = &self.allocations[end_index];
-
-        let start_range_offset = start_offset - start_allocation_entry.offset;
-        let end_range_offset = end_allocation_entry.offset + end_allocation_entry.allocation.size() - end_offset;
-
-        MappedRegionsIterator {
-            base_addr,
-            start_range_offset,
-            end_range_offset,
-            allocations: &self.allocations[start_index..=end_index],
-            index: 0,
-            current_offset: 0,
-        }
-    }
-
-    /// Shrinks this memory capability to be the given size
-    /// 
-    /// # Panics
-    /// 
-    /// panics if new_page_size is greater than the size of the memory capability, or new_page_size is 0
-    /// 
-    /// # Safety
-    /// 
-    /// the parts that are being shrunk must not be mapped in memory
-    unsafe fn shrink_memory(&mut self, new_page_size: usize) {
-        assert!(new_page_size <= self.size_pages());
-        assert!(new_page_size != 0);
-
-        let mut shrink_amount = (self.size_pages() - new_page_size) * PAGE_SIZE;
-
-        for i in (0..self.allocations.len()).rev() {
-            let allocation = self.allocations[i].allocation;
-
-            if allocation.size() >= shrink_amount {
-                self.allocations.pop();
-                shrink_amount -= allocation.size();
-                self.size -= allocation.size();
-
-                unsafe {
-                    self.page_allocator.dealloc(allocation);
-                }
+        if let Some(size) = map_size {
+            if offset + size > self.size {
+                // mapping is too big
+                None
             } else {
-                let new_allocation_size = allocation.size() - shrink_amount;
-
-                // panic safety; realloc in place should never fail
-                let new_allocation = unsafe {
-                    self.page_allocator.realloc_in_place(allocation, PageLayout::new_rounded(new_allocation_size, PAGE_SIZE).unwrap())
-                }.unwrap();
-
-                self.allocations[i].allocation = new_allocation;
-
-                let size_change = allocation.size() - new_allocation.size();
-                self.size -= size_change;
-
-                break;
+                Some(size)
             }
-
-            if shrink_amount == 0 {
-                break;
-            }
-        }
-    }
-
-    /// Attempts to grow the memory in this capability without moving any already allocated memory
-    fn grow_in_place(&mut self, new_page_size: usize) -> KResult<()> {
-        assert!(new_page_size >= self.size_pages());
-
-        let grow_amount = (new_page_size - self.size_pages()) * PAGE_SIZE;
-
-        // panic safety: there should always be at least 1 allocation
-        let last_entry = self.allocations.last().unwrap();
-        let last_allocation = last_entry.allocation;
-
-        // TODO: maybe add support to realloc in place as large as possibel so even in event of realloc
-        // failure, the last allocation would be grown by at least something
-        let result = unsafe {
-            self.page_allocator.realloc_in_place(
-                last_allocation,
-                PageLayout::new_rounded(last_allocation.size() + grow_amount, PAGE_SIZE).unwrap(),
-            )
-        };
-
-        if let Some(new_allocation) = result {
-            let size_change = new_allocation.size() - last_allocation.size();
-            self.size += size_change;
-
-            self.allocations.last_mut().unwrap().allocation = new_allocation;
-
-            Ok(())
         } else {
-            // add new allocation because reallocating end failed
-            let Some(new_allocation) = self.page_allocator
-                .alloc(PageLayout::new_rounded(grow_amount, PAGE_SIZE).unwrap()) else {
-                return Err(SysErr::OutOfMem);
-            };
-
-            if let Err(error) = self.allocations.push(AllocationEntry {
-                allocation: new_allocation,
-                offset: last_entry.offset + last_allocation.size(),
-            }) {
-                // could not append allocation entry, deallocate new allocation
-                // safety: the new allocation is not used anywhere
-                unsafe {
-                    self.page_allocator.dealloc(new_allocation);
-                }
-
-                Err(error)
-            } else {
-                self.size += new_allocation.size();
-
-                Ok(())
-            }   
+            Some(self.size - offset)
         }
     }
 
-    /// Grows the memory on this capability, but does not necesarily grow it in place, so it is unsafe to have this memory mapped if grow is called
-    unsafe fn grow(&mut self, new_page_size: usize) -> KResult<()> {
-        assert!(new_page_size >= self.size_pages());
+    /// Converts the map memory args to a location which they would map
+    pub fn map_memory_args_to_location(&self, args: MapMemoryArgs) -> Option<MemoryMappingLocation> {
+        let map_size = self.get_map_size(args.map_size, args.offset)?;
 
-        let grow_amount = (new_page_size - self.size_pages()) * PAGE_SIZE;
+        Some(MemoryMappingLocation {
+            map_addr: args.map_addr,
+            map_size,
+            offset: args.offset,
+            flags: args.flags,
+        })
+    }
 
-        // panic safety: there should always be at least 1 allocation
-        let last_allocation = self.allocations.last().unwrap().allocation;
+    pub fn update_mapping_inner(
+        &mut self,
+        addr_space: &mut AddressSpaceInner,
+        address: VirtAddr,
+        args: UpdateMappingAgs,
+    ) -> KResult<Size> {
+        let AddressSpaceInner {
+            addr_space,
+            mappings,
+        } = addr_space;
 
-        let new_allocation = unsafe {
-            self.page_allocator.realloc(
-                last_allocation,
-                PageLayout::new_rounded(last_allocation.size() + grow_amount, PAGE_SIZE).unwrap(),
-            ).ok_or(SysErr::OutOfMem)?
+        let mapping = mappings.get_mapping_from_address_mut(address)
+            .ok_or(SysErr::InvlVirtAddr)?;
+
+        let AddrSpaceMapping::Memory(mapping) = mapping else {
+            // mapping is event pool, we can't update it
+            return Err(SysErr::InvlOp);
         };
 
-        self.allocations.last_mut().unwrap().allocation = new_allocation;
-        
-        let size_change = new_allocation.size() - last_allocation.size();
-        self.size += size_change;
+        if let UpdateValue::Change(new_size) = args.size {
+            let mut new_location = mapping.location;
+
+            let old_size = mapping.location.map_size;
+            let new_size = self.get_map_size(new_size, mapping.location.offset)
+                .ok_or(SysErr::InvlArgs)?;
+
+            if new_size > old_size {
+                new_location.map_size = new_size;
+
+                let mut map_location = new_location;
+                map_location.map_addr += old_size.bytes();
+                map_location.offset += old_size;
+                map_location.map_size -= old_size;
+
+                // panic safety: new size is already checked to be inbounds
+                let mapping_iter = self.mapping_iter(map_location).unwrap();
+                unsafe {
+                    addr_space.map_many(mapping_iter)?;
+                }
+            } else if new_size < old_size {
+                let mut unmap_location = new_location;
+                unmap_location.map_addr += new_size.bytes();
+                unmap_location.offset += new_size;
+                unmap_location.map_size -= new_size;
+
+                new_location.map_size = new_size;
+
+                self.unmap_location(addr_space, unmap_location);
+            }
+
+            mapping.location = new_location;
+            self.mappings.get_mut(&mapping.mapping_id).unwrap().location = new_location;
+        }
+
+        if let UpdateValue::Change(flags) = args.flags {
+            let mut new_location = mapping.location;
+            new_location.flags = flags;
+
+            let mapping_iter = self.mapping_iter(new_location).unwrap();
+            unsafe {
+                addr_space.map_many(mapping_iter)?;
+            }
+
+            mapping.location = new_location;
+            self.mappings.get_mut(&mapping.mapping_id).unwrap().location = new_location;
+        }
+
+        Ok(mapping.location.map_size)
+    }
+
+    pub fn unmap_memory_inner(&mut self, addr_space: &mut AddressSpaceInner, address: VirtAddr) -> KResult<()> {
+        let mapping = addr_space.mappings.get_mapping_from_address(address)
+            .ok_or(SysErr::InvlVirtAddr)?;
+
+        if !matches!(mapping, AddrSpaceMapping::Memory(_)) {
+            // mapping is event pool, we can't remove it
+            return Err(SysErr::InvlOp);
+        }
+
+        let mapping = addr_space.mappings.remove_mapping_from_address(address)
+            .ok_or(SysErr::InvlVirtAddr)?;
+
+        let mapping = self.mappings.remove(&mapping.map_id())
+            .expect("no mapping present in memory capability");
+
+        // panic safety: if this region was mapped, the pages should exist
+        self.unmap_location(&mut addr_space.addr_space, mapping.location);
 
         Ok(())
     }
 
-    /// Resizes the memory to the given size in pages
+    /// Unmaps the memory at the given location
     /// 
-    /// The in place version of resize ensures that all pointers to memory areas inside this memory
-    /// that point to an offset less than the new size will remain valid
-    /// 
-    /// # Safety
-    /// 
-    /// This memory capability must not have any part past the end pf the new size mapped in memory
-    pub unsafe fn resize_in_place(&mut self, new_page_size: usize) -> KResult<()> {
-        if new_page_size > self.size_pages() {
-            self.grow_in_place(new_page_size)
-        } else {
-            unsafe {
-                self.shrink_memory(new_page_size)
+    /// Panics if the memory was not mapped therre
+    pub fn unmap_location(&self, addr_space: &mut VirtAddrSpace, location: MemoryMappingLocation) {
+        // panic safety: if this region was mapped, the pages should exist
+        for (i, page) in self.get_pages_for_location(location).unwrap().iter().enumerate() {
+            if let PageData::Owned(_) | PageData::Cow(_) = page {
+                let virt_addr = location.map_addr + PAGE_SIZE * i;
+                unsafe {
+                    addr_space.unmap_page(virt_addr).expect("failed to unmap page");
+                }
             }
-
-            Ok(())
         }
     }
 
-    /// Resizes the memory to the given size in pages
-    /// 
-    /// The out of place version of resize does not ensure that all pointers to memory areas inside this memory
-    /// that point to an offset less than the new size will remain valid
+    /// Deallocs all pages after the given size
     /// 
     /// # Safety
     /// 
-    /// This memory capability must not be mapped
-    pub unsafe fn resize_out_of_place(&mut self, new_page_size: usize) -> KResult<()> {
-        if new_page_size > self.size_pages() {
-            unsafe {
-                self.grow(new_page_size)
-            }
-        } else {
-            unsafe {
-                self.shrink_memory(new_page_size)
-            }
-
-            Ok(())
+    /// The pages which are dealloced must not be mapped
+    unsafe fn truncates_pages_to_size(&mut self, size: usize) {
+        while self.pages.len() > size {
+            self.pages.pop().unwrap();
         }
     }
 
-    pub fn copy_from<T: MemoryCopySrc + ?Sized>(&self, range: impl RangeBounds<usize>, src: &T) -> KResult<Size> {
+    /// Extends the backing pages to be the new size
+    unsafe fn extend_page_count(
+        &mut self,
+        new_page_count: usize,
+        page_source: PageSource,
+    ) -> KResult<()> {
+        let old_page_count = self.pages.len();
+
+        while self.pages.len() < new_page_count {
+            let page_add_result: KResult<()> = try {
+                self.pages.push(page_source.get_page_data(&self.page_allocator)?)?;
+            };
+
+            if let Err(error) = page_add_result {
+                unsafe {
+                    self.truncates_pages_to_size(old_page_count);
+                }
+
+                return Err(error)
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Resizes the memory to hav `new_page_count` pages
+    /// 
+    /// New pages will be filled with the page source
+    /// 
+    /// # Safety
+    /// 
+    /// Currently mapped pages must not be unmapped
+    unsafe fn resize_with_page_source(
+        &mut self,
+        new_page_count: usize,
+        page_source: PageSource,
+    ) -> KResult<()> {
+        if new_page_count == 0 {
+            return Err(SysErr::InvlArgs);
+        }
+
+        let new_size = Size::try_from_pages(new_page_count).ok_or(SysErr::Overflow)?;
+
+        if new_size > self.size {
+            unsafe {
+                self.extend_page_count(new_page_count, page_source)?;
+            }
+        } else if new_size < self.size {
+            unsafe {
+                self.truncates_pages_to_size(new_page_count);
+            }
+        }
+
+        self.size = new_size;
+
+        Ok(())
+    }
+
+    pub fn copy_from<T: MemoryCopySrc + ?Sized>(&mut self, range: impl RangeBounds<usize>, src: &T) -> KResult<Size> {
         let mut writer = self.create_memory_writer(range).ok_or(SysErr::InvlMemZone)?;
 
         src.copy_to(&mut writer)
     }
 
-    pub fn create_memory_writer(&self, range: impl RangeBounds<usize>) -> Option<PlainMemoryWriter> {
+    pub fn create_memory_writer(&mut self, range: impl RangeBounds<usize>) -> Option<PlainMemoryWriter> {
         // start byte inclusive
         let start = match range.start_bound() {
             Bound::Included(n) => *n,
@@ -327,18 +539,165 @@ impl MemoryInner {
         let end = match range.end_bound() {
             Bound::Included(n) => n + 1,
             Bound::Excluded(n) => *n,
-            Bound::Unbounded => self.size,
+            Bound::Unbounded => self.size.bytes(),
         };
 
-        if end > self.size || start >= end {
+        if end > self.size.bytes() || start >= end {
             None
         } else {
             Some(PlainMemoryWriter {
                 memory: self,
-                alloc_entry_index: self.allocation_index_of_offset(start)?,
+                page_index: start / PAGE_SIZE,
                 offset: start,
                 end_offset: end,
             })
+        }
+    }
+
+    /// Looks at all places where the given page is mapped in memory, and modifies the mapping to be a new location
+    /// 
+    /// Call this after updating page array for existing page
+    pub unsafe fn remap_all_mappings_for_page_index(&self, page_index: usize) -> KResult<()> {
+        for (_, mapping) in self.mappings.iter() {
+            let start_page_index = mapping.location.offset.pages().unwrap();
+            if start_page_index > page_index {
+                continue;
+            }
+
+            let mapping_page_size = mapping.location.map_size.pages_rounded();
+            let end_page_index = start_page_index + mapping_page_size;
+            if page_index >= end_page_index {
+                continue;
+            }
+
+            let mapping_virt_offset = (page_index - start_page_index) * PAGE_SIZE;
+            let map_addr = mapping.location.map_addr + mapping_virt_offset;
+
+            let Some(address_space) = mapping.addr_space.upgrade() else {
+                continue;
+            };
+
+            let mut addr_space_inner = address_space.inner();
+
+            // FIXME: don't panic if these maps fail
+            // currently no good way to recover from these failing
+            match &self.pages[page_index] {
+                PageData::Owned(page) => unsafe {
+                    addr_space_inner.addr_space.map_page(map_addr, page.phys_addr(), mapping.location.flags).unwrap();
+                },
+                PageData::Cow(page) => unsafe {
+                    // remove write flag for copy on write pages
+                    let flags = mapping.location.flags.difference(PageMappingFlags::WRITE);
+                    addr_space_inner.addr_space.map_page(map_addr, page.phys_addr(), flags).unwrap();
+                },
+                PageData::LazyAlloc | PageData::LazyZeroAlloc => unsafe {
+                    addr_space_inner.addr_space.unmap_page(map_addr);
+                },
+            }
+        }
+        
+        Ok(())
+    }
+
+    pub unsafe fn set_page(&mut self, page_index: usize, page: PageData) -> KResult<()> {
+        let old_page = core::mem::replace(&mut self.pages[page_index], page);
+    
+        let result = unsafe {
+            self.remap_all_mappings_for_page_index(page_index)
+        };
+
+        if result.is_err() {
+            self.pages[page_index] = old_page;
+        }
+
+        result
+    }
+
+    fn get_page_assuming_owned(&self, page_index: usize) -> &Page {
+        match &self.pages[page_index] {
+            PageData::Owned(page) => page,
+            _ => panic!("expected owned page")
+        }
+    }
+
+    fn get_page_assuming_owned_mut(&mut self, page_index: usize) -> &mut Page {
+        match &mut self.pages[page_index] {
+            PageData::Owned(page) => page,
+            _ => panic!("expected owned page")
+        }
+    }
+
+    /// Gets the page which can be written to
+    /// 
+    /// This will allocate lazily allocted pages and resolve copy on write pages and remap them
+    /// 
+    /// # Panics
+    /// 
+    /// Panics if `page_index` is out of bounds in the page vec
+    pub fn get_page_for_writing(&mut self, page_index: usize) -> KResult<&mut Page> {
+        match &self.pages[page_index] {
+            PageData::Owned(_) => (),
+            PageData::Cow(_) => {
+                // temporarilly replace with lazy alloc
+                // we will replace it later while still holding lock so it should never cause a lazy alloc
+                let data = core::mem::replace(&mut self.pages[page_index], PageData::LazyAlloc);
+                let PageData::Cow(data) = data else {
+                    unreachable!();
+                };
+
+                let new_page = if Arc::strong_count(&data) == 1 {
+                    Arc::into_inner(data).unwrap()
+                } else {
+                    data.create_copy(self.page_allocator.clone())?
+                };
+
+                unsafe {
+                    self.set_page(page_index, PageData::Owned(new_page))?;
+                }
+            },
+            PageData::LazyAlloc => {
+                let new_page = Page::new(self.page_allocator.clone())?;
+                unsafe {
+                    self.set_page(page_index, PageData::Owned(new_page))?;
+                }
+            },
+            PageData::LazyZeroAlloc => {
+                let new_page = Page::new_zeroed(self.page_allocator.clone())?;
+                unsafe {
+                    self.set_page(page_index, PageData::Owned(new_page))?;
+                }
+            },
+        }
+
+        Ok(self.get_page_assuming_owned_mut(page_index))
+    }
+
+    pub fn get_page_for_reading(&mut self, page_index: usize) -> KResult<&Page> {
+        match &self.pages[page_index] {
+            PageData::Owned(_) => Ok(self.get_page_assuming_owned(page_index)),
+            PageData::Cow(_) => {
+                // ugly hack to get around borrow checker limitation
+                let PageData::Cow(page) = &self.pages[page_index] else {
+                    unreachable!();
+                };
+                Ok(page)
+            },
+            // TODO: we don't actually need to allocatore for lazy alloc page
+            // just have a global page which is zeroed
+            PageData::LazyAlloc => {
+                let new_page = Page::new(self.page_allocator.clone())?;
+                unsafe {
+                    self.set_page(page_index, PageData::Owned(new_page))?;
+                }
+                Ok(self.get_page_assuming_owned(page_index))
+            },
+            PageData::LazyZeroAlloc => {
+                let new_page = Page::new_zeroed(self.page_allocator.clone())?;
+                unsafe {
+                    self.set_page(page_index, PageData::Owned(new_page))?;
+                }
+                Ok(self.get_page_assuming_owned(page_index))
+            },
         }
     }
 
@@ -347,110 +706,79 @@ impl MemoryInner {
     /// # Safety
     /// 
     /// Must not write to any memory used by anything else, or a place that userspace doesn't expect
-    pub unsafe fn zero(&self) {
-        for allocation in self.allocations.iter() {
-            let mut raw_allocation = allocation.allocation;
-            let allocation_slice = raw_allocation.as_mut_slice_ptr();
-
+    /// 
+    /// # Notes
+    /// 
+    /// This may fail partway through, and some pages will be zeroed while others won't be
+    pub unsafe fn zero(&mut self) -> KResult<()> {
+        for i in 0..self.pages.len() {
+            let page = self.get_page_for_writing(i)?;
             unsafe {
-                // TODO: figure out if this might need to be volatile
-                // safety: caller must ensure that this memory capability only stores userspace data expecting to be written to
-                ptr::write_bytes(allocation_slice.as_mut_ptr(), 0, allocation_slice.len());
+                page.zero();
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Gets the pages that correspond to the given mapping location
+    fn get_pages_for_location(&self, location: MemoryMappingLocation) -> Option<&[PageData]> {
+        let map_start_page_index = location.offset.pages_rounded();
+        let map_page_len = location.map_size.pages_rounded();
+
+        self.pages.get(map_start_page_index..(map_start_page_index + map_page_len))
+    }
+}
+
+#[derive(Debug, Clone)]
+struct MemoryMappingIter<'a> {
+    pages: &'a [PageData],
+    index: usize,
+    base_addr: VirtAddr,
+    flags: PageMappingFlags,
+}
+
+impl<'a> Iterator for MemoryMappingIter<'a> {
+    type Item = MapAction;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        loop {
+            if self.index == self.pages.len() {
+                return None;
+            } else {
+                let page = &self.pages[self.index];
+                let virt_addr = self.base_addr + PAGE_SIZE * self.index;
+
+                self.index += 1;
+
+                match page {
+                    PageData::Owned(page) => return Some(MapAction {
+                        virt_addr,
+                        phys_addr: page.phys_addr(),
+                        flags: self.flags,
+                    }),
+                    PageData::Cow(page) => return Some(MapAction {
+                        virt_addr,
+                        phys_addr: page.phys_addr(),
+                        flags: self.flags.difference(PageMappingFlags::WRITE),
+                    }),
+                    PageData::LazyAlloc | PageData::LazyZeroAlloc => continue,
+                }
             }
         }
     }
 }
 
-/// An iterator over the virtual memory mappings that need to be made to map a given section of a memory cpaability
-#[derive(Debug, Clone)]
-pub struct MappedRegionsIterator<'a> {
-    base_addr: VirtAddr,
-    start_range_offset: usize,
-    end_range_offset: usize,
-    allocations: &'a [AllocationEntry],
+impl MemoryInner {
+    /// Returns an iterator over the mapping actions needed to map the given location
+    fn mapping_iter(&self, map_location: MemoryMappingLocation) -> Option<MemoryMappingIter> {
+        let pages_to_map = self.get_pages_for_location(map_location)?;
 
-    /// Current allocation index
-    index: usize,
-    /// Offset from start of iteration range
-    /// 
-    /// This will be 0 even if start_range_offset is non zero
-    current_offset: usize,
-}
-
-impl MappedRegionsIterator<'_> {
-    pub fn without_unaligned_start(mut self) -> Self {
-        if self.start_range_offset == 0 && self.index == 0 {
-            self.start_range_offset = 0;
-            self.index = 1;
-        }
-        self
-    }
-
-    pub fn without_unaligned_end(mut self) -> Self {
-        self.end_range_offset = 0;
-        self
-    }
-
-    /// Gets the virt range mapping for the entire first range, regardless of start offset
-    pub fn get_entire_first_maping_range(&self) -> AVirtRange {
-        let allocation = self.allocations[0].allocation;
-
-        AVirtRange::new(self.base_addr - self.start_range_offset, allocation.size())
-    }
-
-    /// Gets the setion of the first mapping which is excluded by the start offset
-    pub fn get_first_mapping_exluded_range(&self) -> AVirtRange {
-        AVirtRange::new(self.base_addr - self.start_range_offset, self.start_range_offset)
-    }
-}
-
-impl Iterator for MappedRegionsIterator<'_> {
-    type Item = (AVirtRange, PhysAddr);
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index >= self.allocations.len() {
-            return None;
-        }
-
-        let allocation = self.allocations[self.index].allocation;
-
-        let (virt_range, phys_addr) = if self.allocations.len() == 1 {
-            // there is only 1 entry, we need to consider both start and end offset
-            let range_addr = self.base_addr;
-            let range_size = allocation.size() - self.start_range_offset - self.end_range_offset;
-            let virt_range = AVirtRange::new(range_addr, range_size);
-
-            let phys_addr = allocation.addr().to_phys() + self.start_range_offset;
-
-            (virt_range, phys_addr)
-        } else if self.index == 0 {
-            // first range, just consider start offset
-            let virt_range = AVirtRange::new(self.base_addr, allocation.size() - self.start_range_offset);
-            let phys_addr = allocation.addr().to_phys() + self.start_range_offset;
-
-            (virt_range, phys_addr)
-        } else if self.index == self.allocations.len() - 1 {
-            // last range, just consider end offset
-            let virt_range = AVirtRange::new(self.base_addr + self.current_offset, allocation.size() - self.end_range_offset);
-
-            (virt_range, allocation.addr().to_phys())
-        } else {
-            // middle allocation, do not have to worry about start or end offset
-            (
-                AVirtRange::new(self.base_addr + self.current_offset, allocation.size()),
-                allocation.addr().to_phys(),
-            )
-        };
-
-        self.index += 1;
-        self.current_offset += virt_range.size();
-
-        Some((virt_range, phys_addr))
-    }
-
-    fn size_hint(&self) -> (usize, Option<usize>) {
-        let size = self.allocations.len() - self.index;
-
-        (size, Some(size))
+        Some(MemoryMappingIter {
+            pages: pages_to_map,
+            index: 0,
+            base_addr: map_location.map_addr,
+            flags: map_location.flags,
+        })
     }
 }

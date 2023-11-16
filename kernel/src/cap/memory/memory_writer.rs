@@ -1,17 +1,44 @@
 use core::{cmp::min, alloc::Layout};
+use core::cell::RefCell;
 
 use bit_utils::Size;
 use bytemuck::AnyBitPattern;
 
 use crate::prelude::*;
-use super::{MemoryInner, AllocationEntry};
+use super::{MemoryInner, Page};
 
 /// Used to copy data into a memory capability
 /// 
 /// Users of `MemoryWriter` should repeatedly call [`write_region`]
 pub trait MemoryWriter {
+    /// Gets the current position of the write pointer
+    fn current_ptr(&mut self) -> KResult<*mut u8>;
+
     /// Writes the given region into this writer
-    fn write_region(&mut self, region: MemoryWriteRegion) -> WriteResult;
+    fn write_region(&mut self, region: MemoryWriteRegion) -> KResult<WriteResult>;
+
+    fn push_usize_ptr(&mut self) -> KResult<Option<*mut usize>> {
+        let current_offset = self.current_ptr()? as usize;
+
+        // number of bytes that need to be pushed for usize to be aligned
+        let align_amount = align_up(current_offset, size_of::<usize>()) - current_offset;
+
+        let bytes = [0u8; size_of::<usize>()];
+        let write_slice = &bytes[..align_amount];
+        if self.write_region(write_slice.into())?.end_reached {
+            return Ok(None);
+        }
+
+        // this pointer will now be aligned
+        // since usize is size aligned, this will not span 2 pages, so it will be in a contigous allocation
+        let out = self.current_ptr()? as *mut usize;
+
+        if self.write_region(bytes.as_slice().into())?.write_size.bytes() != size_of::<usize>() {
+            Ok(None)
+        } else {
+            Ok(Some(out))
+        }
+    }
 }
 
 /// Represents result of calling [`write_region`]
@@ -108,77 +135,59 @@ impl MemoryCopySrc for [u8] {
     }
 
     fn copy_to(&self, writer: &mut impl MemoryWriter) -> KResult<Size> {
-        Ok(writer.write_region(self.into()).write_size)
+        Ok(writer.write_region(self.into())?.write_size)
     }
 }
 
 /// Copies the bytes into memory directly
 pub struct PlainMemoryWriter<'a> {
-    pub(super) memory: &'a MemoryInner,
+    pub(super) memory: &'a mut MemoryInner,
     /// current index of allocation entry
-    pub(super) alloc_entry_index: usize,
+    pub(super) page_index: usize,
     pub(super) offset: usize,
     pub(super) end_offset: usize,
 }
 
 impl PlainMemoryWriter<'_> {
+    fn current_page_offset(&self) -> usize {
+        self.offset % PAGE_SIZE
+    }
+
     fn remaining_write_capacity(&self) -> usize {
         self.end_offset - self.offset
     }
 
-    fn current_alloc_entry(&self) -> AllocationEntry {
-        self.memory.allocations[self.alloc_entry_index]
-    }
-
-    fn current_offset_ptr(&self) -> *mut u8 {
-        let dest_offset = self.offset - self.current_alloc_entry().offset;
-        unsafe {
-            self.current_alloc_entry().allocation.as_mut_ptr::<u8>().add(dest_offset)
-        }
-    }
-
-    pub fn push_usize_ptr(&mut self) -> Option<*mut usize> {
-        // number of bytes that need to be pushed for usize to be aligned
-        let align_amount = align_up(self.offset, size_of::<usize>()) - self.offset;
-
-        let bytes = [0u8; size_of::<usize>()];
-        let write_slice = &bytes[..align_amount];
-        if self.write_region(write_slice.into()).end_reached {
-            return None;
-        }
-
-        // this pointer will now be aligned
-        // since usize is size aligned, this will not span 2 pages, so it will be in a contigous allocation
-        let out = self.current_offset_ptr() as *mut usize;
-
-        if self.write_region(bytes.as_slice().into()).write_size.bytes() != size_of::<usize>() {
-            None
-        } else {
-            Some(out)
-        }
+    fn current_page(&mut self) -> KResult<&mut Page> {
+        self.memory.get_page_for_writing(self.page_index)
     }
 }
 
 impl MemoryWriter for PlainMemoryWriter<'_> {
-    fn write_region(&mut self, region: MemoryWriteRegion) -> WriteResult {
+    fn current_ptr(&mut self) -> KResult<*mut u8> {
+        unsafe {
+            Ok(self.current_page()?.allocation().as_mut_ptr::<u8>().add(self.current_page_offset()))
+        }
+    }
+
+    fn write_region(&mut self, region: MemoryWriteRegion) -> KResult<WriteResult> {
         let mut src_offset = 0;
 
-        let mut dest_offset = self.offset - self.current_alloc_entry().offset;
+        let mut dest_offset = self.current_page_offset();
 
         // amount written in this call of write_region
         let mut amount_written = 0;
 
         loop {
             if self.remaining_write_capacity() == 0 {
-                return WriteResult {
+                return Ok(WriteResult {
                     write_size: Size::from_bytes(amount_written),
                     end_reached: true,
-                };
+                });
             }
 
-            let mut allocation = self.current_alloc_entry().allocation;
+            let mut allocation = self.current_page()?.allocation();
 
-            let write_size = min(region.size() - src_offset, allocation.size() - dest_offset);
+            let write_size = min(region.size() - src_offset, PAGE_SIZE - dest_offset);
             let write_size = min(write_size, self.remaining_write_capacity());
 
             // when src offset is set, it is ensured to be less than the size of the zone
@@ -198,17 +207,71 @@ impl MemoryWriter for PlainMemoryWriter<'_> {
 
             if src_offset + write_size == region.size() {
                 // finished copying everything from memory zone
-                return WriteResult {
+                return Ok(WriteResult {
                     write_size: Size::from_bytes(amount_written),
                     end_reached: self.remaining_write_capacity() == 0,
-                };
+                });
             } else {
-                // finished consuming current alloc entry
-                self.alloc_entry_index += 1;
+                // finished writing to current page
+                self.page_index += 1;
 
                 dest_offset = 0;
                 src_offset += write_size;
             }
         }
+    }
+}
+
+struct PlainMemoryCopySrcInner<'a>(PlainMemoryWriter<'a>);
+
+impl PlainMemoryCopySrcInner<'_> {
+    fn current_page(&mut self) -> KResult<&Page> {
+        self.0.memory.get_page_for_reading(self.0.page_index)
+    }
+
+    fn size(&self) -> usize {
+        self.0.remaining_write_capacity()
+    }
+
+    fn copy_to(&mut self, writer: &mut impl MemoryWriter) -> KResult<Size> {
+        let mut write_size = Size::zero();
+
+        while self.0.remaining_write_capacity() != 0 {
+            let offset = self.0.current_page_offset();
+            let region_size = min(self.0.remaining_write_capacity(), PAGE_SIZE - offset);
+
+            let page = self.current_page()?;
+            let copy_region = UVirtRange::new(page.allocation().addr() + offset, region_size);
+            // safety: current_page ensures region is valid for reading
+            let region = unsafe { MemoryWriteRegion::from_vrange(copy_region) };
+
+            let result = writer.write_region(region)?;
+            write_size += result.write_size;
+            if result.end_reached {
+                break;
+            }
+        }
+
+        Ok(write_size)
+    }
+}
+
+pub struct PlainMemoryCopySrc<'a>(RefCell<PlainMemoryCopySrcInner<'a>>);
+
+impl<'a> From<PlainMemoryWriter<'a>> for PlainMemoryCopySrc<'a> {
+    fn from(value: PlainMemoryWriter<'a>) -> Self {
+        PlainMemoryCopySrc(
+            RefCell::new(PlainMemoryCopySrcInner(value)),
+        )
+    }
+}
+
+impl MemoryCopySrc for PlainMemoryCopySrc<'_> {
+    fn size(&self) -> usize {
+        self.0.borrow().size()
+    }
+
+    fn copy_to(&self, writer: &mut impl MemoryWriter) -> KResult<Size> {
+        self.0.borrow_mut().copy_to(writer)
     }
 }

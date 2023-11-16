@@ -3,7 +3,7 @@ use core::{ptr::NonNull, ptr, ops::Deref, mem::size_of};
 
 use rand_core::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use sys::AddressSpace;
+use sys::{AddressSpace, MemoryNewFlags};
 use sys::Allocator;
 use sys::CspaceTarget;
 use sys::EventPool;
@@ -148,9 +148,9 @@ impl MemoryCapStorage {
         let map_address = HIGHER_HALF_START + map_position * PAGE_SIZE;
 
         let mut memory = Memory::new(
-            CapFlags::all(),
             &this_context().allocator,
             Size::from_pages(1),
+            MemoryNewFlags::empty(),
         ).or(Err(AddrSpaceError::RegionListOom))?;
 
         this_context().address_space
@@ -158,6 +158,7 @@ impl MemoryCapStorage {
                 &memory,
                 map_address,
                 None,
+                Size::zero(),
                 MemoryMappingFlags::READ | MemoryMappingFlags::WRITE,
             ).or(Err(AddrSpaceError::RegionListOom))?;
 
@@ -180,12 +181,8 @@ impl MemoryCapStorage {
             return Err(AddrSpaceError::RegionListMaxSizeExceeded);
         }
 
-        this_context().address_space
-            .resize_memory(
-                &mut self.memory,
-                new_size,
-                MemoryResizeFlags::IN_PLACE | MemoryResizeFlags::GROW_MAPPING
-            ).or(Err(AddrSpaceError::RegionListOom))?;
+        self.memory.resize(new_size, MemoryResizeFlags::IN_PLACE | MemoryResizeFlags::GROW_MAPPING)
+            .or(Err(AddrSpaceError::RegionListOom))?;
 
         self.capacity = new_size.bytes() / size_of::<MappedRegion>();
 
@@ -556,9 +553,9 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
                     let size = size.as_aligned();
 
                     let memory = Memory::new(
-                        CapFlags::all(),
                         self.allocator,
-                        size
+                        size,
+                        MemoryNewFlags::empty(),
                     ).or(Err(AddrSpaceError::AnanamousMappingOom))?;
 
                     (Some(memory), size)
@@ -603,7 +600,7 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
         if let MappingTarget::Memory(memory) = &region.map_target {
             // TODO: have a way to not specify max size pages
             let result = self.address_space
-                .map_memory(&memory, address, Some(size), args.flags)
+                .map_memory(&memory, address, Some(size), Size::zero(), args.flags)
                 .map_err(|err| AddrSpaceError::MemorySyscallError(err));
 
             if let Err(err) = result {

@@ -5,7 +5,7 @@ use sys::{CapFlags, InitInfo, ProcessInitData, ProcessMemoryEntry, StackInfo};
 use elf::{ElfBytes, endian::NativeEndian, abi::{PT_LOAD, PF_R, PF_W, PF_X}};
 use aser::to_bytes_count_cap;
 
-use crate::{prelude::*, alloc::{root_alloc, root_alloc_page_ref, root_alloc_ref}, cap::{Capability, StrongCapability, memory::Memory, address_space::AddressSpace, capability_space::CapabilitySpace, WeakCapability}, sched::{ThreadGroup, Thread, ThreadStartMode}};
+use crate::{prelude::*, alloc::{root_alloc, root_alloc_page_ref, root_alloc_ref}, cap::{Capability, StrongCapability, memory::{Memory, PageSource, MapMemoryArgs}, address_space::AddressSpace, capability_space::CapabilitySpace, WeakCapability}, sched::{ThreadGroup, Thread, ThreadStartMode}};
 use crate::vmem_manager::PageMappingFlags;
 use crate::container::Arc;
 
@@ -107,10 +107,11 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
         assert!(page_aligned(address));
         assert!(size.is_page_aligned());
 
-        let memory = Arc::new(Memory::new(
+        let memory = Arc::new(Memory::new_with_page_source(
             root_alloc_page_ref(),
             root_alloc_ref(),
             size.pages_rounded(),
+            PageSource::OwnedZeroed,
         )?, root_alloc_ref())?;
 
         let memory_capability = StrongCapability::new_flags(
@@ -120,11 +121,15 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
 
         let memory_id = capability_space.insert_memory(Capability::Strong(memory_capability))?;
 
-        address_space.map_memory(
+        Memory::map_memory(
             memory.clone(),
-            VirtAddr::new(address),
-            Some(size),
-            flags,
+            address_space.clone(),
+            MapMemoryArgs {
+                map_addr: VirtAddr::new(address),
+                map_size: Some(size),
+                offset: Size::zero(),
+                flags,
+            },
         )?;
 
         let region = ProcessMemoryEntry {
@@ -174,14 +179,10 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
 
             let section_data = elf_data.segment_data(&phdr).unwrap();
 
-            let memory_inner = memory.inner_read();
+            let mut memory_inner = memory.inner_write();
 
-            unsafe {
-                memory_inner.zero();
-
-                let write_offset = phdr.p_vaddr as usize - map_range.as_usize();
-                memory_inner.copy_from(write_offset.., section_data)?;
-            }
+            let write_offset = phdr.p_vaddr as usize - map_range.as_usize();
+            memory_inner.copy_from(write_offset.., section_data)?;
         }
     }
 
@@ -203,7 +204,7 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
         PageMappingFlags::USER | PageMappingFlags::READ | PageMappingFlags::WRITE,
     ).expect("failed to map initrd memory");
 
-    initrd_memory.inner_read().copy_from(.., initrd)?;
+    initrd_memory.inner_write().copy_from(.., initrd)?;
 
 
     // create first thread
@@ -265,7 +266,7 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
 
 
     // write startup data to startup data memory
-    startup_data_memory.inner_read().copy_from(.., startup_data.as_slice())?;
+    startup_data_memory.inner_write().copy_from(.., startup_data.as_slice())?;
 
 
     // write pointers to stack
@@ -276,9 +277,9 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
         namespace_data_size,
     };
 
-    let stack_memory_inner = stack_memory.inner_read();
+    let mut stack_memory_inner = stack_memory.inner_write();
     let stack_memory_size = stack_memory_inner.size().bytes();
-    stack_memory.inner_read().copy_from(stack_memory_size - size_of::<StackInfo>().., bytes_of(&stack_info))?;
+    stack_memory_inner.copy_from(stack_memory_size - size_of::<StackInfo>().., bytes_of(&stack_info))?;
 
 
     // start the first thread

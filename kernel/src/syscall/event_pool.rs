@@ -1,7 +1,6 @@
 use sys::{CapFlags, EventPoolAwaitFlags};
 
 use crate::alloc::{HeapRef, PaRef};
-use crate::cap::address_space::AddressSpace;
 use crate::cap::{StrongCapability, Capability};
 use crate::cap::capability_space::CapabilitySpace;
 use crate::container::Arc;
@@ -61,7 +60,7 @@ pub fn event_pool_map(
         .get_event_pool_with_perms(event_pool_id, CapFlags::WRITE, weak_auto_destroy)?
         .into_inner();
 
-    AddressSpace::map_event_pool(&addr_space, addr, event_pool)
+    EventPool::map_event_pool(event_pool, addr_space, addr)
         .map(Size::pages_rounded)
 }
 
