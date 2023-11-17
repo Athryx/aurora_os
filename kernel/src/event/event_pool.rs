@@ -135,7 +135,7 @@ impl EventPool {
             AddrSpaceMapping::EventPool(
                 AddrSpaceEventPoolMapping {
                     event_pool: this.clone(),
-                    map_range: AVirtRange::new(address, max_size.pages_rounded()),
+                    map_range: AVirtRange::new(address, max_size.bytes()),
                 }
             ),
         )?;
@@ -146,25 +146,6 @@ impl EventPool {
         });
 
         Ok(max_size)
-    }
-
-    /// Tells the event pool where in memory it is mapped
-    /// 
-    /// Souldn't be used directly, use [`AddressSpace::map_event_pool`] instead
-    pub fn set_mapping_data(&self, address_space: Weak<AddressSpace>, address: VirtAddr) -> KResult<()> {
-        let mut inner = self.inner.lock();
-
-        if inner.mapping.is_some() {
-            // event pool is already mapped
-            Err(SysErr::InvlOp)
-        } else {
-            inner.mapping = Some(EventPoolMapping {
-                address_space,
-                mapped_address: address,
-            });
-
-            Ok(())
-        }
     }
 
     /// Unmaps the event pool from the address space it is currently mapped in memory
@@ -440,8 +421,11 @@ impl EventBuffer {
         let cap_id = reply_cap_id.unwrap_or(CapId::null()).into();
         write_usize(cap_id)?;
 
-        // panic safety: get writer ensures the writer is big enough
-        let write_size_ptr = inner_writer.push_usize_ptr()?.unwrap();
+        let (Some(write_size_ptr), ptr_write_size) = inner_writer.push_usize_ptr()? else {
+            // panic safety: get writer ensures the writer is big enough
+            panic!("could not write ptr to event pool buffer");
+        };
+        actual_write_size += ptr_write_size;
 
         let mut cap_writer = CapabilityWriter::new(cap_transfer_info, inner_writer);
         let event_write_size = event_data.copy_to(&mut cap_writer)?;

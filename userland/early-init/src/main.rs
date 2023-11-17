@@ -134,7 +134,6 @@ pub extern "C" fn _rust_startup(
         dprintln!("result: {result}");
     });
 
-
     /*let tmp = Test::D {
         bruh: 8,
         a: false,

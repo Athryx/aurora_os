@@ -90,6 +90,7 @@ pub fn cap_destroy(
         //CapType::Lock => call_cap_clone!(clone_),
         CapType::EventPool => { cspace.remove_event_pool(cap_id)?; },
         CapType::Channel => { cspace.remove_channel(cap_id)?; },
+        CapType::Reply => { cspace.remove_reply(cap_id)?; },
         //CapType::MessageCapacity => call_cap_clone!(clone_),
         CapType::Key => { cspace.remove_key(cap_id)?; },
         //CapType::Interrupt => call_cap_clone!(clone_),

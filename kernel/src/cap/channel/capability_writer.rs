@@ -35,6 +35,8 @@ impl<T: MemoryWriter> MemoryWriter for CapabilityWriter<'_, T> {
     }
 
     fn write_region(&mut self, mut region: MemoryWriteRegion) -> KResult<WriteResult> {
+        let mut write_size = Size::zero();
+
         if self.copy_count.is_none() {
             // initialize copy count if it is not initialized
             let Some(cap_count) = region.read_value::<usize>() else {
@@ -44,11 +46,11 @@ impl<T: MemoryWriter> MemoryWriter for CapabilityWriter<'_, T> {
                 });
             };
 
-            let Some(dst_count_ptr) = self.inner_writer.push_usize_ptr()? else {
+            let (ptr, ptr_write_size) = self.inner_writer.push_usize_ptr()?;
+            write_size += ptr_write_size;
+            let Some(dst_count_ptr) = ptr else {
                 return Ok(WriteResult {
-                    // FIXME: this is not technically accurate, a few bytes could have been written,
-                    // but effectively nothing was written
-                    write_size: Size::zero(),
+                    write_size,
                     end_reached: true,
                 })
             };
@@ -60,8 +62,6 @@ impl<T: MemoryWriter> MemoryWriter for CapabilityWriter<'_, T> {
                 cap_id_current_read_count: 0,
             });
         }
-
-        let mut write_size = Size::zero();
 
         // panic safety: this is ensured to be initialized at this point
         let copy_count = self.copy_count.as_mut().unwrap();

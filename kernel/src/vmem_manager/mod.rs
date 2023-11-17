@@ -271,8 +271,6 @@ impl VirtAddrSpace {
             get_bits(virt_addr, 12..21),
         ];
 
-        let depth = 4;
-
         let mut tables = [self.cr3.as_mut_ptr(), null_mut(), null_mut(), null_mut()];
 
         for a in 1..4 {
@@ -286,15 +284,15 @@ impl VirtAddrSpace {
         }
 
         // the index of the first entry in tables that needs to be deallocated
-        let mut dealloc_start_index = depth;
+        let mut dealloc_start_index = 4;
 
         let mut out = None;
         for i in (0..4).rev() {
             let current_table = unsafe {
                 if let Some(table) = tables[i].as_mut() {
-                    if i == 4 {
+                    if i == 3 {
                         // get addres of table we are unmapping
-                        out = Some(PhysAddr::new(table.get(page_table_indicies[i]) as usize));
+                        out = Some(VirtAddr::new(table.get(page_table_indicies[i]) as usize).to_phys());
                     }
                     table
                 } else {
@@ -305,7 +303,7 @@ impl VirtAddrSpace {
             current_table.remove(page_table_indicies[i]);
 
             if i != 0 && current_table.entry_count() == 0 {
-                dealloc_start_index = depth;
+                dealloc_start_index = i;
             } else {
                 // don't continue removing this page table unless we have deallocated this table 
                 break;

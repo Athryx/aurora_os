@@ -196,10 +196,16 @@ impl PageTable {
 	/// page tables cannot form a loop, it must be a tree
 	/// (so a page table cannot have itself added as a child entry)
 	pub unsafe fn add_entry(&mut self, index: usize, ptr: PageTablePointer) {
+		let mut entry_count = self.entry_count();
+
 		if !self.0[index].flags().present() {
-			self.inc_entry_count(1);
+			entry_count += 1;
 		}
+
 		self.0[index] = ptr;
+
+		// do this after setting pointer, because setting pointer for index 0 could overwrite count
+		self.set_entry_count(entry_count);
 	}
 
 	/// Returns a pointer to the page table at the given index, or null if it doesn't exist

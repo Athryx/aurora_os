@@ -82,7 +82,7 @@ macro_rules! create_event_types {
             }
 
             fn assert_aligned(&self) {
-                assert!(align_of(self.event_data.as_ptr() as usize) == size_of::<usize>());
+                assert!(align_of(self.event_data.as_ptr() as usize) >= size_of::<usize>());
                 assert!(self.event_data.len() % size_of::<usize>() == 0);
             }
 
@@ -103,6 +103,11 @@ macro_rules! create_event_types {
                 let out = try_from_bytes(data).ok()?;
                 Some(*out)
             }
+
+            fn make_aligned(&mut self) {
+                let align_amount = size_of::<usize>() - ((self.event_data.as_ptr() as usize) % size_of::<usize>());
+                self.take_bytes(align_amount).expect("could not align event parser");
+            }
         }
 
         #[derive(Debug)]
@@ -112,6 +117,7 @@ macro_rules! create_event_types {
             pub message_data: &'a [u8],
         }
 
+        #[derive(Debug)]
         pub enum EventParseResult<'a> {
             MessageRecieved(MessageRecievedEvent<'a>),
             Event(Event),
@@ -156,6 +162,8 @@ macro_rules! create_event_types {
                         let message_size = self.take()?;
 
                         let message_data = self.take_bytes(message_size)?;
+
+                        self.make_aligned();
 
                         Some(EventParseResult::MessageRecieved(MessageRecievedEvent {
                             event_id,

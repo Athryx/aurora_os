@@ -160,7 +160,10 @@ pub async fn run_rpc_service<T: RpcService>(
                     service.call(message.as_slice(), reply);
                 }
             },
-            _ = drop_future => break,
+            result = drop_future => {
+                result.expect("could not listen for drop check reciever");
+                break;
+            },
         }
     }
 }

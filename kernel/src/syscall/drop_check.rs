@@ -10,7 +10,6 @@ use super::options_weak_autodestroy;
 
 pub fn drop_check_new(options: u32, allocator_id: usize, data: usize) -> KResult<(usize, usize)> {
     let weak_auto_destroy = options_weak_autodestroy(options);
-    let flags = CapFlags::from_bits_truncate(get_bits(options as usize, 0..4));
 
     let _int_disable = IntDisable::new();
 
@@ -23,8 +22,8 @@ pub fn drop_check_new(options: u32, allocator_id: usize, data: usize) -> KResult
 
     let (drop_check, reciever) = drop_check_pair(data, alloc_ref)?;
 
-    let drop_check = StrongCapability::new_flags(drop_check, flags);
-    let reciever = StrongCapability::new_flags(reciever, flags);
+    let drop_check = StrongCapability::new_flags(drop_check, CapFlags::all());
+    let reciever = StrongCapability::new_flags(reciever, CapFlags::all());
 
     let drop_check_id = cspace.insert_drop_check(Capability::Strong(drop_check))?;
 

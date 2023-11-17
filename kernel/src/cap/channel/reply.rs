@@ -29,10 +29,10 @@ impl Reply {
         // this only need relaxed ordering, since the only guarentee we need is max 1 thread runs reply
         // other synchronizing of memory will occur insice of listener
         if self.reply_fired.swap(true, Ordering::Relaxed) {
-            self.reply_inner(src_buffer, src_cspace)
-        } else {
             // this reply has already been replied to
             Err(SysErr::InvlOp)
+        } else {
+            self.reply_inner(src_buffer, src_cspace)
         }
     }
 
