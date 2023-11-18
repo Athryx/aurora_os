@@ -20,6 +20,8 @@ mod key;
 use key::*;
 mod memory;
 use memory::*;
+mod mmio;
+use mmio::*;
 mod thread;
 use thread::*;
 mod thread_group;
@@ -251,8 +253,8 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		CAP_CLONE => sysret_1!(syscall_3!(cap_clone, vals), vals),
 		CAP_DESTROY => sysret_0!(syscall_2!(cap_destroy, vals), vals),
 		ADDRESS_SPACE_NEW => sysret_1!(syscall_1!(address_space_new, vals), vals),
+		ADDRESS_SPACE_UNMAP => sysret_0!(syscall_2!(address_space_unmap, vals), vals),
 		MEMORY_MAP => sysret_1!(syscall_5!(memory_map, vals), vals),
-		MEMORY_UNMAP => sysret_0!(syscall_2!(memory_unmap, vals), vals),
 		MEMORY_UPDATE_MAPPING => sysret_1!(syscall_3!(memory_update_mapping, vals), vals),
 		MEMORY_NEW => sysret_2!(syscall_2!(memory_new, vals), vals),
 		MEMORY_GET_SIZE => sysret_1!(syscall_1!(memory_get_size, vals), vals),
@@ -275,6 +277,8 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		DROP_CHECK_NEW => sysret_2!(syscall_2!(drop_check_new, vals), vals),
 		DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_SYNC => sysret_1!(syscall_2!(drop_check_reciever_handle_cap_drop_sync, vals), vals),
 		DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_ASYNC => sysret_0!(syscall_3!(drop_check_reciever_handle_cap_drop_async, vals), vals),
+		MMIO_ALLOCATOR_ALLOC => sysret_1!(syscall_4!(mmio_allocator_alloc, vals), vals),
+		PHYS_MEM_MAP => sysret_1!(syscall_3!(phys_mem_map, vals), vals),
         _ => vals.a1 = SysErr::InvlSyscall.num(),
     }
 }

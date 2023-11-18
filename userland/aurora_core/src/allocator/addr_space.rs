@@ -651,7 +651,7 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
         let map_size = self.address_space.map_event_pool(&args.event_pool, address)?;
         if map_size != size {
             // panic safety: this address was just mapped
-            self.address_space.unmap_memory(address).unwrap();
+            self.address_space.unmap(address).unwrap();
             return Err(AddrSpaceError::SizeMismatch);
         }
 
@@ -671,7 +671,7 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
             },
             Err(error) => {
                 // panic safety: this address was just mapped
-                self.address_space.unmap_memory(address).unwrap();
+                self.address_space.unmap(address).unwrap();
                 Err(error)
             }
         }
@@ -687,7 +687,7 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
         let region = self.remove_region(address)?;
 
         if !region.map_target.is_empty() {
-            self.address_space.unmap_memory(address)
+            self.address_space.unmap(address)
                 .expect("failed to unmap previously mapped memory");
         }
 

@@ -88,4 +88,14 @@ impl Allocation {
             self.copy_from_mem_offset(0, other)
         }
     }
+
+    pub unsafe fn zero(&mut self) {
+        let slice = self.as_mut_slice_ptr();
+
+        unsafe {
+            // TODO: figure out if this might need to be volatile
+            // safety: caller must ensure that this memory capability only stores userspace data expecting to be written to
+            ptr::write_bytes(slice.as_mut_ptr(), 0, slice.len());
+        }
+    }
 }

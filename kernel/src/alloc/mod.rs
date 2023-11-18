@@ -6,6 +6,7 @@ mod cap_allocator;
 mod fixed_page_allocator;
 mod heap_allocator;
 mod linked_list_allocator;
+mod mmio_allocator;
 mod page_allocator;
 mod pmem_manager;
 
@@ -13,9 +14,11 @@ pub use cap_allocator::CapAllocator;
 pub use heap_allocator::{HeapRef, HeapAllocator};
 use linked_list_allocator::LinkedListAllocator;
 pub use page_allocator::{PaRef, PageAllocator};
+pub use mmio_allocator::{MmioAllocator, PhysMem};
 use pmem_manager::PmemManager;
 use spin::Once;
 
+use crate::consts::KERNEL_PHYS_RANGE;
 use crate::container::Arc;
 use crate::mb2::MemoryMap;
 use crate::prelude::*;
@@ -71,12 +74,11 @@ pub fn root_alloc_page_ref() -> PaRef {
     PaRef::cap_allocator(root_alloc().clone().into())
 }
 
-
 /// Initilizes the memory allocation subsystem
 /// 
 /// # Safety
 /// Must call with a valid memory map
-pub unsafe fn init(mem_map: &MemoryMap) -> KResult<()> {
+pub unsafe fn init(mem_map: &MemoryMap) -> KResult<Arc<MmioAllocator>> {
         let mut total_pages = 0;
         PMEM_MANAGER.call_once(|| {
             let (pmem_manager, pages) = unsafe { PmemManager::new(mem_map) };
@@ -91,5 +93,17 @@ pub unsafe fn init(mem_map: &MemoryMap) -> KResult<()> {
                 .expect("failed to initilize root cap allocator")
         });
 
-        Ok(())
+        let mut mmio_allocator = MmioAllocator::new(root_alloc_ref());
+        for allocator in zm().allocers.iter() {
+            let allocator_phys_range = allocator.addr_range.to_phys().as_aligned();
+            mmio_allocator.add_reserved_region(allocator_phys_range)
+                .expect("failed to reserve region for mmio allocator");
+        }
+        mmio_allocator.add_reserved_region(*KERNEL_PHYS_RANGE)
+            .expect("failed to reserve kernel region for mmio allocator");
+
+        Ok(Arc::new(
+            mmio_allocator,
+            root_alloc_ref(),
+        )?)
 }

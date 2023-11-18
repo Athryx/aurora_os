@@ -5,7 +5,7 @@ use sys::{CapFlags, InitInfo, ProcessInitData, ProcessMemoryEntry, StackInfo};
 use elf::{ElfBytes, endian::NativeEndian, abi::{PT_LOAD, PF_R, PF_W, PF_X}};
 use aser::to_bytes_count_cap;
 
-use crate::{prelude::*, alloc::{root_alloc, root_alloc_page_ref, root_alloc_ref}, cap::{Capability, StrongCapability, memory::{Memory, PageSource, MapMemoryArgs}, address_space::AddressSpace, capability_space::CapabilitySpace, WeakCapability}, sched::{ThreadGroup, Thread, ThreadStartMode}};
+use crate::{prelude::*, alloc::{root_alloc, root_alloc_page_ref, root_alloc_ref, MmioAllocator}, cap::{Capability, StrongCapability, memory::{Memory, PageSource, MapMemoryArgs}, address_space::AddressSpace, capability_space::CapabilitySpace, WeakCapability}, sched::{ThreadGroup, Thread, ThreadStartMode}};
 use crate::vmem_manager::PageMappingFlags;
 use crate::container::Arc;
 
@@ -64,7 +64,7 @@ fn find_early_init_data(initrd: &[u8]) -> &[u8] {
 /// Parses the initrd and creates the early init process, which is the first userspace process
 /// 
 /// This code is not very robust for handling errors, but it doesn't need to be since if error occurs os will need to panic anyways
-pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
+pub fn start_early_init_process(initrd: &[u8], mmio_allocator: Arc<MmioAllocator>) -> KResult<()> {
     // create first process context, and insert needed capabilities
     let thread_group = Arc::new(
         ThreadGroup::new(root_alloc_page_ref(), root_alloc_ref()),
@@ -242,6 +242,9 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
         aslr_seed: EARLY_INIT_ASLR_SEED,
     };
 
+    let mmio_allocator_capability = StrongCapability::new_flags(mmio_allocator, CapFlags::all());
+    let mmio_allocator_id = capability_space.insert_mmio_allocator(Capability::Strong(mmio_allocator_capability))?;
+
 
     // create startup data for early-init
     let mut startup_data = Vec::new(root_alloc_ref());
@@ -252,10 +255,13 @@ pub fn start_early_init_process(initrd: &[u8]) -> KResult<()> {
     // append init info to startup data
     let init_info = InitInfo {
         initrd_address: INITRD_MAPPING_ADDRESS,
+        mmio_allocator: sys::MmioAllocator::from_cap_id(mmio_allocator_id).unwrap(),
     };
 
     let namespace_data: Vec<u8> = to_bytes_count_cap(&init_info)
         .expect("faield to serialize init info");
+    // make sure mmio allocator drop impl does not get called
+    core::mem::forget(init_info);
 
     let process_data_address = STARTUP_DATA_ADDRESS;
     let process_data_size = startup_data.len();

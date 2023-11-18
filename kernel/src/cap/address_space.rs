@@ -2,12 +2,12 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 use sys::CapType;
 
-use crate::alloc::{HeapRef, PaRef};
+use crate::alloc::{HeapRef, PaRef, PhysMem};
 use crate::consts;
 use crate::event::EventPool;
 use crate::prelude::*;
 use crate::sync::{IMutex, IMutexGuard};
-use crate::vmem_manager::VirtAddrSpace;
+use crate::vmem_manager::{VirtAddrSpace, PageMappingFlags};
 use crate::container::{Arc, HashMap};
 
 use super::memory::MemoryMappingLocation;
@@ -59,6 +59,30 @@ impl AddressSpace {
         self.inner.lock()
     }
 
+    pub fn unmap(&self, address: VirtAddr) -> KResult<()> {
+        let mut inner = self.inner();
+
+        let mapping = inner.mappings.get_mapping_from_address(address)
+            .ok_or(SysErr::InvlVirtAddr)?;
+
+        match mapping {
+            AddrSpaceMapping::Memory(mapping) => {
+                let memory = mapping.memory.clone();
+                drop(inner);
+                memory.unmap_memory(self, address)
+            },
+            AddrSpaceMapping::EventPool(mapping) => {
+                let event_pool = mapping.event_pool.clone();
+                drop(inner);
+                event_pool.unmap()
+            },
+            AddrSpaceMapping::PhysMem(mapping) => {
+                let phys_mem = mapping.phys_mem;
+                phys_mem.unmap(&mut inner, address)
+            },
+        }
+    }
+
     pub fn memory_at_addr(&self, address: VirtAddr) -> KResult<Arc<Memory>> {
         let inner = self.inner();
 
@@ -92,18 +116,30 @@ pub struct EventPoolMapping {
     pub map_range: AVirtRange,
 }
 
+/// Stores details about phys mem mapped in the address space
+#[derive(Debug, Clone)]
+pub struct PhysMemMapping {
+    pub phys_mem: PhysMem,
+    pub map_range: AVirtRange,
+    pub flags: PageMappingFlags,
+    pub map_id: MappingId,
+}
+
 /// Represents where in the address space a capability was mapped
 #[derive(Debug, Clone)]
 pub enum AddrSpaceMapping {
     Memory(MemoryMapping),
     EventPool(EventPoolMapping),
+    PhysMem(PhysMemMapping),
 }
 
 impl AddrSpaceMapping {
+    // FIXME: get rid of this, it only works for regular memory
     pub fn map_id(&self) -> MappingId {
         match self {
             Self::Memory(memory) => memory.mapping_id,
             Self::EventPool(event_pool) => event_pool.event_pool.id(),
+            Self::PhysMem(phys_mem) => phys_mem.map_id,
         }
     }
 
@@ -111,6 +147,7 @@ impl AddrSpaceMapping {
         match self {
             Self::Memory(memory) => memory.location.map_range(),
             Self::EventPool(event_pool) => event_pool.map_range,
+            Self::PhysMem(phys_mem) => phys_mem.map_range,
         }
     }
 

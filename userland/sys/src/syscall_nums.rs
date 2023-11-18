@@ -17,8 +17,9 @@ pub const CAP_CLONE: u32 = 11;
 pub const CAP_DESTROY: u32 = 12;
 
 pub const ADDRESS_SPACE_NEW: u32 = 13;
-pub const MEMORY_MAP: u32 = 14;
-pub const MEMORY_UNMAP: u32 = 15;
+pub const ADDRESS_SPACE_UNMAP: u32 = 14;
+
+pub const MEMORY_MAP: u32 = 15;
 pub const MEMORY_UPDATE_MAPPING: u32 = 16;
 pub const MEMORY_NEW: u32 = 17;
 pub const MEMORY_GET_SIZE: u32 = 18;
@@ -46,6 +47,9 @@ pub const DROP_CHECK_NEW: u32 = 40;
 pub const DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_SYNC: u32 = 41;
 pub const DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_ASYNC: u32 = 42;
 
+pub const MMIO_ALLOCATOR_ALLOC: u32 = 43;
+pub const PHYS_MEM_MAP: u32 = 44;
+
 pub fn syscall_name(syscall_num: u32) -> &'static str {
     match syscall_num {
         PRINT_DEBUG => "print_debug",
@@ -62,8 +66,8 @@ pub fn syscall_name(syscall_num: u32) -> &'static str {
         CAP_CLONE => "cap_clone",
         CAP_DESTROY => "cap_destroy",
         ADDRESS_SPACE_NEW => "address_space_new",
+        ADDRESS_SPACE_UNMAP => "address_space_unmap",
         MEMORY_MAP => "memory_map",
-        MEMORY_UNMAP => "memory_unmap",
         MEMORY_UPDATE_MAPPING => "memory_update_mapping",
         MEMORY_NEW => "memory_new",
         MEMORY_GET_SIZE => "memory_get_size",
@@ -86,6 +90,8 @@ pub fn syscall_name(syscall_num: u32) -> &'static str {
         DROP_CHECK_NEW => "drop_check_new",
         DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_SYNC => "drop_check_reciever_handle_cap_drop_sync",
         DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_ASYNC => "drop_check_reciever_handle_cap_drop_async",
+        MMIO_ALLOCATOR_ALLOC => "mmio_allocator_alloc",
+        PHYS_MEM_MAP => "phys_mem_map",
         _ => "invalid syscall",
     }
 }

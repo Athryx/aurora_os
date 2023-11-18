@@ -53,7 +53,7 @@ impl Iterator for SizeAlignedIter {
 }
 
 pub struct PmemManager {
-    allocers: &'static [PmemAllocator],
+    pub(super) allocers: &'static [PmemAllocator],
     next_index: AtomicUsize,
 }
 

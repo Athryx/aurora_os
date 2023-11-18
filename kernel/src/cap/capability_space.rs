@@ -7,7 +7,7 @@ use crate::event::{UserspaceBuffer, EventPool};
 use crate::sched::{ThreadGroup, Thread};
 use crate::{prelude::*, alloc::HeapRef};
 use crate::container::HashMap;
-use crate::alloc::CapAllocator;
+use crate::alloc::{CapAllocator, MmioAllocator, PhysMem};
 use crate::sync::IMutex;
 use crate::container::Arc;
 use super::address_space::AddressSpace;
@@ -38,6 +38,8 @@ pub struct CapabilitySpace {
     allocator_map: InnerCapMap<CapAllocator>,
     drop_check_map: InnerCapMap<DropCheck>,
     drop_check_reciever_map: InnerCapMap<DropCheckReciever>,
+    mmio_allocator_map: InnerCapMap<MmioAllocator>,
+    phys_mem_map: InnerCapMap<PhysMem>,
 }
 
 impl CapabilitySpace {
@@ -55,7 +57,9 @@ impl CapabilitySpace {
             reply_map: IMutex::new(HashMap::new(allocator.clone())),
             allocator_map: IMutex::new(HashMap::new(allocator.clone())),
             drop_check_map: IMutex::new(HashMap::new(allocator.clone())),
-            drop_check_reciever_map: IMutex::new(HashMap::new(allocator)),
+            drop_check_reciever_map: IMutex::new(HashMap::new(allocator.clone())),
+            mmio_allocator_map: IMutex::new(HashMap::new(allocator.clone())),
+            phys_mem_map: IMutex::new(HashMap::new(allocator)),
         }
     }
 
@@ -239,6 +243,8 @@ generate_cap_methods!(CapabilitySpace, Reply, reply_map, reply);
 generate_cap_methods!(CapabilitySpace, CapAllocator, allocator_map, allocator);
 generate_cap_methods!(CapabilitySpace, DropCheck, drop_check_map, drop_check);
 generate_cap_methods!(CapabilitySpace, DropCheckReciever, drop_check_reciever_map, drop_check_reciever);
+generate_cap_methods!(CapabilitySpace, MmioAllocator, mmio_allocator_map, mmio_allocator);
+generate_cap_methods!(CapabilitySpace, PhysMem, phys_mem_map, phys_mem);
 
 impl CapabilitySpace {
     /// Gets a userspace buffer from the given memory id and size and offset

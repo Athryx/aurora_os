@@ -14,7 +14,7 @@ use crate::{
     sysret_1,
 };
 use crate::syscall_nums::*;
-use super::{Capability, Allocator, Memory, EventPool, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
+use super::{Capability, Allocator, Memory, EventPool, PhysMem, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AddressSpace(CapId);
@@ -92,10 +92,22 @@ impl AddressSpace {
         }
     }
 
-    pub fn unmap_memory(&self, address: usize) -> KResult<()> {
+    pub fn map_phys_mem(&self, phys_mem: &PhysMem, address: usize, flags: MemoryMappingFlags) -> KResult<Size> {
+        unsafe {
+            sysret_1!(syscall!(
+                PHYS_MEM_MAP,
+                flags.bits() | WEAK_AUTO_DESTROY,
+                self.as_usize(),
+                phys_mem.as_usize(),
+                address
+            )).map(Size::from_pages)
+        }
+    }
+
+    pub fn unmap(&self, address: usize) -> KResult<()> {
         unsafe {
             sysret_0!(syscall!(
-                MEMORY_UNMAP,
+                ADDRESS_SPACE_UNMAP,
                 WEAK_AUTO_DESTROY,
                 self.as_usize(),
                 address

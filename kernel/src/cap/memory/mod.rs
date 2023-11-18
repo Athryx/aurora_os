@@ -23,7 +23,7 @@ pub struct Memory {
 impl Memory {
     /// Returns an error is pages is size 0
     pub fn new_with_page_source(
-        page_allocator: PaRef,
+        mut page_allocator: PaRef,
         heap_allocator: HeapRef,
         page_count: usize,
         page_source: PageSource,
@@ -36,9 +36,7 @@ impl Memory {
 
         let mut pages = Vec::try_with_capacity(heap_allocator.clone(), page_count)?;
 
-        for _ in 0..page_count {
-            pages.push(page_source.get_page_data(&page_allocator)?)?;
-        }
+        pages.extend(page_source.create_pages(page_count, &mut page_allocator)?)?;
 
         let inner = MemoryInner {
             pages,
@@ -452,42 +450,6 @@ impl MemoryInner {
         }
     }
 
-    /// Deallocs all pages after the given size
-    /// 
-    /// # Safety
-    /// 
-    /// The pages which are dealloced must not be mapped
-    unsafe fn truncates_pages_to_size(&mut self, size: usize) {
-        while self.pages.len() > size {
-            self.pages.pop().unwrap();
-        }
-    }
-
-    /// Extends the backing pages to be the new size
-    unsafe fn extend_page_count(
-        &mut self,
-        new_page_count: usize,
-        page_source: PageSource,
-    ) -> KResult<()> {
-        let old_page_count = self.pages.len();
-
-        while self.pages.len() < new_page_count {
-            let page_add_result: KResult<()> = try {
-                self.pages.push(page_source.get_page_data(&self.page_allocator)?)?;
-            };
-
-            if let Err(error) = page_add_result {
-                unsafe {
-                    self.truncates_pages_to_size(old_page_count);
-                }
-
-                return Err(error)
-            }
-        }
-
-        Ok(())
-    }
-
     /// Resizes the memory to hav `new_page_count` pages
     /// 
     /// New pages will be filled with the page source
@@ -507,13 +469,10 @@ impl MemoryInner {
         let new_size = Size::try_from_pages(new_page_count).ok_or(SysErr::Overflow)?;
 
         if new_size > self.size {
-            unsafe {
-                self.extend_page_count(new_page_count, page_source)?;
-            }
+            let increase_amount = new_page_count - self.pages.len();
+            self.pages.extend(page_source.create_pages(increase_amount, &mut self.page_allocator)?)?;
         } else if new_size < self.size {
-            unsafe {
-                self.truncates_pages_to_size(new_page_count);
-            }
+            self.pages.truncate(new_page_count);
         }
 
         self.size = new_size;

@@ -61,13 +61,7 @@ impl Page {
     }
 
     pub unsafe fn zero(&mut self) {
-        let slice = self.allocation.as_mut_slice_ptr();
-
-        unsafe {
-            // TODO: figure out if this might need to be volatile
-            // safety: caller must ensure that this memory capability only stores userspace data expecting to be written to
-            ptr::write_bytes(slice.as_mut_ptr(), 0, slice.len());
-        }
+        unsafe { self.allocation.zero() }
     }
 }
 
@@ -108,6 +102,95 @@ impl PageSource {
             }
             PageSource::LazyAlloc => Ok(PageData::LazyAlloc),
             PageSource::LazyZeroAlloc => Ok(PageData::LazyZeroAlloc),
+        }
+    }
+}
+
+pub enum NewPageIter<'a> {
+    Alloced {
+        allocation: Allocation,
+        allocator: &'a PaRef,
+        offset: usize,
+    },
+    LazyAlloc {
+        remaining_count: usize,
+    },
+    LazyAllocZeroed {
+        remaining_count: usize,
+    },
+}
+
+impl Iterator for NewPageIter<'_> {
+    type Item = PageData;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self {
+            Self::Alloced {
+                allocation,
+                allocator,
+                offset,
+            } => {
+                if *offset >= allocation.size() {
+                    None
+                } else {
+                    let mut out_allocation = Allocation::new(
+                        allocation.as_usize() + *offset,
+                        PAGE_SIZE,
+                    );
+                    out_allocation.zindex = allocation.zindex;
+                    *offset += PAGE_SIZE;
+                    Some(PageData::Owned(Page {
+                        allocation: out_allocation,
+                        allocator: allocator.clone(),
+                    }))
+                }
+            },
+            Self::LazyAlloc { remaining_count } => {
+                if *remaining_count > 0 {
+                    *remaining_count -= 1;
+                    Some(PageData::LazyAlloc)
+                } else {
+                    None
+                }
+            },
+            Self::LazyAllocZeroed { remaining_count } => {
+                if *remaining_count > 0 {
+                    *remaining_count -= 1;
+                    Some(PageData::LazyZeroAlloc)
+                } else {
+                    None
+                }
+            },
+        }
+    }
+}
+
+impl PageSource {
+    pub fn create_pages<'a>(&self, page_count: usize, allocator: &'a mut PaRef) -> KResult<NewPageIter<'a>> {
+        match self {
+            Self::Owned => {
+                Ok(NewPageIter::Alloced {
+                    allocation: allocator.alloc(PageLayout::from_size_align(page_count * PAGE_SIZE, PAGE_SIZE).unwrap())
+                        .ok_or(SysErr::OutOfMem)?,
+                    allocator,
+                    offset: 0,
+                })
+            },
+            Self::OwnedZeroed => {
+                let mut allocation = allocator.alloc(PageLayout::from_size_align(page_count * PAGE_SIZE, PAGE_SIZE).unwrap())
+                    .ok_or(SysErr::OutOfMem)?;
+                unsafe {
+                    allocation.zero();
+                }
+
+                Ok(NewPageIter::Alloced {
+                    allocation,
+                    allocator,
+                    offset: 0,
+                })
+            },
+            Self::LazyAlloc => Ok(NewPageIter::LazyAlloc { remaining_count: page_count }),
+            Self::LazyZeroAlloc => Ok(NewPageIter::LazyAllocZeroed { remaining_count: page_count }),
         }
     }
 }

@@ -287,6 +287,29 @@ impl<T> Vec<T> {
         unsafe { ptr::swap(a_ptr, b_ptr); }
     }
 
+    pub fn truncate(&mut self, len: usize) {
+        while self.len() > len {
+            self.pop();
+        }
+    }
+
+    pub fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) -> KResult<()> {
+        let old_len = self.len();
+
+        let result: KResult<()> = try {
+            for item in iter {
+                self.push(item)?;
+            }
+        };
+
+        if result.is_err() {
+            self.truncate(old_len);
+            result
+        } else {
+            Ok(())
+        }
+    }
+
     pub fn iter(&self) -> Iter<T> {
         self.as_slice().iter()
     }

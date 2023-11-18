@@ -32,8 +32,9 @@ pub enum CapType {
     DropCheckReciever = 16,
     RootOom = 17,
     MmioAllocator = 18,
-    IntAllocator = 19,
-    PortAllocator = 20,
+    PhysMem = 19,
+    IntAllocator = 20,
+    PortAllocator = 21,
 }
 
 impl CapType {
@@ -57,8 +58,9 @@ impl CapType {
             16 => Self::DropCheckReciever,
             17 => Self::RootOom,
             18 => Self::MmioAllocator,
-            19 => Self::IntAllocator,
-            20 => Self::PortAllocator,
+            19 => Self::PhysMem,
+            20 => Self::IntAllocator,
+            21 => Self::PortAllocator,
             _ => return None,
         })
     }

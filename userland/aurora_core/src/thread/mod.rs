@@ -4,7 +4,7 @@ use core::mem::size_of;
 use core::ptr;
 use alloc::{sync::Arc, string::String};
 
-use sys::syscall_nums::{MEMORY_UNMAP, THREAD_DESTROY};
+use sys::syscall_nums::{ADDRESS_SPACE_UNMAP, THREAD_DESTROY};
 use sys::{CapId, Capability, Thread as SysThread, MemoryMappingFlags, SysErr};
 
 mod thread_local_data;
@@ -238,7 +238,7 @@ pub fn exit() -> ! {
             ThreadLocalData::dealloc();
         }
 
-        thread_exit_asm(MEMORY_UNMAP, address_space_id, stack_address, transient_pointer, THREAD_DESTROY);
+        thread_exit_asm(ADDRESS_SPACE_UNMAP, address_space_id, stack_address, transient_pointer, THREAD_DESTROY);
     }
 }
 

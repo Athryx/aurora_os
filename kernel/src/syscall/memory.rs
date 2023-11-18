@@ -38,6 +38,36 @@ pub fn address_space_new(options: u32, allocator_id: usize) -> KResult<usize> {
     Ok(cap_id.into())
 }
 
+/// Unmaps anything mapped in an address space
+/// 
+/// the cap id for `memory` is looked up in the `process` argument, not the current process
+/// 
+/// NOTE: weak_auto_destroy option does not currently apply to the memory capability
+///
+/// # Required Capability Permissions
+/// `process`: cap_write
+///
+/// # Syserr Code
+/// InvlOp: `mem` is not mapped into `process` address space
+/// InvlWeak: `mem` is a weak capability
+// FIXME: make work with event pool and rename
+pub fn address_space_unmap(
+    options: u32,
+    addr_space_id: usize,
+    address: usize,
+) -> KResult<()> {
+    let weak_auto_destroy = options_weak_autodestroy(options);
+    let address = VirtAddr::try_new_aligned(address)?;
+
+    let _int_disable = IntDisable::new();
+
+    let addr_space = CapabilitySpace::current()
+        .get_address_space_with_perms(addr_space_id, CapFlags::WRITE, weak_auto_destroy)?
+        .into_inner();
+
+    addr_space.unmap(address)
+}
+
 /// Allocate a memory capability at least `pages` big
 /// 
 /// returns the capability referencing the memory
@@ -189,38 +219,6 @@ pub fn memory_map(
         offset,
         flags: map_flags,
     }).map(Size::pages_rounded)
-}
-
-/// Unmaps memory mapped by [`memory_map`]
-/// 
-/// the cap id for `memory` is looked up in the `process` argument, not the current process
-/// 
-/// NOTE: weak_auto_destroy option does not currently apply to the memory capability
-///
-/// # Required Capability Permissions
-/// `process`: cap_write
-///
-/// # Syserr Code
-/// InvlOp: `mem` is not mapped into `process` address space
-/// InvlWeak: `mem` is a weak capability
-// FIXME: make work with event pool and rename
-pub fn memory_unmap(
-    options: u32,
-    addr_space_id: usize,
-    address: usize,
-) -> KResult<()> {
-    let weak_auto_destroy = options_weak_autodestroy(options);
-    let address = VirtAddr::try_new_aligned(address)?;
-
-    let _int_disable = IntDisable::new();
-
-    let addr_space = CapabilitySpace::current()
-        .get_address_space_with_perms(addr_space_id, CapFlags::WRITE, weak_auto_destroy)?
-        .into_inner();
-
-    let memory = addr_space.memory_at_addr(address)?;
-
-    memory.unmap_memory(&addr_space, address)
 }
 
 /// Updates memory mappings created by [`memory_map`]

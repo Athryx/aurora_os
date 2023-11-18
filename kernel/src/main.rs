@@ -78,9 +78,9 @@ fn init(boot_info_addr: usize) -> KResult<()> {
 
     let boot_info = unsafe { BootInfo::new(boot_info_addr) };
 
-    unsafe {
-        alloc::init(&boot_info.memory_map)?;
-    }
+    let mmio_allocator = unsafe {
+        alloc::init(&boot_info.memory_map)?
+    };
 
     // initialize the cpu local data
     gs_data::init(Prid::from(0));
@@ -108,7 +108,7 @@ fn init(boot_info_addr: usize) -> KResult<()> {
 
     apic::smp_init(&ap_apic_ids)?;
 
-    start_userspace::start_early_init_process(boot_info.initrd)
+    start_userspace::start_early_init_process(boot_info.initrd, mmio_allocator)
 }
 
 /// Rust entry point of the kernel on the startup core
