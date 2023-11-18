@@ -224,22 +224,29 @@ pub fn exit() -> ! {
         // we are the last thread exiting, exit process
         process::exit();
     } else {
-        // this is a thread local variable, must call before deallocating thread local data
-        let stack_address = current().0.stack_region_address;
-
-        let transient_pointer = addr_space().unmap_transient(stack_address)
-            .expect("failed to transiently unmap stack address")
-            .expect("failed to transiently unmap stack address");
-
-        let address_space_id = this_context().address_space.as_usize();
-
-        // safety: thread local data is assumed to be initialized, and it is no longer use beyond this point
-        unsafe {
-            ThreadLocalData::dealloc();
-        }
-
-        thread_exit_asm(ADDRESS_SPACE_UNMAP, address_space_id, stack_address, transient_pointer, THREAD_DESTROY);
+        exit_thread_only();
     }
+}
+
+/// Exits the calling thread
+/// 
+/// Will not exit the thread group, even if this is the last thread
+pub fn exit_thread_only() -> ! {
+    // this is a thread local variable, must call before deallocating thread local data
+    let stack_address = current().0.stack_region_address;
+
+    let transient_pointer = addr_space().unmap_transient(stack_address)
+        .expect("failed to transiently unmap stack address")
+        .expect("failed to transiently unmap stack address");
+
+    let address_space_id = this_context().address_space.as_usize();
+
+    // safety: thread local data is assumed to be initialized, and it is no longer use beyond this point
+    unsafe {
+        ThreadLocalData::dealloc();
+    }
+
+    thread_exit_asm(ADDRESS_SPACE_UNMAP, address_space_id, stack_address, transient_pointer, THREAD_DESTROY);
 }
 
 #[naked]

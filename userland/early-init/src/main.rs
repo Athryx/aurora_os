@@ -13,12 +13,11 @@ use core::arch::asm;
 use core::panic::PanicInfo;
 use core::slice;
 
-use serde::{Serialize, Deserialize};
 use aurora::prelude::*;
-use aurora::process::{exit, Command};
+use aurora::process::{self, Command};
+use aurora::thread;
 use aser::from_bytes;
 use sys::InitInfo;
-use arpc::{arpc_interface, arpc_impl};
 use fs_server::{Fs, FsAsync};
 
 mod initrd;
@@ -27,7 +26,7 @@ mod initrd;
 fn panic(info: &PanicInfo) -> ! {
     dprintln!("{}", info);
 
-    exit();
+    process::exit();
 }
 
 #[naked]
@@ -44,47 +43,6 @@ pub extern "C" fn _aurora_startup() {
         )
     }
 }
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-struct Test2 {
-    a: usize,
-    b: usize,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-struct Test3 {
-    a: usize,
-}
-
-#[arpc_interface(service_id = 0, name = "Add")]
-trait AddService {
-    fn add(&self, a: usize, b: usize) -> usize;
-}
-
-struct Adder;
-
-#[arpc_impl]
-impl AddService for Adder {
-    fn add(&self, a: usize, b: usize) -> usize {
-        a + b
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-enum Test {
-    A,
-    B(i32),
-    C(u8, u8),
-    D {
-        bruh: u8,
-        a: bool,
-        hi: i128,
-    }
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-struct New(Test);
-
 
 #[no_mangle]
 pub extern "C" fn _rust_startup(
@@ -134,34 +92,7 @@ pub extern "C" fn _rust_startup(
         dprintln!("result: {result}");
     });
 
-    /*let tmp = Test::D {
-        bruh: 8,
-        a: false,
-        hi: 12309470182309128,
-    };
-    //let tmp = Test::B(69);
-    //let tmp = Test::A;
-    let result: Vec<u8> = aser::to_bytes(&New(tmp), 0).unwrap();
-    dprintln!("test to bytes {:?}", result);
-    let tmp: New = aser::from_bytes(&result).unwrap();
-    dprintln!("test from bytes {:?}", tmp);
-    let value: aser::Value = aser::from_bytes(&result).unwrap();
-    dprintln!("value from bytes {:?}", value);
-    let value2 = aser::Value::from_serialize(&tmp);
-    dprintln!("value from test {:?}", value2);
-    let test2: New = value.into_deserialize().unwrap();
-    dprintln!("test from value {:?}", test2);*/
-
-    /*let tmp = Test2 {
-        a: 1,
-        b: 69,
-    };
-    let result: Vec<u8> = aser::to_bytes(&tmp, 0).unwrap();
-    let tmp2: Test3 = aser::from_bytes(&result).unwrap();
-    dprintln!("{tmp2:?}");*/
-
-    // TODO: exit thread
     // can't use regular process exit here because that will terminate root thread group,
     // and kill every thread and process on the system
-    loop { core::hint::spin_loop(); }
+    thread::exit_thread_only();
 }

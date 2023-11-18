@@ -224,8 +224,6 @@ impl<'a, B: ByteBuf> ser::Serializer for &'a mut Serializer<B> {
     fn serialize_str(self, v: &str) -> Result<Self::Ok, Self::Error> {
         let data = v.as_bytes();
 
-        sys::dprintln!("len: {}", data.len());
-
         push_correct_size_type!(
             self,
             data.len(),

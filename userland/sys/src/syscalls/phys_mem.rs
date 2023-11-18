@@ -3,14 +3,9 @@ use serde::{Serialize, Deserialize};
 use crate::{
     CapId,
     CapType,
-    CapFlags,
-    KResult,
     CspaceTarget,
-    syscall,
-    sysret_1,
 };
-use crate::syscall_nums::*;
-use super::{Capability, Allocator, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
+use super::{Capability, cap_destroy};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PhysMem(CapId);
