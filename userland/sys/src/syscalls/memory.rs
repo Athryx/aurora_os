@@ -19,7 +19,7 @@ use super::{Capability, Allocator, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID
 pub struct Memory {
     id: CapId,
     /// Size of memory, None if not known
-    pub(super) size: Option<Size>,
+    size: Option<Size>,
 }
 
 impl Capability for Memory {

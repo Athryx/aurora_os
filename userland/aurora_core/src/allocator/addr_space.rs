@@ -3,7 +3,7 @@ use core::{ptr::NonNull, ptr, ops::Deref, mem::size_of};
 
 use rand_core::{RngCore, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use sys::{AddressSpace, MemoryNewFlags};
+use sys::{AddressSpace, MemoryNewFlags, PhysMem};
 use sys::Allocator;
 use sys::CspaceTarget;
 use sys::EventPool;
@@ -61,6 +61,7 @@ pub struct RegionPadding {
 pub enum MappingTarget {
     Memory(Memory),
     EventPool(EventPool),
+    PhysMem(PhysMem),
     Empty,
 }
 
@@ -535,6 +536,20 @@ pub struct MapEventPoolResult {
     pub size: Size,
 }
 
+#[derive(Debug)]
+pub struct MapPhysMemArgs {
+    pub phys_mem: PhysMem,
+    pub flags: MemoryMappingFlags,
+    pub address: Option<usize>,
+    pub padding: RegionPadding,
+}
+
+#[derive(Debug)]
+pub struct MapPhysMemResult {
+    pub address: usize,
+    pub size: Size,
+}
+
 impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
     /// Maps memory into the address space, see [`MapMemoryArgs`] for more details
     // FIXME: check if padding goes below zero or above max userspace address, or non canonical address
@@ -665,6 +680,64 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
         match self.insert_region(region) {
             Ok(_) => {
                 Ok(MapEventPoolResult {
+                    address,
+                    size,
+                })
+            },
+            Err(error) => {
+                // panic safety: this address was just mapped
+                self.address_space.unmap(address).unwrap();
+                Err(error)
+            }
+        }
+    }
+
+    pub fn map_phys_mem(&mut self, mut args: MapPhysMemArgs) -> Result<MapPhysMemResult, AddrSpaceError> {
+        self.await_transient_region_unmap();
+
+        let padding = args.padding;
+        let size = args.phys_mem.size()?;
+
+        let region_size: Option<usize> = try {
+            size.bytes_aligned()
+                .checked_add(padding.start.bytes_aligned())?
+                .checked_add(padding.end.bytes_aligned())?
+        };
+        let region_size = region_size.ok_or(AddrSpaceError::Overflow)?;
+
+        if region_size == 0 {
+            return Err(AddrSpaceError::ZeroSizeMapping);
+        }
+
+        let address = match args.address {
+            Some(address) => {
+                if !self.is_region_free(address, size, args.padding) {
+                    return Err(AddrSpaceError::MappingOverlap);
+                }
+
+                address
+            },
+            None => self.find_map_address(size, args.padding)?,
+        };
+
+
+        let map_size = self.address_space.map_phys_mem(&args.phys_mem, address, args.flags)?;
+        if map_size != size {
+            // panic safety: this address was just mapped
+            self.address_space.unmap(address).unwrap();
+            return Err(AddrSpaceError::SizeMismatch);
+        }
+
+        let region = MappedRegion {
+            map_target: MappingTarget::PhysMem(args.phys_mem),
+            address,
+            size,
+            padding,
+        };
+
+        match self.insert_region(region) {
+            Ok(_) => {
+                Ok(MapPhysMemResult {
                     address,
                     size,
                 })

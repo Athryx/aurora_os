@@ -279,6 +279,7 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_ASYNC => sysret_0!(syscall_3!(drop_check_reciever_handle_cap_drop_async, vals), vals),
 		MMIO_ALLOCATOR_ALLOC => sysret_1!(syscall_4!(mmio_allocator_alloc, vals), vals),
 		PHYS_MEM_MAP => sysret_1!(syscall_3!(phys_mem_map, vals), vals),
+		PHYS_MEM_GET_SIZE => sysret_1!(syscall_1!(phys_mem_get_size, vals), vals),
         _ => vals.a1 = SysErr::InvlSyscall.num(),
     }
 }

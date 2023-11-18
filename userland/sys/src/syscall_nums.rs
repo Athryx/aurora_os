@@ -49,6 +49,7 @@ pub const DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_ASYNC: u32 = 42;
 
 pub const MMIO_ALLOCATOR_ALLOC: u32 = 43;
 pub const PHYS_MEM_MAP: u32 = 44;
+pub const PHYS_MEM_GET_SIZE: u32 = 45;
 
 pub fn syscall_name(syscall_num: u32) -> &'static str {
     match syscall_num {
@@ -92,6 +93,7 @@ pub fn syscall_name(syscall_num: u32) -> &'static str {
         DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_ASYNC => "drop_check_reciever_handle_cap_drop_async",
         MMIO_ALLOCATOR_ALLOC => "mmio_allocator_alloc",
         PHYS_MEM_MAP => "phys_mem_map",
+        PHYS_MEM_GET_SIZE => "phys_mem_get_size",
         _ => "invalid syscall",
     }
 }

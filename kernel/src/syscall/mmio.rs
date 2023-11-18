@@ -78,3 +78,15 @@ pub fn phys_mem_map(options: u32, addr_space_id: usize, phys_mem_id: usize, addr
     phys_mem.map(&addr_space, address, map_flags)
         .map(Size::pages_rounded)
 }
+
+pub fn phys_mem_get_size(options: u32, phys_mem_id: usize) -> KResult<usize> {
+    let weak_auto_destroy = options_weak_autodestroy(options);
+
+    let _int_disable = IntDisable::new();
+
+    let phys_mem = CapabilitySpace::current()
+        .get_phys_mem_with_perms(phys_mem_id, CapFlags::READ, weak_auto_destroy)?
+        .into_inner();
+
+    Ok(phys_mem.size().pages_rounded())
+}

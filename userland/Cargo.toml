@@ -5,6 +5,7 @@ resolver = "2"
 members = [
   "early-init",
   "fs-server",
+  "hwaccess-server",
   "arpc",
   "arpc_derive",
   "aser",

@@ -120,6 +120,10 @@ impl PhysMem {
         Ok(())
     }
 
+    pub fn size(&self) -> Size {
+        Size::from_bytes(self.region.size())
+    }
+
     fn iter_mapping(&self, address: VirtAddr, flags: PageMappingFlags) -> impl Iterator<Item = MapAction> + Clone {
         let map_page_count = self.region.page_size();
         let phys_addr = self.region.addr();

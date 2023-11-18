@@ -49,7 +49,7 @@ impl MmioAllocator {
         };
 
         let cap_id = CapId::try_from(cap_id).expect(INVALID_CAPID_MESSAGE);
-        Ok(PhysMem::from_cap_id(cap_id).expect(INVALID_CAPID_MESSAGE))
+        Ok(PhysMem::from_capid_size(cap_id, Some(size)).expect(INVALID_CAPID_MESSAGE))
     }
 }
 

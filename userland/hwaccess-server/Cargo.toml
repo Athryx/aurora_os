@@ -1,0 +1,20 @@
+[package]
+name = "hwaccess-server"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+std = { path = "../std" }
+aurora = { path = "../aurora" }
+asynca = { path = "../asynca" }
+arpc = { path = "../arpc" }
+sys = { path = "../sys" }
+serde = { version = "1.0.163", default-features = false, features = ["alloc", "derive"] }
+
+[panic.dev]
+panic = "abort"
+
+[panic.release]
+panic = "abort"
