@@ -30,10 +30,12 @@ impl InitrdEntry {
 
 const PART_LIST_TYPE: u64 = 2;
 const FS_SERVER_TYPE: u64 = 3;
+const HWACCESS_SERVER_TYPE: u64 = 4;
 
 pub struct InitrdData {
     pub part_list: &'static [u8],
     pub fs_server: &'static [u8],
+    pub hwaccess_server: &'static [u8],
 }
 
 /// Gets relevant information from the initrd
@@ -57,6 +59,7 @@ pub unsafe fn parse_initrd(initrd_address: usize) -> InitrdData {
 
     let mut part_list = None;
     let mut fs_server = None;
+    let mut hwaccess_server = None;
 
     for entry in entries {
         match entry.typ {
@@ -66,6 +69,9 @@ pub unsafe fn parse_initrd(initrd_address: usize) -> InitrdData {
             FS_SERVER_TYPE => {
                 fs_server = Some(entry.data(initrd_address));
             },
+            HWACCESS_SERVER_TYPE => {
+                hwaccess_server = Some(entry.data(initrd_address));
+            },
             _ => (),
         }
     }
@@ -73,5 +79,6 @@ pub unsafe fn parse_initrd(initrd_address: usize) -> InitrdData {
     InitrdData {
         part_list: part_list.expect("no partition list found in initrd"),
         fs_server: fs_server.expect("no fs server found in initrd"),
+        hwaccess_server: hwaccess_server.expect("no hwaccess server found in initrd"),
     }
 }

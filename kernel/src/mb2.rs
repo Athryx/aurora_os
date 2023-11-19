@@ -1,6 +1,7 @@
 use core::slice::{self, Iter};
 
-use bytemuck::{bytes_of, Pod, Zeroable};
+use bytemuck::{Pod, Zeroable};
+use sys::Rsdp;
 
 use crate::acpi::rsdt::Rsdt;
 use crate::consts;
@@ -40,7 +41,7 @@ enum Mb2Elem<'a> {
     End,
     Module(WithTrailer<'a, Mb2Module>),
     MemoryMap(WithTrailer<'a, Mb2MemoryMapHeader>),
-    RsdpOld(Mb2RsdpOld),
+    RsdpOld(Rsdp),
     Other(TagHeader),
 }
 
@@ -201,35 +202,12 @@ impl WithTrailer<'_, Mb2Module> {
     }
 }
 
-#[repr(C, packed)]
-#[derive(Debug, Clone, Copy, Pod, Zeroable)]
-struct Mb2RsdpOld {
-    signature: [u8; 8],
-    checksum: u8,
-    oemid: [u8; 6],
-    revision: u8,
-    rsdt_addr: u32,
-}
-
-impl Mb2RsdpOld {
-    // add up every byte and make sure lowest byte is equal to 0
-    fn validate(&self) -> bool {
-        let mut sum: usize = 0;
-        let slice = bytes_of(self);
-
-        for n in slice {
-            sum += *n as usize;
-        }
-
-        sum % 0x100 == 0
-    }
-}
-
 // multiboot 2 structure
 #[derive(Debug, Clone, Copy)]
 pub struct BootInfo<'a> {
     pub memory_map: MemoryMap,
     pub initrd: &'a [u8],
+    pub rsdp: Rsdp,
     pub rsdt: WithTrailer<'a, Rsdt>,
 }
 
@@ -247,6 +225,7 @@ impl BootInfo<'_> {
         let mut memory_map = MemoryMap::new();
         let mut memory_map_tag = None;
 
+        let mut rsdp = None;
         let mut rsdt = None;
 
         for data in iter {
@@ -268,13 +247,14 @@ impl BootInfo<'_> {
                     }
                 },
                 Mb2Elem::MemoryMap(tag) => memory_map_tag = Some(tag),
-                Mb2Elem::RsdpOld(rsdp) => {
-                    if !rsdp.validate() {
+                Mb2Elem::RsdpOld(rsdp_data) => {
+                    if !rsdp_data.validate() {
                         panic!("invalid rsdp passed to kernel");
                     }
                     unsafe {
+                        rsdp = Some(rsdp_data);
                         rsdt = Some(
-                            WithTrailer::from_pointer(phys_to_virt(rsdp.rsdt_addr as usize) as *const Rsdt)
+                            WithTrailer::from_pointer(phys_to_virt(rsdp_data.rsdt_addr as usize) as *const Rsdt)
                         );
                     }
                 },
@@ -299,6 +279,7 @@ impl BootInfo<'_> {
         BootInfo {
             memory_map,
             initrd: initrd_slice.expect("no initrd"),
+            rsdp: rsdp.expect("no rsdp"),
             rsdt: rsdt.expect("no rsdt"),
         }
     }

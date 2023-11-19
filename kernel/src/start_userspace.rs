@@ -1,7 +1,7 @@
 use core::mem::size_of;
 
 use bytemuck::{Pod, Zeroable, from_bytes, cast_slice, bytes_of};
-use sys::{CapFlags, InitInfo, ProcessInitData, ProcessMemoryEntry, StackInfo};
+use sys::{CapFlags, InitInfo, ProcessInitData, ProcessMemoryEntry, StackInfo, Rsdp};
 use elf::{ElfBytes, endian::NativeEndian, abi::{PT_LOAD, PF_R, PF_W, PF_X}};
 use aser::to_bytes_count_cap;
 
@@ -64,7 +64,7 @@ fn find_early_init_data(initrd: &[u8]) -> &[u8] {
 /// Parses the initrd and creates the early init process, which is the first userspace process
 /// 
 /// This code is not very robust for handling errors, but it doesn't need to be since if error occurs os will need to panic anyways
-pub fn start_early_init_process(initrd: &[u8], mmio_allocator: Arc<MmioAllocator>) -> KResult<()> {
+pub fn start_early_init_process(initrd: &[u8], mmio_allocator: Arc<MmioAllocator>, rsdp: Rsdp) -> KResult<()> {
     // create first process context, and insert needed capabilities
     let thread_group = Arc::new(
         ThreadGroup::new(root_alloc_page_ref(), root_alloc_ref()),
@@ -256,6 +256,7 @@ pub fn start_early_init_process(initrd: &[u8], mmio_allocator: Arc<MmioAllocator
     let init_info = InitInfo {
         initrd_address: INITRD_MAPPING_ADDRESS,
         mmio_allocator: sys::MmioAllocator::from_cap_id(mmio_allocator_id).unwrap(),
+        rsdp,
     };
 
     let namespace_data: Vec<u8> = to_bytes_count_cap(&init_info)

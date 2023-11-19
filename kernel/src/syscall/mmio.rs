@@ -18,7 +18,7 @@ pub fn mmio_allocator_alloc(options: u32, mmio_allocator_id: usize, allocator_id
     let size = Size::try_from_pages(page_count)
         .ok_or(SysErr::Overflow)?;
 
-    let phys_range = APhysRange::try_new_aligned(phys_address, size.pages_rounded())
+    let phys_range = APhysRange::try_new_aligned(phys_address, size.bytes())
         .ok_or(SysErr::InvlAlign)?;
 
     let _int_disable = IntDisable::new();

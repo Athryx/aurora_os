@@ -108,7 +108,7 @@ fn init(boot_info_addr: usize) -> KResult<()> {
 
     apic::smp_init(&ap_apic_ids)?;
 
-    start_userspace::start_early_init_process(boot_info.initrd, mmio_allocator)
+    start_userspace::start_early_init_process(boot_info.initrd, mmio_allocator, boot_info.rsdp)
 }
 
 /// Rust entry point of the kernel on the startup core

@@ -17,7 +17,8 @@ use aurora::prelude::*;
 use aurora::process::{self, Command};
 use aurora::thread;
 use aser::from_bytes;
-use sys::InitInfo;
+use initrd::InitrdData;
+use sys::{InitInfo, MmioAllocator, Rsdp};
 use fs_server::{Fs, FsAsync};
 
 mod initrd;
@@ -75,12 +76,34 @@ pub extern "C" fn _rust_startup(
         initrd::parse_initrd(init_info.initrd_address)
     };
 
+    start_hwaccess_server(&initrd_info, init_info.mmio_allocator, init_info.rsdp);
+    start_fs_server(&initrd_info);
+
+    // can't use regular process exit here because that will terminate root thread group,
+    // and kill every thread and process on the system
+    thread::exit_thread_only();
+}
+
+fn start_hwaccess_server(initrd: &InitrdData, mmio: MmioAllocator, rsdp: Rsdp) {
+    let (hwaccess_client_endpoint, hwaccess_server_endpoint) = arpc::make_endpoints()
+        .expect("failed to make hwaccess server rpc endpoints");
+
+    dprintln!("starting hwaccess server...");
+    let hwaccess_server = Command::from_bytes(initrd.hwaccess_server.into())
+        .named_arg("server_endpoint".to_owned(), &hwaccess_server_endpoint)
+        .named_arg("mmio_allocator".to_owned(), &mmio)
+        .named_arg("rsdp".to_owned(), &rsdp)
+        .spawn()
+        .expect("failed to start hwaccess server");
+}
+
+fn start_fs_server(initrd: &InitrdData) {
     // this is rpc channel used to control fs server
     let (fs_client_endpoint, fs_server_endpoint) = arpc::make_endpoints()
         .expect("failed to make fs server rpc endpoints");
 
     dprintln!("starting fs server...");
-    let fs_server = Command::from_bytes(initrd_info.fs_server.into())
+    let fs_server = Command::from_bytes(initrd.fs_server.into())
         .named_arg("server_endpoint".to_owned(), &fs_server_endpoint)
         .spawn()
         .expect("failed to start fs server");
@@ -91,8 +114,4 @@ pub extern "C" fn _rust_startup(
         let result = fs_client.add(1, 2).await;
         dprintln!("result: {result}");
     });
-
-    // can't use regular process exit here because that will terminate root thread group,
-    // and kill every thread and process on the system
-    thread::exit_thread_only();
 }

@@ -18,6 +18,6 @@ else
   [[ $1 = release ]] && TARGET_DIR=target/x86_64-os-userland/release
 fi
 
-gen-initrd -n --init $TARGET_DIR/early-init --fs $TARGET_DIR/fs-server --part-list part-list -o initrd
+gen-initrd -n --init $TARGET_DIR/early-init --fs $TARGET_DIR/fs-server --hwaccess $TARGET_DIR/hwaccess-server --part-list part-list -o initrd
 
 exit 0

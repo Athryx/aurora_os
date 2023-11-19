@@ -42,7 +42,7 @@ impl MmioAllocator {
     }
 
     fn overlaps_reserved_region(&self, region: APhysRange) -> bool {
-        self.get_reserved_region_insert_index(region).is_some()
+        self.get_reserved_region_insert_index(region).is_none()
     }
 
     /// Marks a new region as reserved
