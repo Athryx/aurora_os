@@ -14,6 +14,7 @@ arpc = { path = "../arpc" }
 sys = { path = "../sys" }
 serde = { version = "1.0.163", default-features = false, features = ["alloc", "derive"] }
 acpi = "5.0.0"
+volatile = "0.5.1"
 
 [panic.dev]
 panic = "abort"

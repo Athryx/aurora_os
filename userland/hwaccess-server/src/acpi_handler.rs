@@ -1,19 +1,14 @@
 use core::{mem::size_of, ptr::NonNull};
-use alloc::rc::Rc;
 
 use aurora::{this_context, addr_space, allocator::addr_space::{MapPhysMemArgs, RegionPadding}};
 use bit_utils::{align_up, align_down, PAGE_SIZE, Size};
-use sys::{MmioAllocator, MemoryMappingFlags};
+use sys::MemoryMappingFlags;
 use acpi::{AcpiHandler, PhysicalMapping, AcpiTables, rsdp::Rsdp};
 
-#[derive(Clone)]
-pub struct AcpiHandlerImpl(Rc<MmioAllocator>);
+use crate::mmio_allocator;
 
-impl AcpiHandlerImpl {
-    fn new(mmio: MmioAllocator) -> Self {
-        AcpiHandlerImpl(Rc::new(mmio))
-    }
-}
+#[derive(Clone)]
+pub struct AcpiHandlerImpl;
 
 impl AcpiHandler for AcpiHandlerImpl {
     unsafe fn map_physical_region<T>(
@@ -29,7 +24,7 @@ impl AcpiHandler for AcpiHandlerImpl {
         let region_end_addr = align_up(end_address, PAGE_SIZE);
         let region_size = Size::from_bytes(region_end_addr - region_start_addr);
 
-        let phys_mem = self.0.alloc(&this_context().allocator, region_start_addr, region_size)
+        let phys_mem = mmio_allocator().alloc(&this_context().allocator, region_start_addr, region_size)
             .expect("acpi handler: failed to alloc physical memory region");
 
         let map_result = addr_space().map_phys_mem(MapPhysMemArgs {
@@ -73,9 +68,7 @@ impl AcpiHandler for AcpiHandlerImpl {
 /// # Safety
 /// 
 /// Must pass in a valid rsdp
-pub unsafe fn read_acpi_tables(mmio_allocator: MmioAllocator, mut rsdp: sys::Rsdp) -> AcpiTables<AcpiHandlerImpl> {
-    let acpi_handler = AcpiHandlerImpl::new(mmio_allocator);
-
+pub unsafe fn read_acpi_tables(mut rsdp: sys::Rsdp) -> AcpiTables<AcpiHandlerImpl> {
     let rsdp_ptr = NonNull::new(&mut rsdp as *mut sys::Rsdp as *mut Rsdp).unwrap();
     let rsdp_mapping = unsafe {
         PhysicalMapping::new(
@@ -86,12 +79,12 @@ pub unsafe fn read_acpi_tables(mmio_allocator: MmioAllocator, mut rsdp: sys::Rsd
             // in practice no bad reads should occurr though
             size_of::<Rsdp>(),
             0,
-            acpi_handler.clone(),
+            AcpiHandlerImpl,
         )
     };
 
     unsafe {
-        AcpiTables::from_validated_rsdp(acpi_handler, rsdp_mapping)
+        AcpiTables::from_validated_rsdp(AcpiHandlerImpl, rsdp_mapping)
             .expect("failed to read acpi tables")
     }
 }
