@@ -11,6 +11,8 @@ use aurora::env;
 use aurora::sync::Once;
 use sys::{MmioAllocator, Rsdp};
 
+use pci::Pci;
+
 pub type AcpiTables = acpi::AcpiTables<acpi_handler::AcpiHandlerImpl>;
 
 static MMIO_ALLOCATOR: Once<MmioAllocator> = Once::new();
@@ -48,6 +50,5 @@ fn main() {
     acpi_tables.find_table::<acpi::hpet::HpetTable>()
         .expect("could not find hpet table");
 
-
-    pci::init(&acpi_tables);
+    let pci = Pci::new(&acpi_tables);
 }

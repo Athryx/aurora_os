@@ -35,13 +35,13 @@
 
 - improve memory mapping api
     - maybe don't have 1 mapping restriction on resize in place
-    - add support to memory mapping syscalls that allow mapping at some offset into the memory capability
-    - extend memory_update_mapping to support moving the base address and changing mapping flags
+    - extend memory_update_mapping to support moving the base address
     - maybe merge memory_resize and memory_update_mapping syscalls
 - redisign memory system
     - copy on write
     - figure out how dirty page tracking is communcated to userspace
     - figure how paging to disc will communicate to userspace
+    - figure out how lazy page loading can be handled in userspace server
 - figure out if weak capabilities are even needed
     - their original intent was so you can send your capability to another process and still have control over when its dropped
     - probably just remove weak auto destroy though, and make destroying invalid weaks the default behavior
@@ -52,6 +52,7 @@
         - the reason for using flag to enable it is so sender can still specify actual copy size not page aligned, so if reciever buffer is not page aligned extra bytes don't need to be copied
     - add another type of event pool or something for page aligned data, so pages can just be pushed into this event pool
         - seperate from normal event pool so small writes don't get interspersed and cause issues with wasted space due to alignmant needs
+- Figure out how to handle partial message sends
 - Get rid of int disable everywhere
     - 2 options
         - get rid of IPI_PROCESS_EXIT and have syscalls check if they should switch processess only when returning

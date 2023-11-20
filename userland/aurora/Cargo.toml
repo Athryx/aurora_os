@@ -8,5 +8,6 @@ edition = "2021"
 [dependencies]
 aurora_core = { path = "../aurora_core" }
 aser = { path = "../aser" }
+arpc = { path = "../arpc" }
 thiserror-no-std = "2.0.2"
 serde = { version = "1.0.163", default-features = false, features = ["alloc", "derive"] }

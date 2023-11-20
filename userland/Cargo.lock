@@ -63,6 +63,7 @@ dependencies = [
 name = "aurora"
 version = "0.1.0"
 dependencies = [
+ "arpc",
  "aser",
  "aurora_core",
  "serde",

@@ -1,6 +1,10 @@
 #![no_std]
 
+#![feature(associated_type_defaults)]
+#![feature(decl_macro)]
+
 pub mod env;
+pub mod fs;
 pub mod prelude;
 pub mod process;
 
