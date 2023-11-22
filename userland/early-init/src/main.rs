@@ -20,6 +20,7 @@ use aser::from_bytes;
 use initrd::InitrdData;
 use sys::{InitInfo, MmioAllocator, Rsdp};
 use fs_server::{Fs, FsAsync};
+use hwaccess_server::{HwAccess, HwAccessAsync};
 
 mod initrd;
 
@@ -76,15 +77,23 @@ pub extern "C" fn _rust_startup(
         initrd::parse_initrd(init_info.initrd_address)
     };
 
-    start_hwaccess_server(&initrd_info, init_info.mmio_allocator, init_info.rsdp);
-    start_fs_server(&initrd_info);
+    let hwaccess = start_hwaccess_server(&initrd_info, init_info.mmio_allocator, init_info.rsdp);
+    let fs = start_fs_server(&initrd_info, &hwaccess);
+
+    asynca::block_in_place(async move {
+        //let result = fs.add(1, 2).await;
+        //dprintln!("result: {result}");
+
+        //let pci_devices = hwaccess.get_pci_devices().await;
+        //dprintln!("devices: {pci_devices:x?}");
+    });
 
     // can't use regular process exit here because that will terminate root thread group,
     // and kill every thread and process on the system
     thread::exit_thread_only();
 }
 
-fn start_hwaccess_server(initrd: &InitrdData, mmio: MmioAllocator, rsdp: Rsdp) {
+fn start_hwaccess_server(initrd: &InitrdData, mmio: MmioAllocator, rsdp: Rsdp) -> HwAccess {
     let (hwaccess_client_endpoint, hwaccess_server_endpoint) = arpc::make_endpoints()
         .expect("failed to make hwaccess server rpc endpoints");
 
@@ -95,9 +104,11 @@ fn start_hwaccess_server(initrd: &InitrdData, mmio: MmioAllocator, rsdp: Rsdp) {
         .named_arg("rsdp".to_owned(), &rsdp)
         .spawn()
         .expect("failed to start hwaccess server");
+
+    HwAccess::from(hwaccess_client_endpoint)
 }
 
-fn start_fs_server(initrd: &InitrdData) {
+fn start_fs_server(initrd: &InitrdData, hwaccess: &HwAccess) -> Fs {
     // this is rpc channel used to control fs server
     let (fs_client_endpoint, fs_server_endpoint) = arpc::make_endpoints()
         .expect("failed to make fs server rpc endpoints");
@@ -105,13 +116,9 @@ fn start_fs_server(initrd: &InitrdData) {
     dprintln!("starting fs server...");
     let fs_server = Command::from_bytes(initrd.fs_server.into())
         .named_arg("server_endpoint".to_owned(), &fs_server_endpoint)
+        .named_arg("hwaccess_server".to_owned(), hwaccess)
         .spawn()
         .expect("failed to start fs server");
 
-    let fs_client = Fs::from(fs_client_endpoint);
-
-    asynca::block_in_place(async move {
-        let result = fs_client.add(1, 2).await;
-        dprintln!("result: {result}");
-    });
+    Fs::from(fs_client_endpoint)
 }

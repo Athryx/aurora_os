@@ -2,15 +2,18 @@
 
 extern crate std;
 
+mod disk_access;
+
 use aurora::env;
-use arpc::{ServerRpcEndpoint, arpc_impl, run_rpc_service};
+use arpc::{ServerRpcEndpoint, run_rpc_service};
+use hwaccess_server::HwAccess;
 use std::prelude::*;
 
 use fs_server::FsServer;
 
 struct FsServerImpl;
 
-#[arpc_impl]
+#[arpc::service_impl]
 impl FsServer for FsServerImpl {
     fn add(&self, a: usize, b: usize) -> usize {
         a + b
@@ -24,5 +27,12 @@ fn main() {
     let rpc_endpoint: ServerRpcEndpoint = args.named_arg("server_endpoint")
         .expect("provided fs server rpc endpoint is invalid");
 
-    asynca::block_in_place(run_rpc_service(rpc_endpoint, FsServerImpl));
+    let hwaccess: HwAccess = args.named_arg("hwaccess_server")
+        .expect("no hwaccess_server endpoint provided");
+
+    asynca::block_in_place(async move {
+        let backends = disk_access::get_backends(hwaccess).await;
+    });
+
+    //asynca::block_in_place(run_rpc_service(rpc_endpoint, FsServerImpl));
 }

@@ -67,6 +67,7 @@ dependencies = [
  "aser",
  "aurora_core",
  "serde",
+ "sys",
  "thiserror-no-std",
 ]
 
@@ -197,6 +198,7 @@ dependencies = [
  "aurora",
  "aurora_core",
  "fs-server",
+ "hwaccess-server",
  "serde",
  "sys",
 ]
@@ -214,6 +216,7 @@ dependencies = [
  "arpc",
  "asynca",
  "aurora",
+ "hwaccess-server",
  "serde",
  "std",
 ]

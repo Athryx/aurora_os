@@ -250,6 +250,13 @@ impl Channel {
                 continue;
             };
 
+            // NOTE: this could report failure when trying to listen for a message,
+            // but the message may still have been successfully sent
+            if reciever.is_auto_reque() {
+                let reciever = MemOwner::new(reciever.into(), &mut self.allocator.clone())?;
+                inner.reciever_queue.push(reciever);
+            }
+
             return Ok(());
         }
     }

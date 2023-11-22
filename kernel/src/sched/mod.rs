@@ -2,7 +2,7 @@ use core::sync::atomic::Ordering;
 
 use spin::Once;
 
-pub use thread::{ThreadState, Thread, ThreadRef, Tid, WakeReason};
+pub use thread::{ThreadState, Thread, ThreadRef, WakeReason};
 pub use thread_group::{ThreadGroup, ThreadStartMode};
 use thread_map::ThreadMap;
 use crate::alloc::{root_alloc_ref, root_alloc_page_ref};

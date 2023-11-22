@@ -1,0 +1,60 @@
+# Every app will have a corresponding app config file like this one
+# when launching an app through the app-server, this file is used
+
+# if the app is named example, app-server will look for a file named example_app.toml
+
+[namespace]
+# a series of key value pairs which specify how this apps namespace should be populated when it is launched
+
+[namespace.example_data]
+# this entry means "example_service" in the namespace will be populated
+
+# if an entry is overridable, it can be replaced with a different value
+# when the process is spawned (ie if someone tells app server to spawn a process,
+# they specify the value for this key)
+# overridable defaults to false, except for 'args', which default to true
+overridable = true
+
+# this determines what type value is loaded into the namespace
+# data means just aser data is loaded
+type = "data"
+
+# this is a human readable form of aser
+# TODO: specify the syntax for this
+data = "..."
+
+[namespace.example_service]
+
+# service means an arpc service is loaded into the namespace
+type = "service"
+
+# service names consist of a package id and a service name
+# so services are namespaced by a package
+# this will also inform app server of the order which services will neeed to depend on eachother
+service = "packege_id:service_name"
+
+# this specifies the permissions from the service that this app neeeds
+# permissions are identified by a string
+permissions = ["perm1", "perm2", "perm3"]
+
+[namespace.example_service_endpoint]
+
+# this specifies a service that this app offers
+# app server will give us a server endpoint at this key in the namespace
+# we should then listen on this endpoint for incoming connections
+# app service will query us for a list of supported permissions
+type = "service_endpoint"
+
+# the name of the service we are offering
+service = "add_numbers"
+
+[namespace.local_service]
+
+type = "service"
+
+# if an app is not part of a package, its service must be accessed
+# using local and a path to the app (relative or absolute)
+# this is intended to be used for development purposes
+service = "local:/path/to/app:service_name"
+
+permissions = ["perma", "permb"]

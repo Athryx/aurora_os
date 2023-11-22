@@ -1,9 +1,15 @@
-use arpc::arpc_interface;
+use thiserror_no_std::Error;
 
-use crate::prelude::*;
+use crate::{prelude::*, service::AppService};
 
-#[arpc_interface(service_id = 1, name = "Fs")]
-pub trait FsService {
+#[derive(Debug, Error)]
+pub enum FsError {
+    InvalidPath,
+}
+
+//#[arpc::service(service_id = 2, name = "Fs", AppService = crate::service)]
+pub trait FsService: AppService {
+    fn access(&self, path: String) -> Result<FsEntry, FsError>;
 }
 
 pub enum FsEntry {

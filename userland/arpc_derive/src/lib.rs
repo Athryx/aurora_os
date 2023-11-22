@@ -116,7 +116,7 @@ impl Parse for Args {
 }
 
 #[proc_macro_attribute]
-pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn service(args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let args = parse_macro_input!(args as Args);
     let service_id = args.service_id;
     let client_struct_ident = format_ident!("{}", args.name);
@@ -184,7 +184,7 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
 
         out.extend(quote! {
             #[derive(serde::Serialize, serde::Deserialize)]
-            struct #args_struct_ident(#(#fn_arg_types),*);
+            pub struct #args_struct_ident(#(pub #fn_arg_types),*);
         });
 
         let method_wrapper_ident = format_ident!("{}_wrapper", signature.ident);
@@ -199,7 +199,7 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
                         return;
                     };
 
-                    asynca::spawn(async {
+                    arpc::asynca::spawn(async {
                         let result = #trait_ident::#method_ident(self, #(message.args.#arg_struct_fields),*).await;
                         arpc::respond_success(reply, result);
                     });
@@ -400,7 +400,7 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
 
             impl #client_async_trait for $client_struct {
                 fn downcast(self) -> #client_struct_ident {
-                    #client_struct_ident(self.into_endpoint())
+                    #client_struct_ident::from(self.into_endpoint())
                 }
 
                 #client_async_impls
@@ -414,7 +414,7 @@ pub fn arpc_interface(args: proc_macro::TokenStream, input: proc_macro::TokenStr
 }
 
 #[proc_macro_attribute]
-pub fn arpc_impl(_args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
+pub fn service_impl(_args: proc_macro::TokenStream, input: proc_macro::TokenStream) -> proc_macro::TokenStream {
     let input = parse_macro_input!(input as syn::ItemImpl);
 
     let impl_type = &input.self_ty;

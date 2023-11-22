@@ -5,13 +5,16 @@ extern crate std;
 
 mod acpi_handler;
 mod pci;
+mod server;
 
 use arpc::ServerRpcEndpoint;
 use aurora::env;
 use aurora::sync::Once;
 use sys::{MmioAllocator, Rsdp};
+use arpc::run_rpc_service;
 
 use pci::Pci;
+use server::HwAccessServerImpl;
 
 pub type AcpiTables = acpi::AcpiTables<acpi_handler::AcpiHandlerImpl>;
 
@@ -39,16 +42,8 @@ fn main() {
         acpi_handler::read_acpi_tables(rsdp)
     };
 
-    acpi_tables.find_table::<acpi::madt::Madt>()
-        .expect("could not find madt table");
-
-    //acpi_tables.find_table::<acpi::bgrt::Bgrt>().expect("could not find bgrt table");
-
-    acpi_tables.find_table::<acpi::fadt::Fadt>()
-        .expect("could not find fadt table");
-
-    acpi_tables.find_table::<acpi::hpet::HpetTable>()
-        .expect("could not find hpet table");
-
     let pci = Pci::new(&acpi_tables);
+    let server = HwAccessServerImpl::new(pci);
+
+    asynca::block_in_place(run_rpc_service(server_endpoint, server));
 }
