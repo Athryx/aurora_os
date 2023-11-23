@@ -219,6 +219,7 @@ dependencies = [
  "hwaccess-server",
  "serde",
  "std",
+ "thiserror-no-std",
 ]
 
 [[package]]

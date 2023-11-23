@@ -12,6 +12,7 @@ aurora = { path = "../aurora" }
 asynca = { path = "../asynca" }
 arpc = { path = "../arpc" }
 hwaccess-server = { path = "../hwaccess-server" }
+thiserror-no-std = "2.0.2"
 serde = { version = "1.0.163", default-features = false, features = ["alloc", "derive"] }
 
 [panic.dev]
