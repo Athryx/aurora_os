@@ -1,5 +1,6 @@
 use sys::syscall_nums::*;
 
+use crate::alloc::root_alloc_ref;
 use crate::prelude::*;
 use crate::arch::x64::{
 	rdmsr, wrmsr, EFER_MSR, EFER_SYSCALL_ENABLE, FMASK_MSR, LSTAR_MSR, STAR_MSR,
@@ -252,10 +253,11 @@ macro_rules! sysret_5 {
 /// This function is called by the assembly syscall entry point
 #[no_mangle]
 extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
-	if syscall_num != PRINT_DEBUG {
-		//eprintln!("syscall: {} ({})", syscall_name(syscall_num), syscall_num);
-		eprintln!("{}", strace::get_strace_string(syscall_num, vals));
-	}
+	let strace_args_string = if syscall_num != PRINT_DEBUG {
+		Some(strace::get_strace_args_string(syscall_num, vals))
+	} else {
+		None
+	};
 
     match syscall_num {
 		PRINT_DEBUG => sysret_0!(syscall_8!(print_debug, vals), vals),
@@ -301,6 +303,11 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		PHYS_MEM_GET_SIZE => sysret_1!(syscall_1!(phys_mem_get_size, vals), vals),
         _ => vals.a1 = SysErr::InvlSyscall.num(),
     }
+
+	if let Some(args_string) = strace_args_string {
+		let ret_string = strace::get_strace_return_string(syscall_num, vals);
+		eprintln!("{} -> {}", args_string, ret_string);
+	}
 }
 
 fn is_option_set(options: u32, bit: u32) -> bool {

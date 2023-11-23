@@ -8,7 +8,6 @@ use bitflags::Flags;
 
 use crate::prelude::*;
 use crate::alloc::{HeapRef, root_alloc_ref};
-use crate::vmem_manager::PageMappingFlags;
 use super::SyscallVals;
 
 #[derive(Debug, Clone, Copy)]
@@ -134,7 +133,7 @@ macro_rules! event_async {
     }
 }
 
-pub fn get_strace_string(syscall_num: u32, vals: &SyscallVals) -> String {
+pub fn get_strace_args_string(syscall_num: u32, vals: &SyscallVals) -> String {
 	let syscall_name = String::from_str(root_alloc_ref(), syscall_name(syscall_num)).unwrap();
 
     let args = match syscall_num {
@@ -187,5 +186,129 @@ pub fn get_strace_string(syscall_num: u32, vals: &SyscallVals) -> String {
         _ => return syscall_name,
     };
 
-	format!(root_alloc_ref(), "sys {}({}) -> () ", syscall_name, args)
+	format!(root_alloc_ref(), "sys {}({})", syscall_name, args)
+}
+
+struct StraceRetBuilder {
+    args: Vec<Arg>,
+}
+
+impl StraceRetBuilder {
+    pub fn new(allocator: HeapRef) -> Self {
+        StraceRetBuilder {
+            args: Vec::new(allocator),
+        }
+    }
+
+    // alot of these can panic on oom, but panic safety is not very important for a debug feature only
+    pub fn addr(&mut self, addr: usize) {
+        self.args.push(Arg::Address(addr)).unwrap();
+    }
+
+    pub fn cap_id(&mut self, cap_id: usize) {
+        self.args.push(Arg::CapId(CapId::try_from(cap_id))).unwrap();
+    }
+
+    pub fn num(&mut self, num: usize) {
+        self.args.push(Arg::Num(num)).unwrap();
+    }
+
+    pub fn arg(&mut self, arg_type: ArgType, n: usize) {
+        match arg_type {
+            ArgType::Address => self.addr(n),
+            ArgType::CapId => self.cap_id(n),
+            ArgType::Num => self.num(n),
+        }
+    }
+}
+
+impl Display for StraceRetBuilder {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for (i, arg) in self.args.iter().enumerate() {
+            if i != 0 {
+                write!(f, ", ")?;
+            }
+
+            write!(f, "{}", arg)?;
+        }
+
+        Ok(())
+    }
+}
+
+macro_rules! ret {
+    () => {
+        StraceRetBuilder::new(root_alloc_ref())
+    };
+    ($vals:expr, $($ret:ident,)*) => {{
+        let mut args = StraceRetBuilder::new(root_alloc_ref());
+
+        let arg_types = [$(ArgType::$ret,)*];
+        for (i, arg_type) in arg_types.iter().enumerate() {
+            args.arg(*arg_type, $vals.get(i + 1).expect("too many args"));
+        }
+
+        args
+    }};
+}
+
+pub fn get_strace_return_string(syscall_num: u32, vals: &SyscallVals) -> String {
+    if vals.a1 == SysErr::Ok.num() {
+        let mut out = String::from_str(root_alloc_ref(), "Ok(").unwrap();
+
+        let ret_values = match syscall_num {
+            PRINT_DEBUG => ret!(),
+            THREAD_GROUP_NEW => ret!(vals, CapId,),
+            THREAD_GROUP_EXIT => ret!(),
+            THREAD_NEW => ret!(vals, CapId, CapId,),
+            THREAD_YIELD => ret!(),
+            THREAD_DESTROY => ret!(),
+            THREAD_SUSPEND => ret!(),
+            THREAD_RESUME => ret!(),
+            THREAD_SET_PROPERTY => ret!(),
+            THREAD_HANDLE_THREAD_EXIT_SYNC => ret!(),
+            THREAD_HANDLE_THREAD_EXIT_ASYNC => ret!(),
+            CAP_CLONE => ret!(vals, CapId,),
+            CAP_DESTROY => ret!(),
+            ADDRESS_SPACE_NEW => ret!(vals, CapId,),
+            ADDRESS_SPACE_UNMAP => ret!(),
+            MEMORY_MAP => ret!(vals, Num,),
+            MEMORY_UPDATE_MAPPING => ret!(vals, Num,),
+            MEMORY_NEW => ret!(vals, CapId, Num,),
+            MEMORY_GET_SIZE => ret!(vals, Num,),
+            MEMORY_RESIZE => ret!(vals, Num,),
+            EVENT_POOL_NEW => ret!(vals, CapId,),
+            EVENT_POOL_MAP => ret!(vals, Num,),
+            EVENT_POOL_AWAIT => ret!(vals, Address, Num,),
+            CHANNEL_NEW => ret!(vals, CapId,),
+            CHANNEL_TRY_SEND => ret!(vals, Num,),
+            CHANNEL_SYNC_SEND => ret!(vals, Num,),
+            CHANNEL_ASYNC_SEND => ret!(),
+            CHANNEL_TRY_RECV => ret!(vals, Num, CapId,),
+            CHANNEL_SYNC_RECV => ret!(vals, Num, CapId,),
+            CHANNEL_ASYNC_RECV => ret!(),
+            CHANNEL_SYNC_CALL => ret!(vals, Num,),
+            CHANNEL_ASYNC_CALL => ret!(),
+            REPLY_REPLY => ret!(vals, Num,),
+            KEY_NEW => ret!(vals, CapId,),
+            KEY_ID => ret!(vals, Num,),
+            DROP_CHECK_NEW => ret!(vals, CapId, CapId,),
+            DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_SYNC => ret!(vals, Num,),
+            DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_ASYNC => ret!(),
+            MMIO_ALLOCATOR_ALLOC => ret!(vals, CapId,),
+            PHYS_MEM_MAP => ret!(vals, Num,),
+            PHYS_MEM_GET_SIZE => ret!(vals, Num,),
+            _ => unreachable!(),
+        };
+
+        write!(out, "{})", ret_values).unwrap();
+
+        out
+    } else {
+        if let Some(err) = SysErr::new(vals.a1) {
+            format!(root_alloc_ref(), "Err(SysErr::{:?})", err)
+        } else {
+            String::from_str(root_alloc_ref(), "Err(<invalid syserr>)").unwrap()
+        }
+    }
 }
