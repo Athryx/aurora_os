@@ -27,6 +27,8 @@ use thread::*;
 mod thread_group;
 use thread_group::*;
 
+mod strace;
+
 extern "C" {
     fn syscall_entry();
 }
@@ -44,6 +46,22 @@ pub struct SyscallVals {
 	pub a6: usize,
 	pub a7: usize,
 	pub a8: usize,
+}
+
+impl SyscallVals {
+	pub fn get(&self, index: usize) -> Option<usize> {
+		match index {
+			0 => Some(self.a1),
+			1 => Some(self.a2),
+			2 => Some(self.a3),
+			3 => Some(self.a4),
+			4 => Some(self.a5),
+			5 => Some(self.a6),
+			6 => Some(self.a7),
+			7 => Some(self.a8),
+			_ => None,
+		}
+	}
 }
 
 macro_rules! syscall_0 {
@@ -235,7 +253,8 @@ macro_rules! sysret_5 {
 #[no_mangle]
 extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 	if syscall_num != PRINT_DEBUG {
-		eprintln!("syscall: {} ({})", syscall_name(syscall_num), syscall_num);
+		//eprintln!("syscall: {} ({})", syscall_name(syscall_num), syscall_num);
+		eprintln!("{}", strace::get_strace_string(syscall_num, vals));
 	}
 
     match syscall_num {

@@ -8,6 +8,7 @@ use crate::mem::Allocation;
 use crate::prelude::*;
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     struct TreeStatus: u8 {
         /// This node has memory in use in any of its right children or descendants
         const OCCUPY_RIGHT = 1;
@@ -20,7 +21,7 @@ bitflags! {
         /// This entire node is currently allocated
         const OCCUPY = 1 << 4;
         /// When a node is allocated, it has all of these bits set
-        const BUSY = Self::OCCUPY_RIGHT.bits | Self::OCCUPY_LEFT.bits | Self::OCCUPY.bits;
+        const BUSY = Self::OCCUPY_RIGHT.bits() | Self::OCCUPY_LEFT.bits() | Self::OCCUPY.bits();
     }
 }
 
@@ -327,7 +328,7 @@ impl PmemAllocator {
             let res = current
                 .data()
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                    let mut flags = unsafe { TreeStatus::from_bits_unchecked(n) };
+                    let mut flags = unsafe { TreeStatus::from_bits_retain(n) };
 
                     if flags.contains(TreeStatus::OCCUPY) {
                         return None;
@@ -374,7 +375,7 @@ impl PmemAllocator {
             loop {
                 let result = current_node.data()
                     .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                        let flags = unsafe { TreeStatus::from_bits_unchecked(n) };
+                        let flags = unsafe { TreeStatus::from_bits_retain(n) };
 
                         if flags.contains(TreeStatus::OCCUPY_RIGHT) {
                             None
@@ -490,7 +491,7 @@ impl PmemAllocator {
             current
                 .data()
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                    flags = unsafe { TreeStatus::from_bits_unchecked(n) };
+                    flags = unsafe { TreeStatus::from_bits_retain(n) };
                     flags.set_coal(child_type);
                     Some(flags.bits())
                 })
@@ -519,7 +520,7 @@ impl PmemAllocator {
             let res = current
                 .data()
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                    flags = unsafe { TreeStatus::from_bits_unchecked(n) };
+                    flags = unsafe { TreeStatus::from_bits_retain(n) };
 
                     if flags.get_coal(child_type) {
                         flags.clear_occupy(child_type);

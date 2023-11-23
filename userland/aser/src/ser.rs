@@ -266,6 +266,7 @@ impl<'a, B: ByteBuf> ser::Serializer for &'a mut Serializer<B> {
     fn serialize_some<T: ?Sized>(self, value: &T) -> Result<Self::Ok, Self::Error>
     where
         T: serde::Serialize {
+        self.push_type(DataType::Some);
         value.serialize(self)
     }
 

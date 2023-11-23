@@ -26,6 +26,7 @@ static KERNEL_MEMORY_PAGE_POINTER: Once<PageTablePointer> = Once::new();
 
 bitflags! {
     /// Flags that represent properties of the memory we want to map
+    #[derive(Debug, Clone, Copy)]
 	pub struct PageMappingFlags: usize {
 		const READ =		1;
 		const WRITE =		1 << 1;

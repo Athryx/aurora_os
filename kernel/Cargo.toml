@@ -11,7 +11,7 @@ array-const-fn-init = "0.1.1"
 volatile = "0.2.6"
 spin = { version="0.9.2", features = ["mutex", "spin_mutex", "once"] }
 paste = "1.0.14"
-bitflags = "1.2.1"
+bitflags = "2.4.1"
 modular-bitfield = "0.11.2"
 lazy_static = { version = "1.0", features = ["spin_no_std"] }
 siphasher = "0.3.10"

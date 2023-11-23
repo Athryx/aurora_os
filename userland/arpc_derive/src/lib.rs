@@ -194,9 +194,12 @@ pub fn service(args: proc_macro::TokenStream, input: proc_macro::TokenStream) ->
         if is_async(signature) {
             items.extend(quote! {
                 fn #method_wrapper_ident(&self, data: &[u8], reply: arpc::sys::Reply) {
-                    let Ok(message) = arpc::aser::from_bytes::<arpc::RpcCall<#args_struct_ident>>(data) else {
-                        arpc::respond_error(reply, arpc::RpcError::SerializationError);
-                        return;
+                    let message = match arpc::aser::from_bytes::<arpc::RpcCall<#args_struct_ident>>(data) {
+                        Ok(data) => data,
+                        Err(error) => {
+                            arpc::respond_error(reply, arpc::RpcError::SerializationError(error));
+                            return;
+                        },
                     };
 
                     arpc::asynca::spawn(async {
@@ -208,9 +211,12 @@ pub fn service(args: proc_macro::TokenStream, input: proc_macro::TokenStream) ->
         } else {
             items.extend(quote! {
                 fn #method_wrapper_ident(&self, data: &[u8], reply: arpc::sys::Reply) {
-                    let Ok(message) = arpc::aser::from_bytes::<arpc::RpcCall<#args_struct_ident>>(data) else {
-                        arpc::respond_error(reply, arpc::RpcError::SerializationError);
-                        return;
+                    let message = match arpc::aser::from_bytes::<arpc::RpcCall<#args_struct_ident>>(data) {
+                        Ok(data) => data,
+                        Err(error) => {
+                            arpc::respond_error(reply, arpc::RpcError::SerializationError(error));
+                            return;
+                        },
                     };
 
                     let result = #trait_ident::#method_ident(self, #(message.args.#arg_struct_fields),*);
@@ -303,9 +309,12 @@ pub fn service(args: proc_macro::TokenStream, input: proc_macro::TokenStream) ->
             }
 
             fn call(&self, data: &[u8], reply: arpc::sys::Reply) {
-                let Ok(call_data) = arpc::aser::from_bytes::<arpc::RpcCallMethod>(data) else {
-                    arpc::respond_error(reply, arpc::RpcError::SerializationError);
-                    return;
+                let call_data = match arpc::aser::from_bytes::<arpc::RpcCallMethod>(data) {
+                    Ok(data) => data,
+                    Err(error) => {
+                        arpc::respond_error(reply, arpc::RpcError::SerializationError(error));
+                        return;
+                    },
                 };
 
                 let cap_id = arpc::sys::Capability::cap_id(&reply);

@@ -106,6 +106,7 @@ pub enum Value {
     Map(BTreeMap<Value, Value>),
     Capability(CapId),
     Newtype(Box<Value>),
+    Some(Box<Value>),
     EnumVariant {
         variant_index: u32,
         value: Box<Value>,
@@ -158,6 +159,7 @@ impl Serialize for Value {
                 &(usize::from(*cap_id) as u64),
             ),
             Self::Newtype(value) => serializer.serialize_newtype_struct("", &value),
+            Self::Some(value) => serializer.serialize_some(&value),
             Self::EnumVariant {
                 variant_index,
                 value,
@@ -281,6 +283,16 @@ impl<'de> Visitor<'de> for ValueVisitor {
         }
 
         Ok(Value::Map(map))
+    }
+
+    fn visit_some<D>(self, deserializer: D) -> Result<Self::Value, D::Error>
+        where
+            D: Deserializer<'de>, {
+        let value = Box::new(
+            deserializer.deserialize_any(ValueVisitor)?
+        );
+
+        Ok(Value::Some(value))
     }
 
     fn visit_newtype_struct<D>(self, deserializer: D) -> Result<Self::Value, D::Error>

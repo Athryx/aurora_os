@@ -6,6 +6,7 @@ use crate::CapFlags;
 
 bitflags! {
     /// Flags that are used when moving and copying capabilties
+    #[derive(Debug, Clone, Copy)]
     pub struct CapCloneFlags: u32 {
         const READ = 1;
         const PROD = 1 << 1;
@@ -29,6 +30,7 @@ bitflags! {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct CapDestroyFlags: u32 {
         /// Destroy the capability from the current process rather than the target process passed in
         const CSPACE_SELF = 1;
@@ -61,12 +63,14 @@ impl From<CapCloneFlags> for CapFlags {
 
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct HandleEventSyncFlags: u32 {
         const TIMEOUT = 1;
     }
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct HandleEventAsyncFlags: u32 {
         const AUTO_REQUE = 1;
     }
@@ -74,6 +78,7 @@ bitflags! {
 
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct ThreadNewFlags: u32 {
         const CREATE_CAPABILITY_SPACE = 1;
         const THREAD_AUTOSTART = 1 << 1;
@@ -81,12 +86,14 @@ bitflags! {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct ThreadSuspendFlags: u32 {
         const SUSPEND_TIMEOUT = 1;
     }
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct ThreadDestroyFlags: u32 {
         const DESTROY_OTHER = 1;
     }
@@ -95,6 +102,7 @@ bitflags! {
 
 bitflags! {
     /// Used to specify access permissions on memory mappings
+    #[derive(Debug, Clone, Copy)]
     pub struct MemoryMappingFlags: u32 {
         const READ = 1;
         const WRITE = 1 << 1;
@@ -109,6 +117,7 @@ impl Default for MemoryMappingFlags {
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct MemoryNewFlags: u32 {
         /// Memory will be allocated when it is first accessed
         const LAZY_ALLOC = 1;
@@ -119,12 +128,14 @@ bitflags! {
 
 bitflags! {
     /// The first three bits of flags are the same as MemoryMappingFlags, additonal options are here
+    #[derive(Debug, Clone, Copy)]
     pub struct MemoryMapFlags: u32 {
         const MAX_SIZE = 1 << 3;
     }
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct MemoryUpdateMappingFlags: u32 {
         // first 3 bits are used by memory mapping flags
         const UPDATE_SIZE = 1 << 3;
@@ -135,6 +146,7 @@ bitflags! {
 
 bitflags! {
     /// Used by memory_resize syscall
+    #[derive(Debug, Clone, Copy)]
     pub struct MemoryResizeFlags: u32 {
         /// New memory will be allocated when it is first accessed
         const LAZY_ALLOC = 1;
@@ -150,6 +162,7 @@ bitflags! {
 
 bitflags! {
     /// Used by event_pool_await syscall
+    #[derive(Debug, Clone, Copy)]
     pub struct EventPoolAwaitFlags: u32 {
         const TIMEOUT = 1;
     }
@@ -157,12 +170,14 @@ bitflags! {
 
 bitflags! {
     /// Used by `chennel_sync_send` and `channel_sync_recv`
+    #[derive(Debug, Clone, Copy)]
     pub struct ChannelSyncFlags: u32 {
         const TIMEOUT = 1;
     }
 }
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct ChannelAsyncRecvFlags: u32 {
         const AUTO_REQUE = 1;
     }

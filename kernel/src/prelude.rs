@@ -16,4 +16,4 @@ pub use crate::mem::{
     UVirtRange, VirtAddr, VirtRange, VirtRangeInner,
 };
 pub use crate::util::*;
-pub use crate::{eprint, eprintln, print, println, rprint, rprintln};
+pub use crate::{eprint, eprintln, print, println, rprint, rprintln, format};

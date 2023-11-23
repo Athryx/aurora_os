@@ -161,6 +161,7 @@ impl FusedFuture for AsyncCall<'_> {
 
 impl Unpin for AsyncCall<'_> {}
 
+#[derive(Debug)]
 pub enum AsyncRecvRepeat<'a> {
     Unpolled(&'a Channel),
     Polled(EventId, EventReciever),
@@ -194,10 +195,7 @@ impl Stream for AsyncRecvRepeat<'_> {
             },
             Self::Polled(_, event_reciever) => {
                 match event_reciever.take_event() {
-                    Some(RecievedEvent::MessageRecievedEvent(event)) => {
-                        *this = Self::Closed;
-                        Poll::Ready(Some(event))
-                    },
+                    Some(RecievedEvent::MessageRecievedEvent(event)) => Poll::Ready(Some(event)),
                     None => Poll::Pending,
                     _ => panic!("invalid event recieved"),
                 }
@@ -216,6 +214,7 @@ impl FusedStream for AsyncRecvRepeat<'_> {
 impl Drop for AsyncRecvRepeat<'_> {
     // TODO: stop event pool from waiting on event
     fn drop(&mut self) {
+        sys::dprintln!("async recv repeat dropped");
         if let Self::Polled(event_id, _) = self {
             EXECUTOR.with(|executor| {
                 executor.remove_event_waiter(*event_id);

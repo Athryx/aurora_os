@@ -51,6 +51,7 @@ impl<'de> Deserializer<'de> for &'de Value {
                 cap_id: usize::from(*cap_id) as u64,
             }),
             Value::Newtype(value) => visitor.visit_newtype_struct(value.as_ref()),
+            Value::Some(value) => visitor.visit_some(value.as_ref()),
             Value::EnumVariant {
                 variant_index,
                 value,

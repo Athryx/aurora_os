@@ -169,6 +169,7 @@ impl<'de, 'a> de::Deserializer<'de> for &'a mut Deserializer<'de> {
             },
 
             DataType::Newtype => visitor.visit_newtype_struct(self),
+            DataType::Some => visitor.visit_some(self),
 
             DataType::SequenceStart => visitor.visit_seq(SequenceDeserializer::try_from(self)?),
             DataType::SequenceEnd => Err(AserError::UnexpectedTerminator),

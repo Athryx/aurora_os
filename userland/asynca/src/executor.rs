@@ -161,6 +161,7 @@ impl Executor {
 impl !Send for Executor {}
 
 /// Something that is waiting on an event
+#[derive(Debug)]
 struct EventWaiter {
     waker: Waker,
     event_reciever: EventReciever,

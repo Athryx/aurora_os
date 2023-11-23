@@ -1,3 +1,7 @@
+use core::fmt::{self, Display};
+
+use derive_more::Display;
+
 use bitflags::bitflags;
 use bit_utils::get_bits;
 use serde::{Serialize, Deserialize, de::{Visitor, Error, EnumAccess, VariantAccess}};
@@ -12,7 +16,7 @@ bitflags! {
 }
 
 #[repr(usize)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 pub enum CapType {
     Thread = 1,
     ThreadGroup = 2,
@@ -87,18 +91,22 @@ impl CapId {
     /// 
     /// `base_id` should be a unique integer in order for this id to be unique
     pub fn new(cap_type: CapType, flags: CapFlags, is_weak: bool, base_id: usize) -> Self {
-        CapId(flags.bits | ((is_weak as usize) << 4) | (cap_type.as_usize() << 5) | (base_id << 10))
+        CapId(flags.bits() | ((is_weak as usize) << 4) | (cap_type.as_usize() << 5) | (base_id << 10))
     }
 
     /// Creates a null capid with the given flags
     /// 
     /// Used when a capid has not yet been asigned to an object, but it has some specified flags
     pub fn null_flags(flags: CapFlags, is_weak: bool) -> Self {
-        CapId(flags.bits | ((is_weak as usize) << 4))
+        CapId(flags.bits() | ((is_weak as usize) << 4))
     }
 
     pub fn null() -> Self {
         CapId(0)
+    }
+
+    pub fn is_null(&self) -> bool {
+        self.0 == 0
     }
 
     pub fn flags(&self) -> CapFlags {
@@ -109,6 +117,10 @@ impl CapId {
         get_bits(self.0, 4..5) == 1
     }
 
+    /// # Panics
+    /// 
+    /// Panics if this capability is null
+    // FIXME: introduce null to CapType enum
     pub fn cap_type(&self) -> CapType {
         // panic safety: CapId will always have valid metadata, this is checked in the constructor
         CapType::from(get_bits(self.0, 5..10)).unwrap()
@@ -124,6 +136,29 @@ impl CapId {
 impl From<CapId> for usize {
     fn from(cap_id: CapId) -> Self {
         cap_id.0
+    }
+}
+
+impl Display for CapId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.is_null() {
+            write!(f, "<null cap id>")
+        } else {
+            let flags = self.flags();
+
+            let r = if flags.contains(CapFlags::READ) { 'R' } else { '-' };
+            let p = if flags.contains(CapFlags::PROD) { 'P' } else { '-' };
+            let w = if flags.contains(CapFlags::WRITE) { 'W' } else { '-' };
+            let u = if flags.contains(CapFlags::UPGRADE) { 'U' } else { '-' };
+
+            write!(
+                f,
+                "{:x}({}:{}{}{}{})",
+                self.0,
+                self.cap_type(),
+                r, p, w, u,
+            )
+        }
     }
 }
 

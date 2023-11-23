@@ -113,7 +113,9 @@ impl<'a> Serializer for ValueSerializer {
     fn serialize_some<T: ?Sized>(self, value: &T) -> Result<Self::Ok, Self::Error>
     where
         T: serde::Serialize {
-        value.serialize(self)
+        Ok(Value::Some(
+            Box::new(value.serialize(self)?),
+        ))
     }
 
     fn serialize_unit_struct(self, _name: &'static str) -> Result<Self::Ok, Self::Error> {

@@ -29,14 +29,14 @@ pub struct RpcCall<T> {
     pub args: T,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, Error)]
+#[derive(Debug, Clone, Serialize, Deserialize, Error)]
 pub enum RpcError {
     #[error("Invalid rpc service id")]
     InvalidServiceId,
     #[error("Invalid rpc method id")]
     InvalidMethodId,
-    #[error("Failed to deserialize rpc method arguments")]
-    SerializationError,
+    #[error("Failed to deserialize rpc method arguments: {0}")]
+    SerializationError(#[from] aser::AserError),
     #[error("A system error occured: {0}")]
     SysErr(#[from] SysErr),
 }
@@ -48,7 +48,7 @@ pub fn respond_success<T: Serialize>(reply: Reply, data: T) {
             // TODO: log error if error occurs
             let _ = reply.reply(&data.message_buffer().unwrap());
         },
-        Err(_) => respond_error(reply, RpcError::SerializationError),
+        Err(error) => respond_error(reply, RpcError::SerializationError(error)),
     }
 }
 
@@ -80,16 +80,14 @@ pub struct ClientRpcEndpoint {
 
 impl ClientRpcEndpoint {
     pub async fn call<T: Serialize, U: for<'de> Deserialize<'de>>(&self, data: RpcCall<T>) -> Result<U, RpcError> {
-        let serialized_data: MessageVec<u8> = aser::to_bytes_count_cap(&data)
-            .or(Err(RpcError::SerializationError))?;
+        let serialized_data: MessageVec<u8> = aser::to_bytes_count_cap(&data)?;
 
         // panic safety: the serialized data should have non zero length
         let response = self.channel.call(serialized_data.message_buffer().unwrap()).await?;
 
         let response = unsafe {
             // safety: this is called as soon as await resolves
-            aser::from_bytes(response.as_slice())
-                .or(Err(RpcError::SerializationError))?
+            aser::from_bytes(response.as_slice())?
         };
 
         response

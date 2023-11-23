@@ -12,6 +12,7 @@ use core::mem::size_of;
 #[cfg(feature = "alloc")]
 use alloc::string::{String, ToString};
 
+use serde::{Serialize, Deserialize};
 use sys::{CspaceTarget, CapId, cap_clone_inner, CapFlags, SysErr, CapabilityWeakness};
 use thiserror_no_std::Error;
 use num_enum::{TryFromPrimitive, IntoPrimitive};
@@ -33,7 +34,7 @@ pub use value::{Value, Integer, Float};
 
 pub type Result<T> = core::result::Result<T, AserError>;
 
-#[derive(Debug, Error)]
+#[derive(Debug, Clone, Error, Serialize, Deserialize)]
 pub enum AserError {
     #[cfg(feature = "alloc")]
     #[error("Serialize failed: {0}")]
@@ -141,18 +142,22 @@ enum DataType {
     Bytes64 = 23,
     /// A newtype, used only for newtype structs, not newtype variants
     Newtype = 24,
-    SequenceStart = 25,
-    SequenceEnd = 26,
-    MapStart = 27,
-    MapEnd = 28,
+    /// Represents an option with a value
+    /// 
+    /// This is required for option to deserialize right
+    Some = 25,
+    SequenceStart = 26,
+    SequenceEnd = 27,
+    MapStart = 28,
+    MapEnd = 29,
     /// Enum member, followed by 32 bit index
-    Variant = 29,
+    Variant = 30,
     /// Newtype enum member with a value, which can be any type
     /// 
     /// Followed by 32 bit inedex and another value
-    VariantValue = 30,
+    VariantValue = 31,
     /// Followed by 16 bit index into capability array
-    Capability = 31,
+    Capability = 32,
     Filler = 0xff,
 }
 

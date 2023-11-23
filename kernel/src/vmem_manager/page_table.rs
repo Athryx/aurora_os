@@ -15,6 +15,7 @@ pub const NUM_ENTRIES: usize = PAGE_SIZE / 8;
 
 bitflags! {
     /// Bitmask of all the flags in a page table that the cpu uses
+	#[derive(Debug, Clone, Copy)]
 	pub struct PageTableFlags: usize {
 		const PRESENT = 	1;
 		const WRITABLE = 	1 << 1;

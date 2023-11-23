@@ -1,4 +1,4 @@
-use core::fmt;
+use core::fmt::{self, Write};
 use core::ops::{Deref, DerefMut};
 use core::str;
 
@@ -27,6 +27,10 @@ impl String {
             data: Vec::from_slice(allocer, str.as_bytes())?,
         })
     }
+
+    pub fn push_str(&mut self, str: &str) -> KResult<()> {
+        self.data.extend_from_slice(str.as_bytes())
+    }
 }
 
 impl Deref for String {
@@ -53,4 +57,20 @@ impl fmt::Display for String {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         fmt::Display::fmt(&**self, f)
     }
+}
+
+impl Write for String {
+    fn write_str(&mut self, s: &str) -> fmt::Result {
+        self.push_str(s).or(Err(fmt::Error))
+    }
+}
+
+#[macro_export]
+macro_rules! format {
+    ($allocator:expr, $($args:tt)*) => {{
+        let mut string = String::new($allocator);
+        string.write_fmt(core::format_args!($($args)*))
+            .expect("a formatting trait implementation returnad an error");
+        string
+    }}
 }
