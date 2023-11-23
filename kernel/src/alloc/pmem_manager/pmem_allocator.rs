@@ -328,7 +328,7 @@ impl PmemAllocator {
             let res = current
                 .data()
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                    let mut flags = unsafe { TreeStatus::from_bits_retain(n) };
+                    let mut flags = TreeStatus::from_bits_retain(n);
 
                     if flags.contains(TreeStatus::OCCUPY) {
                         return None;
@@ -375,7 +375,7 @@ impl PmemAllocator {
             loop {
                 let result = current_node.data()
                     .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                        let flags = unsafe { TreeStatus::from_bits_retain(n) };
+                        let flags = TreeStatus::from_bits_retain(n);
 
                         if flags.contains(TreeStatus::OCCUPY_RIGHT) {
                             None
@@ -491,7 +491,7 @@ impl PmemAllocator {
             current
                 .data()
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                    flags = unsafe { TreeStatus::from_bits_retain(n) };
+                    flags = TreeStatus::from_bits_retain(n);
                     flags.set_coal(child_type);
                     Some(flags.bits())
                 })
@@ -520,7 +520,7 @@ impl PmemAllocator {
             let res = current
                 .data()
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                    flags = unsafe { TreeStatus::from_bits_retain(n) };
+                    flags = TreeStatus::from_bits_retain(n);
 
                     if flags.get_coal(child_type) {
                         flags.clear_occupy(child_type);

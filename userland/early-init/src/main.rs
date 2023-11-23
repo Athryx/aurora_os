@@ -2,7 +2,6 @@
 #![no_main]
 
 #![feature(naked_functions)]
-#![feature(async_fn_in_trait)]
 #![feature(decl_macro)]
 #![feature(trait_alias)]
 #![feature(associated_type_defaults)]

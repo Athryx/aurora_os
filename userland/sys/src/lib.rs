@@ -17,5 +17,3 @@ mod syscalls;
 pub use syscalls::*;
 mod syserr;
 pub use syserr::*;
-mod tid;
-pub use tid::Tid;

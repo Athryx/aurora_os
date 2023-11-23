@@ -17,7 +17,6 @@ use crate::container::Weak;
 use crate::prelude::*;
 
 use sys::CapType;
-pub use sys::Tid;
 
 /// Amount status must be incramented to change generation without changing ThreadState
 const GENERATION_STEP_SIZE: usize = 0b100;
