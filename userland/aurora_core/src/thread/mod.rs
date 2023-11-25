@@ -5,7 +5,7 @@ use core::ptr;
 use alloc::{sync::Arc, string::String};
 
 use sys::syscall_nums::{ADDRESS_SPACE_UNMAP, THREAD_DESTROY};
-use sys::{CapId, Capability, Thread as SysThread, MemoryMappingFlags, SysErr};
+use sys::{CapId, Capability, Thread as SysThread, SysErr, MemoryMappingOptions};
 
 mod thread_local_data;
 pub use thread_local_data::{LocalKey, ThreadLocalData};
@@ -123,7 +123,11 @@ where
         ..
     } = addr_space().map_memory(MapMemoryArgs {
         size: Some(process::DEFAULT_STACK_SIZE),
-        flags: MemoryMappingFlags::READ | MemoryMappingFlags::WRITE,
+        options: MemoryMappingOptions {
+            read: true,
+            write: true,
+            ..Default::default()
+        },
         ..Default::default()
     }).expect("failed to map new thread stack");
 

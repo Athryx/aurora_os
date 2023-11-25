@@ -3,6 +3,8 @@ mod ahci;
 use aurora::prelude::*;
 use hwaccess_server::{HwAccess, HwAccessAsync, CLASS_MASS_STORAGE, SUBCLASS_SERIAL_ATA, PROG_IF_AHCI};
 
+use crate::error::FsError;
+
 trait DiskAccess {
     unsafe fn read_sectors(&self, sector_num: usize, sector_count: usize, dest_addr: usize) -> DiskCompletion;
     unsafe fn write_sectors(&self, sector_num: usize, sector_count: usize, src_addr: usize) -> DiskCompletion;
@@ -27,7 +29,7 @@ impl FsBackend {
 }
 
 /// Queries the hwaccess server for all disks and constructs an FsBackend for each one
-pub async fn get_backends(hwaccess_server: HwAccess) -> Vec<FsBackend> {
+pub async fn get_backends(hwaccess_server: HwAccess) -> Result<Vec<FsBackend>, FsError> {
     let mut backends = Vec::new();
     let pci_devices = hwaccess_server.get_pci_devices().await;
 
@@ -35,11 +37,11 @@ pub async fn get_backends(hwaccess_server: HwAccess) -> Vec<FsBackend> {
         if device.class == CLASS_MASS_STORAGE {
             if device.subclass == SUBCLASS_SERIAL_ATA && device.prog_if == PROG_IF_AHCI {
                 backends.push(
-                    FsBackend::new(ahci::AhciBackend::new(&hwaccess_server, *device).await),
+                    FsBackend::new(ahci::AhciBackend::new(&hwaccess_server, *device).await?),
                 );
             }
         }
     }
 
-    backends
+    Ok(backends)
 }

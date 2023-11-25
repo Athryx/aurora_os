@@ -3,7 +3,7 @@ use sys::CapType;
 use crate::cap::CapObject;
 use crate::cap::address_space::{AddressSpace, PhysMemMapping, AddrSpaceMapping, AddressSpaceInner, MappingId};
 use crate::prelude::*;
-use crate::vmem_manager::{MapAction, PageMappingFlags};
+use crate::vmem_manager::{MapAction, PageMappingOptions};
 
 use super::HeapRef;
 
@@ -78,20 +78,20 @@ pub struct PhysMem {
 }
 
 impl PhysMem {
-    pub fn map(&self, address_space: &AddressSpace, address: VirtAddr, flags: PageMappingFlags) -> KResult<Size> {
+    pub fn map(&self, address_space: &AddressSpace, address: VirtAddr, options: PageMappingOptions) -> KResult<Size> {
         let mut addr_space_inner = address_space.inner();
 
         let mapping = PhysMemMapping {
             phys_mem: *self,
             map_range: AVirtRange::new(address, self.region.size()),
-            flags,
+            options,
             map_id: MappingId::new(),
         };
 
         addr_space_inner.mappings.insert_mapping(AddrSpaceMapping::PhysMem(mapping))?;
 
         let map_result = unsafe {
-            addr_space_inner.addr_space.map_many(self.iter_mapping(address, flags))
+            addr_space_inner.addr_space.map_many(self.iter_mapping(address, options))
         };
 
         if let Err(error) = map_result {
@@ -111,7 +111,7 @@ impl PhysMem {
             panic!("tried to unmap regular memory with physmem unmap");
         };
 
-        for map_action in self.iter_mapping(address, mapping.flags) {
+        for map_action in self.iter_mapping(address, mapping.options) {
             unsafe {
                 address_space.addr_space.unmap_page(map_action.virt_addr).expect("failed to unmap physmem page");
             }
@@ -124,14 +124,14 @@ impl PhysMem {
         Size::from_bytes(self.region.size())
     }
 
-    fn iter_mapping(&self, address: VirtAddr, flags: PageMappingFlags) -> impl Iterator<Item = MapAction> + Clone {
+    fn iter_mapping(&self, address: VirtAddr, options: PageMappingOptions) -> impl Iterator<Item = MapAction> + Clone {
         let map_page_count = self.region.page_size();
         let phys_addr = self.region.addr();
 
         (0..map_page_count).map(move |i| MapAction {
             virt_addr: address + PAGE_SIZE * i,
             phys_addr: phys_addr + PAGE_SIZE * i,
-            flags,
+            options,
         })
     }
 }

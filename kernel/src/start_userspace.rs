@@ -5,8 +5,7 @@ use sys::{CapFlags, InitInfo, ProcessInitData, ProcessMemoryEntry, StackInfo, Rs
 use elf::{ElfBytes, endian::NativeEndian, abi::{PT_LOAD, PF_R, PF_W, PF_X}};
 use aser::to_bytes_count_cap;
 
-use crate::{prelude::*, alloc::{root_alloc, root_alloc_page_ref, root_alloc_ref, MmioAllocator}, cap::{Capability, StrongCapability, memory::{Memory, PageSource, MapMemoryArgs}, address_space::AddressSpace, capability_space::CapabilitySpace, WeakCapability}, sched::{ThreadGroup, Thread, ThreadStartMode}};
-use crate::vmem_manager::PageMappingFlags;
+use crate::{prelude::*, alloc::{root_alloc, root_alloc_page_ref, root_alloc_ref, MmioAllocator}, cap::{Capability, StrongCapability, memory::{Memory, PageSource, MapMemoryArgs}, address_space::AddressSpace, capability_space::CapabilitySpace, WeakCapability}, sched::{ThreadGroup, Thread, ThreadStartMode}, vmem_manager::PageMappingOptions};
 use crate::container::Arc;
 
 const INITRD_MAGIC: u64 = 0x39f298aa4b92e836;
@@ -103,7 +102,7 @@ pub fn start_early_init_process(initrd: &[u8], mmio_allocator: Arc<MmioAllocator
     let mut memory_regions = Vec::new(root_alloc_ref());
 
     // maps memomry in the userspace process and adds it to the mapped regions list
-    let mut map_memory = |address, size: Size, flags| -> KResult<Arc<Memory>> {
+    let mut map_memory = |address, size: Size, options| -> KResult<Arc<Memory>> {
         assert!(page_aligned(address));
         assert!(size.is_page_aligned());
 
@@ -128,7 +127,7 @@ pub fn start_early_init_process(initrd: &[u8], mmio_allocator: Arc<MmioAllocator
                 map_addr: VirtAddr::new(address),
                 map_size: Some(size),
                 offset: Size::zero(),
-                flags,
+                options,
             },
         )?;
 
@@ -152,16 +151,12 @@ pub fn start_early_init_process(initrd: &[u8], mmio_allocator: Arc<MmioAllocator
 
     for phdr in elf_data.segments().unwrap().iter() {
         if phdr.p_type == PT_LOAD {
-            let mut map_flags = PageMappingFlags::USER;
-            if phdr.p_flags & PF_R != 0 {
-                map_flags |= PageMappingFlags::READ;
-            }
-            if phdr.p_flags & PF_W != 0 {
-                map_flags |= PageMappingFlags::WRITE;
-            }
-            if phdr.p_flags & PF_X != 0 {
-                map_flags |= PageMappingFlags::EXEC;
-            }
+            let map_options = PageMappingOptions {
+                read: phdr.p_flags & PF_R != 0,
+                write: phdr.p_flags & PF_W != 0,
+                exec: phdr.p_flags & PF_X != 0,
+                ..Default::default()
+            };
 
             // it seems elf doesn't require address or size to be page aligned
             let unaligned_map_range = UVirtRange::new(
@@ -173,7 +168,7 @@ pub fn start_early_init_process(initrd: &[u8], mmio_allocator: Arc<MmioAllocator
             let memory = map_memory(
                 map_range.as_usize(),
                 Size::from_bytes(map_range.size()),
-                map_flags,
+                map_options,
             ).expect("mapping memory failed");
 
 
@@ -189,19 +184,31 @@ pub fn start_early_init_process(initrd: &[u8], mmio_allocator: Arc<MmioAllocator
     let stack_memory = map_memory(
         STACK_ADDRESS,
         STACK_SIZE,
-        PageMappingFlags::USER | PageMappingFlags::READ | PageMappingFlags::WRITE,
+        PageMappingOptions {
+            read: true,
+            write: true,
+            ..Default::default()
+        },
     ).expect("mapping stack failed");
 
     let startup_data_memory = map_memory(
         STARTUP_DATA_ADDRESS,
         Size::from_pages(1),
-        PageMappingFlags::USER | PageMappingFlags::READ | PageMappingFlags::WRITE,
+        PageMappingOptions {
+            read: true,
+            write: true,
+            ..Default::default()
+        },
     ).expect("mapping startup data failed");
 
     let initrd_memory = map_memory(
         INITRD_MAPPING_ADDRESS,
         Size::from_bytes(align_up(initrd.len(), PAGE_SIZE)),
-        PageMappingFlags::USER | PageMappingFlags::READ | PageMappingFlags::WRITE,
+        PageMappingOptions {
+            read: true,
+            write: true,
+            ..Default::default()
+        },
     ).expect("failed to map initrd memory");
 
     initrd_memory.inner_write().copy_from(.., initrd)?;

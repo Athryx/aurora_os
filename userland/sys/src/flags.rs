@@ -100,6 +100,27 @@ bitflags! {
 }
 
 
+/// These are the different modes that can be used for memory caching
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MemoryCacheSetting {
+    #[default]
+    WriteBack,
+    WriteThrough,
+    WriteConbining,
+    Uncached,
+}
+
+impl From<MemoryMappingFlags> for MemoryCacheSetting {
+    fn from(flags: MemoryMappingFlags) -> Self {
+        match (flags.contains(MemoryMappingFlags::CACHE_BIT_2), flags.contains(MemoryMappingFlags::CACHE_BIT_1)) {
+            (false, false) => MemoryCacheSetting::WriteBack,
+            (false, true) => MemoryCacheSetting::WriteThrough,
+            (true, false) => MemoryCacheSetting::WriteConbining,
+            (true, true) => MemoryCacheSetting::Uncached,
+        }
+    }
+}
+
 bitflags! {
     /// Used to specify access permissions on memory mappings
     #[derive(Debug, Clone, Copy)]
@@ -107,6 +128,20 @@ bitflags! {
         const READ = 1;
         const WRITE = 1 << 1;
         const EXEC = 1 << 2;
+        // These 2 bits are used to store the cache settings
+        const CACHE_BIT_1 = 1 << 3;
+        const CACHE_BIT_2 = 1 << 4;
+    }
+}
+
+impl From<MemoryCacheSetting> for MemoryMappingFlags {
+    fn from(value: MemoryCacheSetting) -> Self {
+        match value {
+            MemoryCacheSetting::WriteBack => MemoryMappingFlags::empty(),
+            MemoryCacheSetting::WriteThrough => MemoryMappingFlags::CACHE_BIT_1,
+            MemoryCacheSetting::WriteConbining => MemoryMappingFlags::CACHE_BIT_2,
+            MemoryCacheSetting::Uncached => MemoryMappingFlags::CACHE_BIT_1 | MemoryMappingFlags::CACHE_BIT_2,
+        }
     }
 }
 
@@ -130,7 +165,7 @@ bitflags! {
     /// The first three bits of flags are the same as MemoryMappingFlags, additonal options are here
     #[derive(Debug, Clone, Copy)]
     pub struct MemoryMapFlags: u32 {
-        const MAX_SIZE = 1 << 3;
+        const MAX_SIZE = 1 << 5;
     }
 }
 

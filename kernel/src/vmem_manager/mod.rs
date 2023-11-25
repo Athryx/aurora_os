@@ -1,11 +1,11 @@
 //! This has all the functions that have to do with mappind physical memory into virtual memory
 
-use bitflags::bitflags;
 use lazy_static::lazy_static;
 use spin::Once;
+use sys::CapFlags;
+use sys::{MemoryCacheSetting, MemoryMappingFlags};
 
 use crate::arch::x64::invlpg;
-use crate::cap::CapFlags;
 use crate::mem::PageSize;
 use crate::mem::PhysFrame;
 use crate::mem::VirtFrame;
@@ -24,41 +24,65 @@ lazy_static! {
 /// Cached page table pointer of kernel memory region
 static KERNEL_MEMORY_PAGE_POINTER: Once<PageTablePointer> = Once::new();
 
-bitflags! {
-    /// Flags that represent properties of the memory we want to map
-    #[derive(Debug, Clone, Copy)]
-	pub struct PageMappingFlags: usize {
-		const READ =		1;
-		const WRITE =		1 << 1;
-		const EXEC =		1 << 2;
-		const USER = 		1 << 3;
-	}
+#[derive(Debug, Clone, Copy)]
+pub struct PageMappingOptions {
+    pub read: bool,
+    pub write: bool,
+    pub exec: bool,
+    pub user: bool,
+    pub cacheing: MemoryCacheSetting,
 }
 
-impl PageMappingFlags {
-    /// Returns true if these page mapping flags specift memory that will actually exist in the address space
+impl PageMappingOptions {
+    pub fn writable(self, write: bool) -> Self {
+        PageMappingOptions {
+            write,
+            ..self
+        }
+    }
+
+    /// Returns true if these page mapping options specify memory that will actually exist in the address space
     pub fn exists(&self) -> bool {
-		self.intersects(PageMappingFlags::READ | PageMappingFlags::WRITE | PageMappingFlags::EXEC)
-	}
-}
+        self.read || self.write || self.exec
+    }
 
-impl From<CapFlags> for PageMappingFlags {
-    fn from(flags: CapFlags) -> Self {
-        let mut out = PageMappingFlags::USER;
+    /// Gets the required capability flags for a memory capability to map it with these mapping options
+    pub fn required_cap_flags(&self) -> CapFlags {
+        let mut out = CapFlags::empty();
 
-        if flags.contains(CapFlags::READ) {
-            out |= PageMappingFlags::READ;
+        if self.read || self.exec {
+            out |= CapFlags::READ;
         }
 
-        if flags.contains(CapFlags::WRITE) {
-            out |= PageMappingFlags::WRITE;
-        }
-
-        if flags.contains(CapFlags::PROD) {
-            out |= PageMappingFlags::EXEC;
+        if self.write {
+            out |= CapFlags::WRITE;
         }
 
         out
+    }
+}
+
+impl Default for PageMappingOptions {
+    fn default() -> Self {
+        PageMappingOptions {
+            read: false,
+            write: false,
+            exec: false,
+            user: true,
+            cacheing: MemoryCacheSetting::default(),
+        }
+    }
+}
+
+impl From<MemoryMappingFlags> for PageMappingOptions {
+    fn from(flags: MemoryMappingFlags) -> Self {
+        PageMappingOptions {
+            read: flags.contains(MemoryMappingFlags::READ),
+            write: flags.contains(MemoryMappingFlags::WRITE),
+            exec: flags.contains(MemoryMappingFlags::EXEC),
+            user: true,
+            cacheing: flags.into(),
+        }
     }
 }
 
@@ -110,7 +134,11 @@ impl VirtAddrSpace {
             self.map_memory_with_huge_pages(
                 *consts::TEXT_VIRT_RANGE,
                 text_phys_addr,
-                PageMappingFlags::READ | PageMappingFlags::EXEC,
+                PageMappingOptions {
+                    read: true,
+                    exec: true,
+                    ..Default::default()
+                },
                 true,
             ).expect(FAIL_MESSAGE);
 
@@ -118,7 +146,10 @@ impl VirtAddrSpace {
             self.map_memory_with_huge_pages(
                 *consts::RODATA_VIRT_RANGE,
                 rodata_phys_addr,
-                PageMappingFlags::READ,
+                PageMappingOptions {
+                    read: true,
+                    ..Default::default()
+                },
                 true,
             ).expect(FAIL_MESSAGE);
 
@@ -141,7 +172,11 @@ impl VirtAddrSpace {
                 self.map_memory_with_huge_pages(
                     mem_range,
                     mem_phys_addr,
-                    PageMappingFlags::READ | PageMappingFlags::WRITE,
+                    PageMappingOptions {
+                        read: true,
+                        write: true,
+                        ..Default::default()
+                    },
                     true,
                 ).expect(FAIL_MESSAGE);
             }
@@ -152,7 +187,11 @@ impl VirtAddrSpace {
             self.map_frame(
                 last_virt_frame,
                 last_phys_frame,
-                PageMappingFlags::READ | PageMappingFlags::WRITE,
+                PageMappingOptions {
+                    read: true,
+                    write: true,
+                    ..Default::default()
+                },
                 true,
             ).expect(FAIL_MESSAGE);
 
@@ -194,9 +233,9 @@ impl VirtAddrSpace {
     /// # Safety
     /// 
     /// mapping should be correct, lots of things can get messed up if wrong thing is mapped
-    pub unsafe fn map_page(&mut self, virt_addr: VirtAddr, phys_addr: PhysAddr, flags: PageMappingFlags) -> KResult<()> {
+    pub unsafe fn map_page(&mut self, virt_addr: VirtAddr, phys_addr: PhysAddr, options: PageMappingOptions) -> KResult<()> {
         unsafe {
-            self.map_page_inner(virt_addr, phys_addr, flags, false)
+            self.map_page_inner(virt_addr, phys_addr, options, false)
         }
     }
 
@@ -204,13 +243,13 @@ impl VirtAddrSpace {
         &mut self,
         virt_addr: VirtAddr,
         phys_addr: PhysAddr,
-        flags: PageMappingFlags,
+        options: PageMappingOptions,
         global: bool
     ) -> KResult<()> {
         assert!(virt_addr.as_usize() < *consts::KERNEL_START);
         assert!(page_aligned(virt_addr.as_usize()));
 
-        if !flags.exists() {
+        if !options.exists() {
             return Err(SysErr::InvlArgs);
         }
 
@@ -220,7 +259,7 @@ impl VirtAddrSpace {
             PageTableFlags::empty()
         };
 
-        let flags = PageTableFlags::PRESENT | global_flag | flags.into();
+        let flags = PageTableFlags::PRESENT | global_flag | options.into();
         let new_page_pointer = PageTablePointer::new(phys_addr, flags);
 
         let virt_addr = virt_addr.as_usize();
@@ -330,7 +369,7 @@ impl VirtAddrSpace {
 pub struct MapAction {
     pub virt_addr: VirtAddr,
     pub phys_addr: PhysAddr,
-    pub flags: PageMappingFlags,
+    pub options: PageMappingOptions,
 }
 
 impl VirtAddrSpace {
@@ -342,7 +381,7 @@ impl VirtAddrSpace {
 
         for (i, action) in iter.enumerate() {
             let result = unsafe { 
-                self.map_page(action.virt_addr, action.phys_addr, action.flags)
+                self.map_page(action.virt_addr, action.phys_addr, action.options)
             };
 
             if result.is_err() {
@@ -399,7 +438,7 @@ impl VirtAddrSpace {
         &mut self,
         virt_range: AVirtRange,
         phys_addr: PhysAddr,
-        flags: PageMappingFlags,
+        options: PageMappingOptions,
         global: bool,
     ) -> KResult<()> {
         let phys_range = APhysRange::new(phys_addr, virt_range.size());
@@ -410,7 +449,7 @@ impl VirtAddrSpace {
         };
 
         while let Some((phys_frame, virt_frame)) = page_taker.take() {
-            self.map_frame(virt_frame, phys_frame, flags, global)?;
+            self.map_frame(virt_frame, phys_frame, options, global)?;
 
             // TODO: check if address space is loaded
             invlpg(virt_frame.start_addr().as_usize());
@@ -422,7 +461,7 @@ impl VirtAddrSpace {
     fn map_frame(&mut self,
         virt_frame: VirtFrame,
         phys_frame: PhysFrame,
-        flags: PageMappingFlags,
+        options: PageMappingOptions,
         global: bool
     ) -> KResult<()> {
         let huge_flag = match virt_frame {
@@ -437,7 +476,9 @@ impl VirtAddrSpace {
             PageTableFlags::empty()
         };
 
-        let flags = PageTableFlags::PRESENT | huge_flag | global_flag | flags.into();
+        // FIXME: handle case where pat bit is set, it must be set in a different bit for huge table
+        // not a big deal since this should never be called with non writeback caching
+        let flags = PageTableFlags::PRESENT | huge_flag | global_flag | options.into();
         self.map_frame_inner(
             virt_frame,
             PageTablePointer::new(phys_frame.start_addr(), flags),

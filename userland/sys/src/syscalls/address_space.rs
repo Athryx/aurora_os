@@ -11,7 +11,7 @@ use crate::{
     CspaceTarget,
     syscall,
     sysret_0,
-    sysret_1,
+    sysret_1, MemoryCacheSetting,
 };
 use crate::syscall_nums::*;
 use super::{Capability, Allocator, Memory, EventPool, PhysMem, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
@@ -34,6 +34,43 @@ impl Capability for AddressSpace {
 impl Drop for AddressSpace {
     fn drop(&mut self) {
         let _ = cap_destroy(CspaceTarget::Current, self.0);
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct MemoryMappingOptions {
+    pub read: bool,
+    pub write: bool,
+    pub exec: bool,
+    pub cacheing: MemoryCacheSetting,
+}
+
+impl Default for MemoryMappingOptions {
+    fn default() -> Self {
+        MemoryMappingOptions {
+            read: true,
+            write: true,
+            exec: false,
+            cacheing: MemoryCacheSetting::default(),
+        }
+    }
+}
+
+impl From<MemoryMappingOptions> for MemoryMappingFlags {
+    fn from(value: MemoryMappingOptions) -> Self {
+        let mut out = value.cacheing.into();
+
+        if value.read {
+            out |= Self::READ;
+        }
+        if value.write {
+            out |= Self::WRITE;
+        }
+        if value.exec {
+            out |= Self::EXEC
+        }
+
+        out
     }
 }
 
@@ -61,8 +98,8 @@ impl AddressSpace {
         ))
     }
 
-    pub fn map_memory(&self, memory: &Memory, address: usize, max_size: Option<Size>, map_offset: Size, flags: MemoryMappingFlags) -> KResult<Size> {
-        let mut flags = flags.bits() | WEAK_AUTO_DESTROY;
+    pub fn map_memory(&self, memory: &Memory, address: usize, max_size: Option<Size>, map_offset: Size, args: MemoryMappingOptions) -> KResult<Size> {
+        let mut flags = MemoryMappingFlags::from(args).bits() | WEAK_AUTO_DESTROY;
         if max_size.is_some() {
             flags |= MemoryMapFlags::MAX_SIZE.bits()
         }
@@ -92,11 +129,11 @@ impl AddressSpace {
         }
     }
 
-    pub fn map_phys_mem(&self, phys_mem: &PhysMem, address: usize, flags: MemoryMappingFlags) -> KResult<Size> {
+    pub fn map_phys_mem(&self, phys_mem: &PhysMem, address: usize, args: MemoryMappingOptions) -> KResult<Size> {
         unsafe {
             sysret_1!(syscall!(
                 PHYS_MEM_MAP,
-                flags.bits() | WEAK_AUTO_DESTROY,
+                MemoryMappingFlags::from(args).bits() | WEAK_AUTO_DESTROY,
                 self.as_usize(),
                 phys_mem.as_usize(),
                 address

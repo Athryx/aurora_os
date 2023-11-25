@@ -3,6 +3,7 @@
 extern crate std;
 
 mod disk_access;
+mod error;
 
 use aurora::env;
 use arpc::{ServerRpcEndpoint, run_rpc_service};

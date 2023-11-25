@@ -1,8 +1,7 @@
 use core::{mem::size_of, ptr::NonNull};
 
-use aurora::{this_context, addr_space, allocator::addr_space::{MapPhysMemArgs, RegionPadding}};
+use aurora::{this_context, addr_space, allocator::addr_space::{MapPhysMemArgs, RegionPadding, MemoryMappingOptions}};
 use bit_utils::{align_up, align_down, PAGE_SIZE, Size};
-use sys::MemoryMappingFlags;
 use acpi::{AcpiHandler, PhysicalMapping, AcpiTables, rsdp::Rsdp};
 
 use crate::mmio_allocator;
@@ -29,7 +28,11 @@ impl AcpiHandler for AcpiHandlerImpl {
 
         let map_result = addr_space().map_phys_mem(MapPhysMemArgs {
             phys_mem,
-            flags: MemoryMappingFlags::READ | MemoryMappingFlags::WRITE,
+            options: MemoryMappingOptions {
+                read: true,
+                write: true,
+                ..Default::default()
+            },
             address: None,
             padding: RegionPadding::default(),
         }).expect("acpi handler: failed to map physical memory");

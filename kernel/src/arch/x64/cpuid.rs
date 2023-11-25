@@ -46,3 +46,8 @@ pub fn apic_id() -> u8 {
 pub fn core_clock_freq() -> u32 {
     cpuid(0x15).ecx
 }
+
+/// Checks for presence of page attribute table, which allows setting all cache control modes with just page table entries
+pub fn has_pat() -> bool {
+    get_bits(cpuid(1).edx as usize, 16..17) == 1
+}

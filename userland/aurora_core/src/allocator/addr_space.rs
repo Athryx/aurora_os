@@ -10,7 +10,8 @@ use sys::EventPool;
 use sys::cap_clone;
 use thiserror_no_std::Error;
 use bit_utils::{Size, PAGE_SIZE, LOWER_HALF_END, KERNEL_RESERVED_START, HIGHER_HALF_START};
-use sys::{Memory, MemoryMappingFlags, CapFlags, SysErr, MemoryResizeFlags};
+use sys::{Memory, CapFlags, SysErr, MemoryResizeFlags};
+pub use sys::MemoryMappingOptions;
 
 use crate::addr_space;
 use crate::prelude::*;
@@ -160,7 +161,11 @@ impl MemoryCapStorage {
                 map_address,
                 None,
                 Size::zero(),
-                MemoryMappingFlags::READ | MemoryMappingFlags::WRITE,
+                MemoryMappingOptions {
+                    read: true,
+                    write: true,
+                    ..Default::default()
+                },
             ).or(Err(AddrSpaceError::RegionListOom))?;
 
         Ok(MemoryCapStorage {
@@ -500,7 +505,7 @@ pub struct MapMemoryArgs {
     /// Memory capability to map, or None for an ananamous mapping
     pub memory: Option<Memory>,
     /// Flags to map memory with
-    pub flags: MemoryMappingFlags,
+    pub options: MemoryMappingOptions,
     /// Address to map at, or None to find a suitable address
     pub address: Option<usize>,
     /// Size of memory to map in pages, or None to map the whole thing
@@ -539,7 +544,7 @@ pub struct MapEventPoolResult {
 #[derive(Debug)]
 pub struct MapPhysMemArgs {
     pub phys_mem: PhysMem,
-    pub flags: MemoryMappingFlags,
+    pub options: MemoryMappingOptions,
     pub address: Option<usize>,
     pub padding: RegionPadding,
 }
@@ -615,7 +620,7 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
         if let MappingTarget::Memory(memory) = &region.map_target {
             // TODO: have a way to not specify max size pages
             let result = self.address_space
-                .map_memory(&memory, address, Some(size), Size::zero(), args.flags)
+                .map_memory(&memory, address, Some(size), Size::zero(), args.options)
                 .map_err(|err| AddrSpaceError::MemorySyscallError(err));
 
             if let Err(err) = result {
@@ -721,7 +726,7 @@ impl<T: MappedRegionStorage> AddrSpaceManager<'_, T> {
         };
 
 
-        let map_size = self.address_space.map_phys_mem(&args.phys_mem, address, args.flags)?;
+        let map_size = self.address_space.map_phys_mem(&args.phys_mem, address, args.options)?;
         if map_size != size {
             // panic safety: this address was just mapped
             self.address_space.unmap(address).unwrap();
@@ -834,7 +839,11 @@ impl RemoteAddrSpaceManager<'_> {
             let map_result = local_address_space.map_memory(MapMemoryArgs {
                 memory: Some(memory),
                 size: Some(size),
-                flags: MemoryMappingFlags::READ | MemoryMappingFlags::WRITE,
+                options: MemoryMappingOptions {
+                    read: true,
+                    write: true,
+                    ..Default::default()
+                },
                 ..Default::default()
             });
 

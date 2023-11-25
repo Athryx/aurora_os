@@ -1,4 +1,4 @@
-use sys::CapFlags;
+use sys::{CapFlags, MemoryMappingFlags};
 
 use crate::alloc::HeapRef;
 use crate::cap::{StrongCapability, Capability};
@@ -6,7 +6,7 @@ use crate::cap::capability_space::CapabilitySpace;
 use crate::prelude::*;
 use crate::arch::x64::IntDisable;
 use crate::container::Arc;
-use crate::vmem_manager::PageMappingFlags;
+use crate::vmem_manager::PageMappingOptions;
 
 use super::options_weak_autodestroy;
 
@@ -50,16 +50,8 @@ pub fn mmio_allocator_alloc(options: u32, mmio_allocator_id: usize, allocator_id
 pub fn phys_mem_map(options: u32, addr_space_id: usize, phys_mem_id: usize, address: usize) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
 
-    let map_flags = PageMappingFlags::from_bits_truncate((options & 0b111) as usize)
-        | PageMappingFlags::USER;
-
-    let mut required_cap_flags = CapFlags::empty();
-    if map_flags.contains(PageMappingFlags::READ | PageMappingFlags::EXEC) {
-        required_cap_flags |= CapFlags::READ;
-    }
-    if map_flags.contains(PageMappingFlags::WRITE) {
-        required_cap_flags |= CapFlags::WRITE;
-    }
+    let map_flags = MemoryMappingFlags::from_bits_truncate(options);
+    let map_options = PageMappingOptions::from(map_flags);
 
     let address = VirtAddr::try_new_aligned(address)?;
 
@@ -72,10 +64,10 @@ pub fn phys_mem_map(options: u32, addr_space_id: usize, phys_mem_id: usize, addr
         .into_inner();
 
     let phys_mem = cspace
-        .get_phys_mem_with_perms(phys_mem_id, required_cap_flags, weak_auto_destroy)?
+        .get_phys_mem_with_perms(phys_mem_id, map_options.required_cap_flags(), weak_auto_destroy)?
         .into_inner();
 
-    phys_mem.map(&addr_space, address, map_flags)
+    phys_mem.map(&addr_space, address, map_options)
         .map(Size::pages_rounded)
 }
 

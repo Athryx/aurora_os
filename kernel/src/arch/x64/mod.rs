@@ -2,6 +2,9 @@ use core::arch::asm;
 use core::time::Duration;
 
 use crate::prelude::*;
+use sys::MemoryCacheSetting;
+
+use self::cpuid::has_pat;
 
 pub mod cpuid;
 
@@ -44,6 +47,90 @@ impl CPUPrivLevel {
 #[inline]
 pub fn bochs_break() {
     unsafe { asm!("xchg bx, bx", options(nomem, nostack)) }
+}
+
+pub const PAT_MSR: u32 = 0x277;
+
+#[repr(u8)]
+#[derive(Debug, Clone, Copy)]
+pub enum PatEntry {
+    StrongUncacheable = 0,
+    WriteCombining = 1,
+    WriteThrough = 4,
+    WriteProtected = 5,
+    /// Default cacheing which should be used for regular memory
+    WriteBack = 6,
+    /// This version of uncacheable can be overriden by mttrs
+    Uncacheable = 7,
+}
+
+/// These bits will be used as an index into the page attribute table to determine cache control for a given region of memory
+#[derive(Debug, Clone, Copy)]
+pub struct PageTableCacheBits {
+    pub pwt: bool,
+    pub pcd: bool,
+    pub pat: bool,
+}
+
+impl PatEntry {
+    pub fn to_page_table_bits(self) -> PageTableCacheBits {
+        match self {
+            Self::StrongUncacheable => PageTableCacheBits {
+                pwt: true,
+                pcd: true,
+                pat: false,
+            },
+            Self::WriteCombining => PageTableCacheBits {
+                pwt: false,
+                pcd: true,
+                pat: false,
+            },
+            Self::WriteThrough => PageTableCacheBits {
+                pwt: true,
+                pcd: false,
+                pat: false,
+            },
+            Self::WriteProtected => panic!("write protected memory type currently not supported"),
+            Self::WriteBack => PageTableCacheBits {
+                pwt: false,
+                pcd: false,
+                pat: false,
+            },
+            Self::Uncacheable => PageTableCacheBits {
+                pwt: false,
+                pcd: false,
+                pat: true,
+            },
+        }
+    }
+}
+
+impl From<MemoryCacheSetting> for PatEntry {
+    fn from(value: MemoryCacheSetting) -> Self {
+        match value {
+            MemoryCacheSetting::WriteBack => Self::WriteBack,
+            MemoryCacheSetting::WriteThrough => Self::WriteThrough,
+            MemoryCacheSetting::WriteConbining => Self::WriteCombining,
+            MemoryCacheSetting::Uncached => Self::StrongUncacheable,
+        }
+    }
+}
+
+fn init_pat() {
+    if !has_pat() {
+        panic!("cpu without page attribute table (pat) not supported");
+    }
+
+    let pat_value = PatEntry::WriteBack as u64
+        | (PatEntry::WriteThrough as u64) << 8
+        | (PatEntry::WriteCombining as u64) << 16
+        | (PatEntry::StrongUncacheable as u64) << 24
+        | (PatEntry::Uncacheable as u64) << 32
+        | (PatEntry::Uncacheable as u64) << 40
+        | (PatEntry::Uncacheable as u64) << 48
+        | (PatEntry::Uncacheable as u64) << 56;
+    
+    wrmsr(PAT_MSR, pat_value);
 }
 
 pub const EFER_MSR: u32 = 0xc0000080;
@@ -226,6 +313,11 @@ pub fn io_wait(time: Duration) {
     }
 }
 
+/// Not write through, disables caching write through and write back when set
+pub const CR0_NW: usize = 1 << 29;
+/// Disables the cache
+pub const CR0_CD: usize = 1 << 30;
+
 #[inline]
 pub fn get_cr0() -> usize {
     let out;
@@ -335,4 +427,10 @@ pub fn config_cpu_settings() {
 
     // allow no execute bit to be set on page tables
     wrmsr(EFER_MSR, rdmsr(EFER_MSR) | EFER_EXEC_DISABLE);
+
+    // clear cache disable and non write through bits
+    // this enables the maximum level of caching
+    set_cr0(get_cr0() & !(CR0_CD | CR0_NW));
+
+    init_pat();
 }

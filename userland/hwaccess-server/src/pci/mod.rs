@@ -6,7 +6,7 @@ use acpi::mcfg::Mcfg;
 use bit_utils::Size;
 use aurora::{this_context, addr_space, allocator::addr_space::{MapPhysMemArgs, RegionPadding}};
 use aurora::prelude::*;
-use sys::{MemoryMappingFlags, PhysMem};
+use sys::{PhysMem, MemoryMappingOptions};
 use volatile::{VolatilePtr, map_field};
 
 use hwaccess_server::PciDeviceInfo;
@@ -87,7 +87,11 @@ impl Pci {
     
             let map_result = addr_space().map_phys_mem(MapPhysMemArgs {
                 phys_mem,
-                flags: MemoryMappingFlags::READ | MemoryMappingFlags::WRITE,
+                options: MemoryMappingOptions {
+                    read: true,
+                    write: true,
+                    ..Default::default()
+                },
                 address: None,
                 padding: RegionPadding::default(),
             }).expect("could not map physical memory for acpi config space");

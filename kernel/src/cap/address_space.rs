@@ -7,7 +7,7 @@ use crate::consts;
 use crate::event::EventPool;
 use crate::prelude::*;
 use crate::sync::{IMutex, IMutexGuard};
-use crate::vmem_manager::{VirtAddrSpace, PageMappingFlags};
+use crate::vmem_manager::{VirtAddrSpace, PageMappingOptions};
 use crate::container::{Arc, HashMap};
 
 use super::memory::MemoryMappingLocation;
@@ -121,7 +121,7 @@ pub struct EventPoolMapping {
 pub struct PhysMemMapping {
     pub phys_mem: PhysMem,
     pub map_range: AVirtRange,
-    pub flags: PageMappingFlags,
+    pub options: PageMappingOptions,
     pub map_id: MappingId,
 }
 

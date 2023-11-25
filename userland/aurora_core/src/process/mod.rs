@@ -7,7 +7,7 @@ use bit_utils::{align_down, PAGE_SIZE, align_up, Size};
 use elf::abi::{PT_LOAD, PF_R, PF_W, PF_X};
 use elf::{ElfBytes, ParseError};
 use elf::endian::NativeEndian;
-use sys::{CapFlags, SysErr, Thread, AddressSpace, ThreadStartMode, MemoryMappingFlags, ProcessInitData, ProcessMemoryEntry, cap_clone, CspaceTarget, Capability, StackInfo};
+use sys::{CapFlags, SysErr, Thread, AddressSpace, ThreadStartMode, ProcessInitData, ProcessMemoryEntry, cap_clone, CspaceTarget, Capability, StackInfo, MemoryMappingOptions};
 use thiserror_no_std::Error;
 use bytemuck::bytes_of;
 
@@ -58,7 +58,7 @@ pub fn spawn_process(exe_data: &[u8], namespace_data: &mut [u8]) -> Result<Child
 
     for phdr in elf_data.segments().ok_or(ProcessError::NoElfSegments)?.iter() {
         if phdr.p_type == PT_LOAD {
-            let map_flags = elf_flags_to_memory_mapping_flags(phdr.p_flags);
+            let map_options = elf_flags_to_memory_mapping_options(phdr.p_flags);
 
             let start_addr = phdr.p_vaddr as usize;
             let end_addr = start_addr + phdr.p_memsz as usize;
@@ -74,7 +74,7 @@ pub fn spawn_process(exe_data: &[u8], namespace_data: &mut [u8]) -> Result<Child
             let section_mapping = manager.map_memory_remote_and_local(MapMemoryArgs {
                 address: Some(aligned_start_addr),
                 size: Some(Size::from_bytes(map_size)),
-                flags: map_flags,
+                options: map_options,
                 ..Default::default()
             })?;
 
@@ -110,7 +110,11 @@ pub fn spawn_process(exe_data: &[u8], namespace_data: &mut [u8]) -> Result<Child
     // map stack in this process and new process
     let stack = manager.map_memory_remote_and_local(MapMemoryArgs {
         size: Some(DEFAULT_STACK_SIZE),
-        flags: MemoryMappingFlags::READ | MemoryMappingFlags::WRITE,
+        options: MemoryMappingOptions {
+            read: true,
+            write: true,
+            ..Default::default()
+        },
         padding: RegionPadding {
             start: DEFAULT_STACK_PADDING,
             ..Default::default()
@@ -128,7 +132,10 @@ pub fn spawn_process(exe_data: &[u8], namespace_data: &mut [u8]) -> Result<Child
     // map startup data memory in new process and current process
     let startup_data_mapping = manager.map_memory_remote_and_local(MapMemoryArgs {
         size: Some(startup_data_size),
-        flags: MemoryMappingFlags::READ,
+        options: MemoryMappingOptions {
+            read: true,
+            ..Default::default()
+        },
         ..Default::default()
     })?;
 
@@ -233,19 +240,13 @@ fn gen_aslr_seed() -> [u8; 32] {
     [12, 64, 89, 134, 11, 235, 123, 98, 12, 31, 2, 90, 38, 24, 3, 49, 32, 58, 238, 210, 1, 0, 24, 23, 9, 48, 28, 65, 1, 43, 54, 55]
 }
 
-fn elf_flags_to_memory_mapping_flags(elf_flags: u32) -> MemoryMappingFlags {
-    let mut map_flags = MemoryMappingFlags::empty();
-    if elf_flags & PF_R != 0 {
-        map_flags |= MemoryMappingFlags::READ;
+fn elf_flags_to_memory_mapping_options(elf_flags: u32) -> MemoryMappingOptions {
+    MemoryMappingOptions {
+        read: elf_flags & PF_R != 0,
+        write: elf_flags & PF_W != 0,
+        exec: elf_flags & PF_X != 0,
+        ..Default::default()
     }
-    if elf_flags & PF_W != 0 {
-        map_flags |= MemoryMappingFlags::WRITE;
-    }
-    if elf_flags & PF_X != 0 {
-        map_flags |= MemoryMappingFlags::EXEC;
-    }
-
-    map_flags
 }
 
 /// Calculates the size of the memory we need to allocate to hold all the startup data

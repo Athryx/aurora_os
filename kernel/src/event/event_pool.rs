@@ -10,7 +10,7 @@ use crate::sched::{ThreadRef, WakeReason};
 use crate::sync::IMutex;
 use crate::container::{Arc, Weak};
 use crate::cap::{CapObject, address_space::{AddressSpace, EventPoolMapping as AddrSpaceEventPoolMapping}, memory::{MemoryWriteRegion, WriteResult, Page}};
-use crate::vmem_manager::{PageMappingFlags, MapAction};
+use crate::vmem_manager::{MapAction, PageMappingOptions};
 use crate::cap::channel::{CapabilityTransferInfo, CapabilityWriter};
 
 /// Communicates to calling thread what it needs to do after calling [`await_event`]
@@ -219,7 +219,11 @@ impl EventPoolInner {
                 MapAction {
                     virt_addr: map_addr + PAGE_SIZE * i,
                     phys_addr: page.phys_addr(),
-                    flags: PageMappingFlags::READ | PageMappingFlags::USER,
+                    options: PageMappingOptions {
+                        read: true,
+                        write: true,
+                        ..Default::default()
+                    },
                 }
             });
 

@@ -3,7 +3,7 @@
 
 use core::fmt::{self, Display, Write};
 
-use sys::{CapId, syscall_nums::*, ThreadNewFlags, ThreadDestroyFlags, ThreadSuspendFlags, HandleEventSyncFlags, HandleEventAsyncFlags, CapCloneFlags, CapDestroyFlags, MemoryNewFlags, MemoryUpdateMappingFlags, MemoryResizeFlags, EventPoolAwaitFlags, ChannelSyncFlags, ChannelAsyncRecvFlags};
+use sys::{CapId, syscall_nums::*, ThreadNewFlags, ThreadDestroyFlags, ThreadSuspendFlags, HandleEventSyncFlags, HandleEventAsyncFlags, CapCloneFlags, CapDestroyFlags, MemoryNewFlags, MemoryUpdateMappingFlags, MemoryResizeFlags, EventPoolAwaitFlags, ChannelSyncFlags, ChannelAsyncRecvFlags, MemoryMappingFlags};
 use bitflags::Flags;
 
 use crate::prelude::*;
@@ -153,8 +153,8 @@ pub fn get_strace_args_string(syscall_num: u32, vals: &SyscallVals) -> String {
         CAP_DESTROY => argsf!(vals, CapDestroyFlags, CapId, CapId,),
         ADDRESS_SPACE_NEW => args!(vals, CapId,),
         ADDRESS_SPACE_UNMAP => args!(vals, CapId, Address,),
-        // TODO: fix flags with mapping flags
-        MEMORY_MAP => args!(vals, CapId, CapId, Address, Num, Num,),
+        // TODO: include MemoryMapFlags options as well
+        MEMORY_MAP => argsf!(vals, MemoryMappingFlags, CapId, CapId, Address, Num, Num,),
         MEMORY_UPDATE_MAPPING => argsf!(vals, MemoryUpdateMappingFlags, CapId, Address, Num,),
         MEMORY_NEW => argsf!(vals, MemoryNewFlags, CapId, Num,),
         MEMORY_GET_SIZE => args!(vals, CapId,),
@@ -180,8 +180,7 @@ pub fn get_strace_args_string(syscall_num: u32, vals: &SyscallVals) -> String {
         DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_SYNC => event_sync!(vals),
         DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_ASYNC => event_async!(vals),
         MMIO_ALLOCATOR_ALLOC => args!(vals, CapId, CapId, Address, Num,),
-        // TODO: map flags
-        PHYS_MEM_MAP => args!(vals, CapId, CapId, Address,),
+        PHYS_MEM_MAP => argsf!(vals, MemoryMappingFlags, CapId, CapId, Address,),
         PHYS_MEM_GET_SIZE => args!(vals, CapId,),
         _ => return syscall_name,
     };

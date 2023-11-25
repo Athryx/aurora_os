@@ -1,4 +1,4 @@
-use sys::{MemoryNewFlags, MemoryResizeFlags, MemoryMapFlags, MemoryUpdateMappingFlags};
+use sys::{MemoryNewFlags, MemoryResizeFlags, MemoryMapFlags, MemoryUpdateMappingFlags, MemoryMappingFlags};
 
 use crate::alloc::{PaRef, HeapRef};
 use crate::cap::address_space::AddressSpace;
@@ -6,10 +6,10 @@ use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::memory::{PageSource, MapMemoryArgs, UpdateValue, UpdateMappingAgs};
 use crate::cap::{StrongCapability, Capability};
 use crate::cap::{CapFlags, memory::Memory};
-use crate::vmem_manager::PageMappingFlags;
 use crate::prelude::*;
 use crate::arch::x64::IntDisable;
 use crate::container::Arc;
+use crate::vmem_manager::PageMappingOptions;
 use super::options_weak_autodestroy;
 
 pub fn address_space_new(options: u32, allocator_id: usize) -> KResult<usize> {
@@ -178,8 +178,8 @@ pub fn memory_map(
     let weak_auto_destroy = options_weak_autodestroy(options);
     let addr = VirtAddr::try_new_aligned(addr)?;
 
-    let map_flags = PageMappingFlags::from_bits_truncate((options & 0b111) as usize)
-        | PageMappingFlags::USER;
+    let map_flags = MemoryMappingFlags::from_bits_truncate(options);
+    let map_options = PageMappingOptions::from(map_flags);
     let other_flags = MemoryMapFlags::from_bits_truncate(options);
 
     let max_size = if other_flags.contains(MemoryMapFlags::MAX_SIZE) {
@@ -193,14 +193,6 @@ pub fn memory_map(
 
     let offset = Size::try_from_pages(offset).ok_or(SysErr::Overflow)?;
 
-    let mut required_cap_flags = CapFlags::empty();
-    if map_flags.contains(PageMappingFlags::READ | PageMappingFlags::EXEC) {
-        required_cap_flags |= CapFlags::READ;
-    }
-    if map_flags.contains(PageMappingFlags::WRITE) {
-        required_cap_flags |= CapFlags::WRITE;
-    }
-
     let _int_disable = IntDisable::new();
 
     let cspace = CapabilitySpace::current();
@@ -210,14 +202,14 @@ pub fn memory_map(
         .into_inner();
 
     let memory = cspace
-        .get_memory_with_perms(memory_id, required_cap_flags, weak_auto_destroy)?
+        .get_memory_with_perms(memory_id, map_options.required_cap_flags(), weak_auto_destroy)?
         .into_inner();
 
     Memory::map_memory(memory, addr_space, MapMemoryArgs {
         map_addr: addr,
         map_size: max_size,
         offset,
-        flags: map_flags,
+        options: map_options,
     }).map(Size::pages_rounded)
 }
 
@@ -246,8 +238,8 @@ pub fn memory_update_mapping(
     new_page_size: usize,
 ) -> KResult<usize> {
     let weak_auto_destroy = options_weak_autodestroy(options);
-    let map_flags = PageMappingFlags::from_bits_truncate((options & 0b111) as usize)
-        | PageMappingFlags::USER;
+    let map_flags = MemoryMappingFlags::from_bits_truncate(options);
+    let map_options = PageMappingOptions::from(map_flags);
     let other_flags = MemoryUpdateMappingFlags::from_bits_truncate(options);
 
     let address = VirtAddr::try_new_aligned(address)?;
@@ -264,8 +256,8 @@ pub fn memory_update_mapping(
         UpdateValue::KeepSame
     };
 
-    let flags = if other_flags.contains(MemoryUpdateMappingFlags::UPDATE_FLAGS) {
-        UpdateValue::Change(map_flags)
+    let options = if other_flags.contains(MemoryUpdateMappingFlags::UPDATE_FLAGS) {
+        UpdateValue::Change(map_options)
     } else {
         UpdateValue::KeepSame
     };
@@ -280,7 +272,7 @@ pub fn memory_update_mapping(
 
     memory.update_mapping(&addr_space, address, UpdateMappingAgs {
         size,
-        flags,
+        options,
     }).map(Size::pages_rounded)
 }
 

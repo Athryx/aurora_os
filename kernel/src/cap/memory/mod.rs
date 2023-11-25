@@ -4,7 +4,7 @@ use crate::prelude::*;
 use crate::alloc::{PaRef, HeapRef};
 use crate::sync::{IrwLock, IrwLockReadGuard, IrwLockWriteGuard};
 use crate::container::{Weak, Arc, HashMap};
-use crate::vmem_manager::{PageMappingFlags, MapAction, VirtAddrSpace};
+use crate::vmem_manager::{MapAction, VirtAddrSpace, PageMappingOptions};
 use super::address_space::{AddressSpace, AddrSpaceMapping, MemoryMapping as AddrSpaceMemoryMapping, AddressSpaceInner};
 use super::{CapObject, CapType, address_space::MappingId};
 
@@ -263,7 +263,7 @@ pub struct MemoryMappingLocation {
     pub map_size: Size,
     /// Offset into memory capability where mapping is from
     pub offset: Size,
-    pub flags: PageMappingFlags,
+    pub options: PageMappingOptions,
 }
 
 impl MemoryMappingLocation {
@@ -283,7 +283,7 @@ pub struct MapMemoryArgs {
     pub map_addr: VirtAddr,
     pub map_size: Option<Size>,
     pub offset: Size,
-    pub flags: PageMappingFlags,
+    pub options: PageMappingOptions,
 }
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -296,7 +296,7 @@ pub enum UpdateValue<T> {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct UpdateMappingAgs {
     pub size: UpdateValue<Option<Size>>,
-    pub flags: UpdateValue<PageMappingFlags>,
+    pub options: UpdateValue<PageMappingOptions>,
 }
 
 #[derive(Debug)]
@@ -340,7 +340,7 @@ impl MemoryInner {
             map_addr: args.map_addr,
             map_size,
             offset: args.offset,
-            flags: args.flags,
+            options: args.options,
         })
     }
 
@@ -398,9 +398,9 @@ impl MemoryInner {
             self.mappings.get_mut(&mapping.mapping_id).unwrap().location = new_location;
         }
 
-        if let UpdateValue::Change(flags) = args.flags {
+        if let UpdateValue::Change(options) = args.options {
             let mut new_location = mapping.location;
-            new_location.flags = flags;
+            new_location.options = options;
 
             let mapping_iter = self.mapping_iter(new_location).unwrap();
             unsafe {
@@ -542,12 +542,19 @@ impl MemoryInner {
             // currently no good way to recover from these failing
             match &self.pages[page_index] {
                 PageData::Owned(page) => unsafe {
-                    addr_space_inner.addr_space.map_page(map_addr, page.phys_addr(), mapping.location.flags).unwrap();
+                    addr_space_inner.addr_space.map_page(
+                        map_addr,
+                        page.phys_addr(),
+                        mapping.location.options,
+                    ).unwrap();
                 },
                 PageData::Cow(page) => unsafe {
-                    // remove write flag for copy on write pages
-                    let flags = mapping.location.flags.difference(PageMappingFlags::WRITE);
-                    addr_space_inner.addr_space.map_page(map_addr, page.phys_addr(), flags).unwrap();
+                    addr_space_inner.addr_space.map_page(
+                        map_addr,
+                        page.phys_addr(),
+                        // remove write flag for copy on write pages
+                        mapping.location.options.writable(false),
+                    ).unwrap();
                 },
                 PageData::LazyAlloc | PageData::LazyZeroAlloc => unsafe {
                     addr_space_inner.addr_space.unmap_page(map_addr);
@@ -694,7 +701,7 @@ struct MemoryMappingIter<'a> {
     pages: &'a [PageData],
     index: usize,
     base_addr: VirtAddr,
-    flags: PageMappingFlags,
+    options: PageMappingOptions,
 }
 
 impl<'a> Iterator for MemoryMappingIter<'a> {
@@ -714,12 +721,12 @@ impl<'a> Iterator for MemoryMappingIter<'a> {
                     PageData::Owned(page) => return Some(MapAction {
                         virt_addr,
                         phys_addr: page.phys_addr(),
-                        flags: self.flags,
+                        options: self.options,
                     }),
                     PageData::Cow(page) => return Some(MapAction {
                         virt_addr,
                         phys_addr: page.phys_addr(),
-                        flags: self.flags.difference(PageMappingFlags::WRITE),
+                        options: self.options.writable(false),
                     }),
                     PageData::LazyAlloc | PageData::LazyZeroAlloc => continue,
                 }
@@ -737,7 +744,7 @@ impl MemoryInner {
             pages: pages_to_map,
             index: 0,
             base_addr: map_location.map_addr,
-            flags: map_location.flags,
+            options: map_location.options,
         })
     }
 }

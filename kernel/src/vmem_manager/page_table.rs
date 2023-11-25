@@ -3,10 +3,11 @@
 
 use bitflags::bitflags;
 
+use crate::arch::x64::PatEntry;
 use crate::prelude::*;
 use crate::alloc::PaRef;
 use crate::mem::{Allocation, PageLayout};
-use super::PageMappingFlags;
+use super::{PageMappingOptions, MemoryCacheSetting};
 
 /// Bitmask of page table entry address, all other bits are reserved or used for metadata bits
 const PAGE_ADDR_BITMASK: usize = 0x000ffffffffff000;
@@ -25,10 +26,15 @@ bitflags! {
 		const ACCESSED = 	1 << 5;
 		const DIRTY = 		1 << 6;
 		const HUGE = 		1 << 7;
+		// in page table entry (last level of paging structure),
+		// the huge flag is used for the pat flag
+		const PTE_PAT =    1 << 7;
 		const GLOBAL = 		1 << 8;
 		// this flag is an ignored bit, used by os to detemine if page table pointer
 		// references a page table or if it maps a page directly
 		const PAGE_TABLE =  1 << 9;
+		// this bit is used as the pat in huge page
+		const HUGE_PAT =    1 << 12;
 		const NO_EXEC =		1 << 63;
 	}
 }
@@ -39,22 +45,42 @@ impl PageTableFlags {
 	}
 }
 
-impl From<PageMappingFlags> for PageTableFlags {
-    fn from(flags: PageMappingFlags) -> Self {
+impl From<MemoryCacheSetting> for PageTableFlags {
+	fn from(settings: MemoryCacheSetting) -> Self {
 		let mut out = PageTableFlags::empty();
-		if flags.contains(PageMappingFlags::WRITE) {
+
+		let cache_bits = PatEntry::from(settings).to_page_table_bits();
+		if cache_bits.pwt {
+			out |= PageTableFlags::PWT;
+		}
+		if cache_bits.pcd {
+			out |= PageTableFlags::PCD;
+		}
+		if cache_bits.pat {
+			out |= PageTableFlags::PTE_PAT;
+		}
+
+		out
+	}
+}
+
+impl From<PageMappingOptions> for PageTableFlags {
+    fn from(options: PageMappingOptions) -> Self {
+		let mut out = Self::from(options.cacheing);
+
+		if options.write {
 			out |= PageTableFlags::WRITABLE;
 		}
 
-		if !flags.contains(PageMappingFlags::EXEC) {
+		if !options.exec {
 			out |= PageTableFlags::NO_EXEC;
 		}
 
-		if flags.exists() {
+		if options.exists() {
 			out |= PageTableFlags::PRESENT;
 		}
 
-		if flags.contains(PageMappingFlags::USER) {
+		if options.user {
 			out |= PageTableFlags::USER;
 		}
 
