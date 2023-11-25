@@ -11,7 +11,7 @@ use sys::cap_clone;
 use thiserror_no_std::Error;
 use bit_utils::{Size, PAGE_SIZE, LOWER_HALF_END, KERNEL_RESERVED_START, HIGHER_HALF_START};
 use sys::{Memory, CapFlags, SysErr, MemoryResizeFlags};
-pub use sys::MemoryMappingOptions;
+pub use sys::{MemoryMappingOptions, MemoryCacheSetting};
 
 use crate::addr_space;
 use crate::prelude::*;

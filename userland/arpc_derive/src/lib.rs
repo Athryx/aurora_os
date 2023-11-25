@@ -401,6 +401,7 @@ pub fn service(args: proc_macro::TokenStream, input: proc_macro::TokenStream) ->
         }
 
         pub macro #resolve_client_macro_ident($alias:ident) {
+            #[allow(non_camel_case_types)]
             trait $alias = #client_async_trait;
         }
 

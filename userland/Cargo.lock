@@ -220,6 +220,7 @@ dependencies = [
  "serde",
  "std",
  "thiserror-no-std",
+ "volatile",
 ]
 
 [[package]]

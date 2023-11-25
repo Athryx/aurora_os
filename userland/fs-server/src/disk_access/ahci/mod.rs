@@ -1,5 +1,7 @@
-use aurora::{prelude::*, addr_space, allocator::addr_space::{MapPhysMemArgs, RegionPadding, MemoryMappingOptions}};
-use hwaccess_server::{HwAccess, HwAccessAsync, PciDeviceInfo};
+use aurora::{prelude::*, addr_space, allocator::addr_space::{MapPhysMemArgs, RegionPadding, MemoryMappingOptions, MemoryCacheSetting}};
+use volatile::map_field;
+use hwaccess_server::{HwAccess, HwAccessAsync};
+use hwaccess_server::pci::{PciDeviceInfo, config_space::PciConfigSpaceHeader};
 
 use crate::error::FsError;
 use super::{DiskAccess, DiskCompletion};
@@ -20,11 +22,26 @@ impl AhciBackend {
             options: MemoryMappingOptions {
                 read: true,
                 write: true,
+                cacheing: MemoryCacheSetting::Uncached,
                 ..Default::default()
             },
             address: None,
             padding: RegionPadding::default(),
         })?;
+
+        let config_space = unsafe {
+            PciConfigSpaceHeader::from_addr(map_result.address)
+        };
+
+        // panic safety: this will not fail because ahci device always has type 0 header
+        let config_data = unsafe {
+            PciConfigSpaceHeader::data(config_space).unwrap()
+        };
+
+        // TODO: make sure the controller is in ahci mode (osdev wiki says it can also be in ide mode)
+
+        let ahci_mem_phys_addr = map_field!(config_data.bar5).read();
+        dprintln!("{:x?}", ahci_mem_phys_addr);
 
         todo!()
     }

@@ -14,6 +14,7 @@ arpc = { path = "../arpc" }
 hwaccess-server = { path = "../hwaccess-server" }
 thiserror-no-std = "2.0.2"
 serde = { version = "1.0.163", default-features = false, features = ["alloc", "derive"] }
+volatile = "0.5.1"
 
 [panic.dev]
 panic = "abort"

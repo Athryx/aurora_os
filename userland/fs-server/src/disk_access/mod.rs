@@ -1,7 +1,8 @@
 mod ahci;
 
 use aurora::prelude::*;
-use hwaccess_server::{HwAccess, HwAccessAsync, CLASS_MASS_STORAGE, SUBCLASS_SERIAL_ATA, PROG_IF_AHCI};
+use hwaccess_server::{HwAccess, HwAccessAsync};
+use hwaccess_server::pci::{CLASS_MASS_STORAGE, SUBCLASS_SERIAL_ATA, PROG_IF_AHCI};
 
 use crate::error::FsError;
 

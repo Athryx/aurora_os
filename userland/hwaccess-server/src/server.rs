@@ -2,8 +2,8 @@ use aurora::prelude::*;
 use aurora::service::{AppService, Service, NamedPermission};
 use sys::{PhysMem, Key};
 
-use hwaccess_server::{HwAccessServer, PciDeviceInfo};
-use crate::pci::Pci;
+use crate::HwAccessServer;
+use crate::pci::{PciDeviceInfo, Pci};
 
 pub struct HwAccessServerImpl {
     pci_devices: Pci,
