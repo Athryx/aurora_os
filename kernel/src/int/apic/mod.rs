@@ -8,7 +8,7 @@ use crate::arch::x64::{cpuid, io_wait};
 use crate::mem::PageLayout;
 use crate::{config, consts};
 use crate::int::apic::io_apic::IrqEntry;
-use crate::int::IRQ_BASE;
+use crate::int::{PIT_IRQ_SRC, PIT_TICK};
 use crate::prelude::*;
 use crate::sync::IMutex;
 use crate::{acpi::madt::{Madt, MadtElem}, alloc::root_alloc_ref};
@@ -98,10 +98,12 @@ pub unsafe fn init_io_apic(madt: &WithTrailer<Madt>) -> KResult<Vec<u8>> {
                 _ => unreachable!(),
             };
 
-            let irq = override_info.irq_src + IRQ_BASE;
-            let irq_entry = IrqEntry::from(irq, IoApicDest::To(startup_core_apic_id), polarity, trigger_mode);
+            // the only interrupt we care about from the pic is timer interrupt for calibrating local apic timer
+            if override_info.irq_src == PIT_IRQ_SRC {
+                let irq_entry = IrqEntry::from(PIT_TICK, IoApicDest::To(startup_core_apic_id), polarity, trigger_mode);
 
-            io_apic().lock().set_irq_entry(override_info.global_sysint as u8, irq_entry);
+                io_apic().lock().set_irq_entry(override_info.global_sysint as u8, irq_entry);
+            }
         }
     }
 

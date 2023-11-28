@@ -1,5 +1,7 @@
 use crate::arch::x64::*;
 
+use super::PIC_DISABLE_OFFSET;
+
 pub(super) const PICM_COMMAND: u16 = 0x20;
 const PICM_DATA: u16 = 0x21;
 
@@ -25,10 +27,6 @@ const ICW4_SFNM: u8 = 0x10; /* Special fully nested (not) */
 // offsets of pics when enabled
 pub const PICM_OFFSET: u8 = 32;
 pub const PICS_OFFSET: u8 = 40;
-
-// offsets of pics when disabled
-const PICM_DISABLE_OFFSET: u8 = 0xf8;
-const PICS_DISABLE_OFFSET: u8 = 0xf8;
 
 // from osdev wiki
 // offsets must be multiple of 8
@@ -60,7 +58,7 @@ pub fn remap(moffset: u8, soffset: u8) {
 // disable the pic
 pub fn disable() {
     // need to remap it to higher interrupt number so spurious interrupts dont cause problems
-    remap(PICM_DISABLE_OFFSET, PICS_DISABLE_OFFSET);
+    remap(PIC_DISABLE_OFFSET, PIC_DISABLE_OFFSET);
     // mask all incoming interrupts, spurious interrupts might still occur
     outb(PICM_DATA, 0xff);
     outb(PICS_DATA, 0xff);

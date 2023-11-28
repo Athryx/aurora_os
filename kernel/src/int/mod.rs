@@ -51,39 +51,30 @@ pub const EXC_NONE_29: u8 = 29;
 pub const EXC_SECURITY: u8 = 30;
 pub const EXC_NONE_31: u8 = 31;
 
-// This is where spurious interrupts are sent to, no one listens
-// NOTE: on some processors, according to intel manuals, bits 0-3 of the spurious vector register are always 0,
-// so we should always choose a spurious vector number with bits 0-3 zeroed
-pub const SPURIOUS: u8 = 32;
+// Interrupts 32..40 are used to remap the pic
+// even though the pic is disabled it could generate spurious interrupts, so these interrupts are not used
+pub const PIC_DISABLE_OFFSET: u8 = 32;
 
-pub const IRQ_APIC_TIMER: u8 = 33;
+pub const IRQ_APIC_TIMER: u8 = 40;
 
 // TODO: remove this interrupt type
-pub const IPI_PROCESS_EXIT: u8 = 34;
-pub const IPI_PANIC: u8 = 35;
+pub const IPI_PROCESS_EXIT: u8 = 41;
+pub const IPI_PANIC: u8 = 42;
 
-pub const IRQ_BASE: u8 = 40;
+// The irq src for the pit
+pub const PIT_IRQ_SRC: u8 = 0;
+// This interrupt is used by pit to calibrate local apic timer
+pub const PIT_TICK: u8 = 43;
 
-pub const IRQ_PIT_TIMER: u8 = IRQ_BASE;
-pub const IRQ_KEYBOARD: u8 = IRQ_BASE + 1;
-pub const IRQ_SERIAL_PORT_2: u8 = IRQ_BASE + 3;
-pub const IRQ_SERIAL_PORT_1: u8 = IRQ_BASE + 4;
-pub const IRQ_PARALLEL_PORT_2_3: u8 = IRQ_BASE + 5;
-pub const IRQ_FLOPPY_DISK: u8 = IRQ_BASE + 6;
-pub const IRQ_PARALLEL_PORT_1: u8 = IRQ_BASE + 7;
-
-pub const IRQ_CLOCK: u8 = IRQ_BASE + 8;
-pub const IRQ_ACPI: u8 = IRQ_BASE + 9;
-pub const IRQ_NONE_1: u8 = IRQ_BASE + 10;
-pub const IRQ_NONE_2: u8 = IRQ_BASE + 11;
-pub const IRQ_MOUSE: u8 = IRQ_BASE + 12;
-pub const IRQ_CO_PROCESSOR: u8 = IRQ_BASE + 13;
-pub const IRQ_PRIMARY_ATA: u8 = IRQ_BASE + 14;
-pub const IRQ_SECONDARY_ATA: u8 = IRQ_BASE + 15;
+// This is where spurious interrupts are sent to, no one listens
+// NOTE: on some processors, according to intel manuals, bits 0-3 of the spurious vector register are always 1,
+// so we should always choose a spurious vector number with bits 0-3 having 1
+// 47 = 0x2f
+pub const SPURIOUS: u8 = 47;
 
 // Userspace handleable interrupts will use the interrupt
 // number starting at this interrupt all the way to end of the idt
-pub const USER_INTERRUPT_START: u8 = 56;
+pub const USER_INTERRUPT_START: u8 = 48;
 pub const USER_INTERRUPT_COUNT: usize = 256 - USER_INTERRUPT_START as usize;
 
 
@@ -168,7 +159,7 @@ extern "C" fn rust_int_handler(int_num: u8, registers: &Registers, error_code: u
         EXC_GENERAL_PROTECTION_FAULT => gp_exception(registers),
         EXC_PAGE_FAULT => page_fault(registers, error_code),
         // do not send eoi here because this is only ever used for oneshot timer
-        IRQ_PIT_TIMER => pit::PIT.irq_handler(),
+        PIT_TICK => pit::PIT.irq_handler(),
         IRQ_APIC_TIMER => {
             cpu_local_data().local_apic().tick();
             sched::timer_handler();
@@ -184,6 +175,9 @@ extern "C" fn rust_int_handler(int_num: u8, registers: &Registers, error_code: u
 
             // FIXME: figure out what to do if this fails
             let _ = interrupt_manager().notify_interrupt(interrupt_id);
+
+            // TODO: figure out if sending eoi is necessary for msi interrupts
+            // (because for now this is what all these user interrupts are intended for)
         },
         _ => (),
     }
