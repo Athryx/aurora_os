@@ -5,7 +5,7 @@ use sys::{CapFlags, InitInfo, ProcessInitData, ProcessMemoryEntry, StackInfo, Rs
 use elf::{ElfBytes, endian::NativeEndian, abi::{PT_LOAD, PF_R, PF_W, PF_X}};
 use aser::to_bytes_count_cap;
 
-use crate::{prelude::*, alloc::{root_alloc, root_alloc_page_ref, root_alloc_ref, MmioAllocator}, cap::{Capability, StrongCapability, memory::{Memory, PageSource, MapMemoryArgs}, address_space::AddressSpace, capability_space::CapabilitySpace, WeakCapability}, sched::{ThreadGroup, Thread, ThreadStartMode}, vmem_manager::PageMappingOptions};
+use crate::{prelude::*, alloc::{root_alloc, root_alloc_page_ref, root_alloc_ref, MmioAllocator}, cap::{Capability, StrongCapability, memory::{Memory, PageSource, MapMemoryArgs}, address_space::AddressSpace, capability_space::CapabilitySpace, WeakCapability}, sched::{ThreadGroup, Thread, ThreadStartMode}, vmem_manager::PageMappingOptions, int::userspace_interrupt::IntAllocator};
 use crate::container::Arc;
 
 const INITRD_MAGIC: u64 = 0x39f298aa4b92e836;
@@ -252,6 +252,10 @@ pub fn start_early_init_process(initrd: &[u8], mmio_allocator: Arc<MmioAllocator
     let mmio_allocator_capability = StrongCapability::new_flags(mmio_allocator, CapFlags::all());
     let mmio_allocator_id = capability_space.insert_mmio_allocator(Capability::Strong(mmio_allocator_capability))?;
 
+    let int_allocator = Arc::new(IntAllocator, root_alloc_ref())?;
+    let int_allocator_capability = StrongCapability::new_flags(int_allocator, CapFlags::all());
+    let int_allocator_id = capability_space.insert_int_allocator(Capability::Strong(int_allocator_capability))?;
+
 
     // create startup data for early-init
     let mut startup_data = Vec::new(root_alloc_ref());
@@ -263,6 +267,7 @@ pub fn start_early_init_process(initrd: &[u8], mmio_allocator: Arc<MmioAllocator
     let init_info = InitInfo {
         initrd_address: INITRD_MAPPING_ADDRESS,
         mmio_allocator: sys::MmioAllocator::from_cap_id(mmio_allocator_id).unwrap(),
+        int_allocator: sys::IntAllocator::from_cap_id(int_allocator_id).unwrap(),
         rsdp,
     };
 

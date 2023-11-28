@@ -105,6 +105,8 @@ fn init(boot_info_addr: usize) -> KResult<()> {
         apic::init_local_apic();
     }
 
+    int::userspace_interrupt::init_interrupt_manager(ap_apic_ids.len() + 1)?;
+
     apic::smp_init(&ap_apic_ids)?;
 
     start_userspace::start_early_init_process(boot_info.initrd, mmio_allocator, boot_info.rsdp)

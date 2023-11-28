@@ -93,16 +93,14 @@ pub fn cap_destroy(
         CapType::Reply => { cspace.remove_reply(cap_id)?; },
         //CapType::MessageCapacity => call_cap_clone!(clone_),
         CapType::Key => { cspace.remove_key(cap_id)?; },
-        //CapType::Interrupt => call_cap_clone!(clone_),
-        //CapType::Port => call_cap_clone!(clone_),
         CapType::Allocator => { cspace.remove_allocator(cap_id)?; },
         CapType::DropCheck => { cspace.remove_drop_check(cap_id)?; },
         CapType::DropCheckReciever => { cspace.remove_drop_check_reciever(cap_id)?; },
         //CapType::RootOom => call_cap_clone!(clone_),
         CapType::MmioAllocator => { cspace.remove_mmio_allocator(cap_id)?; },
         CapType::PhysMem => { cspace.remove_phys_mem(cap_id)?; },
-        //CapType::IntAllocator => call_cap_clone!(clone_),
-        //CapType::PortAllocator => call_cap_clone!(clone_),
+        CapType::IntAllocator => { cspace.remove_int_allocator(cap_id)?; },
+        CapType::Interrupt => { cspace.remove_interrupt(cap_id)?; },
         _ => todo!(),
     }
 

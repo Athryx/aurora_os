@@ -16,6 +16,10 @@ mod drop_check;
 pub use drop_check::*;
 mod event_pool;
 pub use event_pool::*;
+mod interrupt;
+pub use interrupt::*;
+mod int_allocator;
+pub use int_allocator::*;
 mod key;
 pub use key::*;
 mod memory;
@@ -269,6 +273,23 @@ macro_rules! sysret_2 {
 
             if syserr == $crate::SysErr::Ok {
                 Ok((result.1, result.2))
+            } else {
+                Err(syserr)
+            }
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! sysret_3 {
+    ($data:expr) => {
+        {
+            let result = $data;
+            let syserr = $crate::SysErr::new(result.0)
+                .expect("invalid syserr code recieved from kernel");
+
+            if syserr == $crate::SysErr::Ok {
+                Ok((result.1, result.2, result.3))
             } else {
                 Err(syserr)
             }

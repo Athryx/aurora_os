@@ -4,6 +4,7 @@ use paste::paste;
 use sys::CapType;
 
 use crate::event::{UserspaceBuffer, EventPool};
+use crate::int::userspace_interrupt::{IntAllocator, Interrupt};
 use crate::sched::{ThreadGroup, Thread};
 use crate::{prelude::*, alloc::HeapRef};
 use crate::container::HashMap;
@@ -40,6 +41,8 @@ pub struct CapabilitySpace {
     drop_check_reciever_map: InnerCapMap<DropCheckReciever>,
     mmio_allocator_map: InnerCapMap<MmioAllocator>,
     phys_mem_map: InnerCapMap<PhysMem>,
+    int_allocator_map: InnerCapMap<IntAllocator>,
+    interrupt_map: InnerCapMap<Interrupt>,
 }
 
 impl CapabilitySpace {
@@ -59,7 +62,9 @@ impl CapabilitySpace {
             drop_check_map: IMutex::new(HashMap::new(allocator.clone())),
             drop_check_reciever_map: IMutex::new(HashMap::new(allocator.clone())),
             mmio_allocator_map: IMutex::new(HashMap::new(allocator.clone())),
-            phys_mem_map: IMutex::new(HashMap::new(allocator)),
+            phys_mem_map: IMutex::new(HashMap::new(allocator.clone())),
+            int_allocator_map: IMutex::new(HashMap::new(allocator.clone())),
+            interrupt_map: IMutex::new(HashMap::new(allocator)),
         }
     }
 
@@ -245,6 +250,8 @@ generate_cap_methods!(CapabilitySpace, DropCheck, drop_check_map, drop_check);
 generate_cap_methods!(CapabilitySpace, DropCheckReciever, drop_check_reciever_map, drop_check_reciever);
 generate_cap_methods!(CapabilitySpace, MmioAllocator, mmio_allocator_map, mmio_allocator);
 generate_cap_methods!(CapabilitySpace, PhysMem, phys_mem_map, phys_mem);
+generate_cap_methods!(CapabilitySpace, IntAllocator, int_allocator_map, int_allocator);
+generate_cap_methods!(CapabilitySpace, Interrupt, interrupt_map, interrupt);
 
 impl CapabilitySpace {
     /// Gets a userspace buffer from the given memory id and size and offset
@@ -297,16 +304,14 @@ impl CapabilitySpace {
             CapType::Reply => call_cap_clone!(clone_reply),
             //CapType::MessageCapacity => call_cap_clone!(clone_),
             CapType::Key => call_cap_clone!(clone_key),
-            //CapType::Interrupt => call_cap_clone!(clone_),
-            //CapType::Port => call_cap_clone!(clone_),
             CapType::Allocator => call_cap_clone!(clone_allocator),
             CapType::DropCheck => call_cap_clone!(clone_drop_check),
             CapType::DropCheckReciever => call_cap_clone!(clone_drop_check_reciever),
             //CapType::RootOom => call_cap_clone!(clone_),
             CapType::MmioAllocator => call_cap_clone!(clone_mmio_allocator),
             CapType::PhysMem => call_cap_clone!(clone_phys_mem),
-            //CapType::IntAllocator => call_cap_clone!(clone_),
-            //CapType::PortAllocator => call_cap_clone!(clone_),
+            CapType::IntAllocator => call_cap_clone!(clone_int_allocator),
+            CapType::Interrupt => call_cap_clone!(clone_interrupt),
             _ => todo!(),
         }
     }

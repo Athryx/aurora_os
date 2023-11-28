@@ -1,13 +1,14 @@
-use core::sync::atomic::{AtomicBool, Ordering};
-
 use crate::prelude::*;
 use crate::sched;
 use crate::arch::x64::{cli, hlt, get_cr2};
+
+use userspace_interrupt::{InterruptId, interrupt_manager};
 
 pub mod apic;
 pub mod idt;
 mod pic;
 pub mod pit;
+pub mod userspace_interrupt;
 
 // Interrupt vector numbers
 pub const EXC_DIVIDE_BY_ZERO: u8 = 0;
@@ -50,7 +51,18 @@ pub const EXC_NONE_29: u8 = 29;
 pub const EXC_SECURITY: u8 = 30;
 pub const EXC_NONE_31: u8 = 31;
 
-pub const IRQ_BASE: u8 = 32;
+// This is where spurious interrupts are sent to, no one listens
+// NOTE: on some processors, according to intel manuals, bits 0-3 of the spurious vector register are always 0,
+// so we should always choose a spurious vector number with bits 0-3 zeroed
+pub const SPURIOUS: u8 = 32;
+
+pub const IRQ_APIC_TIMER: u8 = 33;
+
+// TODO: remove this interrupt type
+pub const IPI_PROCESS_EXIT: u8 = 34;
+pub const IPI_PANIC: u8 = 35;
+
+pub const IRQ_BASE: u8 = 40;
 
 pub const IRQ_PIT_TIMER: u8 = IRQ_BASE;
 pub const IRQ_KEYBOARD: u8 = IRQ_BASE + 1;
@@ -69,15 +81,10 @@ pub const IRQ_CO_PROCESSOR: u8 = IRQ_BASE + 13;
 pub const IRQ_PRIMARY_ATA: u8 = IRQ_BASE + 14;
 pub const IRQ_SECONDARY_ATA: u8 = IRQ_BASE + 15;
 
-pub const IRQ_APIC_TIMER: u8 = 48;
-
-pub const IPI_PROCESS_EXIT: u8 = 128;
-pub const IPI_PANIC: u8 = 129;
-
-// This is where spurious interrupts are sent to, no one listens
-// NOTE: on some processors, according to intel manuals, bits 0-3 of the spurious vector register are always 0,
-// so we should always choose a spurious vector number with bits 0-3 zeroed
-pub const SPURIOUS: u8 = 0xf0;
+// Userspace handleable interrupts will use the interrupt
+// number starting at this interrupt all the way to end of the idt
+pub const USER_INTERRUPT_START: u8 = 56;
+pub const USER_INTERRUPT_COUNT: usize = 256 - USER_INTERRUPT_START as usize;
 
 
 #[derive(Debug, Clone, Copy)]
@@ -160,25 +167,24 @@ extern "C" fn rust_int_handler(int_num: u8, registers: &Registers, error_code: u
         EXC_DOUBLE_FAULT => double_fault(registers),
         EXC_GENERAL_PROTECTION_FAULT => gp_exception(registers),
         EXC_PAGE_FAULT => page_fault(registers, error_code),
+        // do not send eoi here because this is only ever used for oneshot timer
         IRQ_PIT_TIMER => pit::PIT.irq_handler(),
         IRQ_APIC_TIMER => {
             cpu_local_data().local_apic().tick();
             sched::timer_handler();
+            cpu_local_data().local_apic().eoi();
         },
         IPI_PROCESS_EXIT => sched::exit_handler(),
         IPI_PANIC => ipi_panic(),
+        _ if int_num >= USER_INTERRUPT_START => {
+            let interrupt_id = InterruptId {
+                cpu: prid(),
+                interrupt_num: int_num,
+            };
+
+            // FIXME: figure out what to do if this fails
+            let _ = interrupt_manager().notify_interrupt(interrupt_id);
+        },
         _ => (),
-    }
-}
-
-/// Used in some scenrios during initilization to disable sending interrupts
-static EOI_ENABLED: AtomicBool = AtomicBool::new(true);
-
-/// Called by assembly code to indicate end of interrupt handler
-// FIXME: this is kind of wierd to call from assembly
-#[no_mangle]
-extern "C" fn eoi() {
-    if EOI_ENABLED.load(Ordering::Acquire) {
-        cpu_local_data().local_apic().eoi();
     }
 }

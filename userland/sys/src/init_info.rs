@@ -1,7 +1,7 @@
 use bytemuck::{Pod, Zeroable, bytes_of};
 use serde::{Serialize, Deserialize};
 
-use crate::MmioAllocator;
+use crate::{MmioAllocator, IntAllocator};
 
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy, Pod, Zeroable, Serialize, Deserialize)]
@@ -32,6 +32,7 @@ impl Rsdp {
 pub struct InitInfo {
     pub initrd_address: usize,
     pub mmio_allocator: MmioAllocator,
+    pub int_allocator: IntAllocator,
     /// Copy of acpi root system descriptor pointer
     pub rsdp: Rsdp,
 }

@@ -224,6 +224,7 @@ create_event_types! {
     MessageSent,
     ThreadExit,
     CapDrop,
+    InterruptTrigger,
 }
 
 pub trait EventSyncReturn {
@@ -286,5 +287,21 @@ impl EventSyncReturn for CapDrop {
         CapDrop {
             data,
         }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Pod, Zeroable)]
+pub struct InterruptTrigger;
+
+impl EventSyncReturn for InterruptTrigger {
+    type SyncReturn = ();
+
+    fn as_sync_return(&self) -> Self::SyncReturn {
+        ()
+    }
+
+    fn from_sync_return(_: Self::SyncReturn) -> Self {
+        InterruptTrigger
     }
 }

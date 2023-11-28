@@ -51,6 +51,11 @@ pub const MMIO_ALLOCATOR_ALLOC: u32 = 43;
 pub const PHYS_MEM_MAP: u32 = 44;
 pub const PHYS_MEM_GET_SIZE: u32 = 45;
 
+pub const INTERRUPT_NEW: u32 = 46;
+pub const INTERRUPT_ID: u32 = 47;
+pub const INTERRUPT_HANDLE_INTERRUPT_TRIGGER_SYNC: u32 = 48;
+pub const INTERRUPT_HANDLE_INTERRUPT_TRIGGER_ASYNC: u32 = 49;
+
 pub fn syscall_name(syscall_num: u32) -> &'static str {
     match syscall_num {
         PRINT_DEBUG => "print_debug",
@@ -94,6 +99,10 @@ pub fn syscall_name(syscall_num: u32) -> &'static str {
         MMIO_ALLOCATOR_ALLOC => "mmio_allocator_alloc",
         PHYS_MEM_MAP => "phys_mem_map",
         PHYS_MEM_GET_SIZE => "phys_mem_get_size",
+        INTERRUPT_NEW => "interrupt_new",
+        INTERRUPT_ID => "interrupt_id",
+        INTERRUPT_HANDLE_INTERRUPT_TRIGGER_SYNC => "interrupt_handle_interrupt_trigger_sync",
+        INTERRUPT_HANDLE_INTERRUPT_TRIGGER_ASYNC => "interrupt_handle_interrupt_trigger_async",
         _ => "invalid syscall",
     }
 }
