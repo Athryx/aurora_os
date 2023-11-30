@@ -14,7 +14,7 @@ impl AhciBackend {
     pub async fn new(hwaccess: &HwAccess, device_info: PciDeviceInfo) -> Result<Self, FsError> {
         dprintln!("ahci device detected");
 
-        let phys_mem = hwaccess.get_pci_mem(device_info).await
+        let phys_mem = hwaccess.get_pci_mem(device_info.device_address).await
             .ok_or(FsError::DeviceMapError)?;
 
         let map_result = addr_space().map_phys_mem(MapPhysMemArgs {
@@ -34,9 +34,7 @@ impl AhciBackend {
         };
 
         // panic safety: this will not fail because ahci device always has type 0 header
-        let config_data = unsafe {
-            PciConfigSpaceHeader::data(config_space).unwrap()
-        };
+        let config_data = config_space.data().unwrap();
 
         // TODO: make sure the controller is in ahci mode (osdev wiki says it can also be in ide mode)
 

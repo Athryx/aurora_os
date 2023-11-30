@@ -13,6 +13,7 @@ aurora = { path = "../aurora" }
 asynca = { path = "../asynca" }
 arpc = { path = "../arpc" }
 sys = { path = "../sys" }
+thiserror-no-std = "2.0.2"
 serde = { version = "1.0.163", default-features = false, features = ["alloc", "derive"] }
 acpi = "5.0.0"
 volatile = "0.5.1"

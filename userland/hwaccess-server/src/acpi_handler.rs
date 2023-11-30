@@ -1,10 +1,10 @@
 use core::{mem::size_of, ptr::NonNull};
 
-use aurora::{this_context, addr_space, allocator::addr_space::{MapPhysMemArgs, RegionPadding, MemoryMappingOptions}};
-use bit_utils::{align_up, align_down, PAGE_SIZE, Size};
+use aurora::addr_space;
+use bit_utils::{align_down, PAGE_SIZE, Size};
 use acpi::{AcpiHandler, PhysicalMapping, AcpiTables, rsdp::Rsdp};
 
-use crate::mmio_allocator;
+use crate::pmem_access;
 
 #[derive(Clone)]
 pub struct AcpiHandlerImpl;
@@ -17,37 +17,18 @@ impl AcpiHandler for AcpiHandlerImpl {
     ) -> PhysicalMapping<Self, T> {
         assert!(size >= size_of::<T>());
 
-        let end_address = physical_address + size;
+        let pmem_data = pmem_access()
+            .map_address_raw(physical_address, Size::from_bytes(size))
+            .expect("acpi handler: could not map physical memory");
 
-        let region_start_addr = align_down(physical_address, PAGE_SIZE);
-        let region_end_addr = align_up(end_address, PAGE_SIZE);
-        let region_size = Size::from_bytes(region_end_addr - region_start_addr);
-
-        let phys_mem = mmio_allocator().alloc(&this_context().allocator, region_start_addr, region_size)
-            .expect("acpi handler: failed to alloc physical memory region");
-
-        let map_result = addr_space().map_phys_mem(MapPhysMemArgs {
-            phys_mem,
-            options: MemoryMappingOptions {
-                read: true,
-                write: true,
-                ..Default::default()
-            },
-            address: None,
-            padding: RegionPadding::default(),
-        }).expect("acpi handler: failed to map physical memory");
-
-        // offset from start of physical region we mapped to the actual requested data
-        let data_offset = physical_address - region_start_addr;
-        let data = (map_result.address + data_offset) as *mut T;
-        let data = NonNull::new(data).unwrap();
+        let ptr = (pmem_data.base_virt_address + pmem_data.data_offset) as *mut T;
 
         unsafe {
             PhysicalMapping::new(
                 physical_address,
-                data,
+                NonNull::new(ptr).unwrap(),
                 size,
-                map_result.size.bytes(),
+                pmem_data.size.bytes(),
                 self.clone(),
             )
         }

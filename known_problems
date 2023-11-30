@@ -10,3 +10,6 @@ make a version of Once and Lazy that disables interrupts and only use that
 some panics possible to trigger from userspace in memory writer
 
 sometimes a panic with no avaialable threads occur in event_pool_await
+
+potential problem (only observed once):
+kernel ran very slow, and a kernel page fault occured

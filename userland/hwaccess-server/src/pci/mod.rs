@@ -6,23 +6,39 @@ use bit_utils::Size;
 use aurora::{this_context, addr_space, allocator::addr_space::{MapPhysMemArgs, RegionPadding}};
 use aurora::prelude::*;
 use sys::{PhysMem, MemoryMappingOptions, MemoryCacheSetting};
-use volatile::{VolatilePtr, map_field};
 
-use crate::{AcpiTables, mmio_allocator};
+use crate::{AcpiTables, pmem_access};
 use config_space::{PciConfigSpaceHeader, CONFIG_SPACE_SIZE, VENDOR_ID_INVALID};
 
 pub const DEVICE_PER_BUS: usize = 32;
 pub const FUNCTION_PER_DEVICE: usize = 8;
 
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PciDeviceInfo {
+    pub device_address: PciDeviceAddress,
+    pub device_id: PciDeviceId,
+    pub device_type: PciDeviceType,
+}
+
+/// Represents where on the pci bus this device is located
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PciDeviceAddress {
     pub segment_group: u16,
     pub bus_id: u8,
     pub slot_id: u8,
     pub function_id: u8,
+}
+
+/// Represents which particular model of device the pci device is
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PciDeviceId {
     pub vendor_id: u16,
     pub device_id: u16,
+}
+
+/// Represents which type of device this pci device is
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PciDeviceType {
     pub class: u8,
     pub subclass: u8,
     pub prog_if: u8,
@@ -34,47 +50,63 @@ pub const SUBCLASS_SERIAL_ATA: u8 = 0x6;
 pub const PROG_IF_AHCI: u8 = 0x1;
 
 pub struct PciDevice {
-    device_info: PciDeviceInfo,
+    device_address: PciDeviceAddress,
+    device_id: PciDeviceId,
+    device_type: PciDeviceType,
     mmio_phys_addr: usize,
-    config_space: VolatilePtr<'static, PciConfigSpaceHeader>,
+    config_space: PciConfigSpaceHeader,
 }
 
 impl PciDevice {
-    unsafe fn new(segment_group: u16, bus_id: u8, slot_id: u8, function_id: u8, config_space: VolatilePtr<'static, PciConfigSpaceHeader>, mmio_phys_addr: usize) -> Option<Self> {
-        let vendor_id = map_field!(config_space.vendor_id).read();
+    unsafe fn new(device_address: PciDeviceAddress, config_space: PciConfigSpaceHeader, mmio_phys_addr: usize) -> Option<Self> {
+        let vendor_id = config_space.vendor_id();
         if vendor_id == VENDOR_ID_INVALID {
             None
         } else {
-            let device_id = map_field!(config_space.device_id).read();
+            let device_id = PciDeviceId {
+                vendor_id,
+                device_id: config_space.device_id(),
+            };
 
-            let class = map_field!(config_space.class_code).read();
-            let subclass = map_field!(config_space.subclass).read();
-            let prog_if = map_field!(config_space.prog_if).read();
+            let device_type = PciDeviceType {
+                class: config_space.class_code(),
+                subclass: config_space.subclass(),
+                prog_if: config_space.prog_if(),
+            };
 
             Some(PciDevice {
-                device_info: PciDeviceInfo {
-                    segment_group,
-                    bus_id,
-                    slot_id,
-                    function_id,
-                    vendor_id,
-                    device_id,
-                    class,
-                    subclass,
-                    prog_if,
-                },
+                device_address,
+                device_id,
+                device_type,
                 mmio_phys_addr,
                 config_space,
             })
         }
     }
 
+    pub fn device_address(&self) -> PciDeviceAddress {
+        self.device_address
+    }
+
+    pub fn device_id(&self) -> PciDeviceId {
+        self.device_id
+    }
+
+    pub fn device_type(&self) -> PciDeviceType {
+        self.device_type
+    }
+
     pub fn device_info(&self) -> PciDeviceInfo {
-        self.device_info
+        PciDeviceInfo {
+            device_address: self.device_address,
+            device_id: self.device_id,
+            device_type: self.device_type,
+        }
     }
 
     pub fn get_phys_mem(&self) -> PhysMem {
-        mmio_allocator().alloc(&this_context().allocator, self.mmio_phys_addr, Size::from_bytes(CONFIG_SPACE_SIZE))
+        pmem_access().allocator
+            .alloc(&this_context().allocator, self.mmio_phys_addr, Size::from_bytes(CONFIG_SPACE_SIZE))
             .expect("could not get phys mem for pci device")
     }
 }
@@ -96,7 +128,8 @@ impl Pci {
             let entry_count = bus_count * DEVICE_PER_BUS * FUNCTION_PER_DEVICE;
             let entry_size = Size::from_bytes(CONFIG_SPACE_SIZE * entry_count);
     
-            let phys_mem = mmio_allocator().alloc(&this_context().allocator, entry.base_address as usize, entry_size)
+            let phys_mem = pmem_access().allocator
+                .alloc(&this_context().allocator, entry.base_address as usize, entry_size)
                 .expect("could not get physmem for pci config spaces");
     
             let map_result = addr_space().map_phys_mem(MapPhysMemArgs {
@@ -124,9 +157,16 @@ impl Pci {
                             PciConfigSpaceHeader::from_addr(config_space_address)
                         };
 
+                        let device_address = PciDeviceAddress {
+                            segment_group: entry.pci_segment_group,
+                            bus_id,
+                            slot_id: device_id as u8,
+                            function_id: function as u8,
+                        };
+
                         let mmio_phys_addr = entry.base_address as usize + CONFIG_SPACE_SIZE * index;
                         let device = unsafe {
-                            PciDevice::new(entry.pci_segment_group, bus_id, device_id as u8, function as u8, config_space, mmio_phys_addr)
+                            PciDevice::new(device_address, config_space, mmio_phys_addr)
                         };
     
                         if let Some(device) = device {
@@ -146,9 +186,9 @@ impl Pci {
         &self.devices
     }
 
-    pub fn get_device(&self, device_info: PciDeviceInfo) -> Option<&PciDevice> {
+    pub fn get_device(&self, device_address: PciDeviceAddress) -> Option<&PciDevice> {
         for device in self.devices.iter() {
-            if device.device_info() == device_info {
+            if device.device_address() == device_address {
                 return Some(device);
             }
         }

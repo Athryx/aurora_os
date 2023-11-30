@@ -3,7 +3,7 @@ use aurora::service::{AppService, Service, NamedPermission};
 use sys::{PhysMem, Key};
 
 use crate::HwAccessServer;
-use crate::pci::{PciDeviceInfo, Pci};
+use crate::pci::{PciDeviceAddress, PciDeviceInfo, Pci};
 
 pub struct HwAccessServerImpl {
     pci_devices: Pci,
@@ -39,7 +39,7 @@ impl HwAccessServer for HwAccessServerImpl {
         out
     }
 
-    fn get_pci_mem(&self, device: PciDeviceInfo) -> Option<PhysMem> {
+    fn get_pci_mem(&self, device: PciDeviceAddress) -> Option<PhysMem> {
         Some(self.pci_devices.get_device(device)?.get_phys_mem())
     }
 }

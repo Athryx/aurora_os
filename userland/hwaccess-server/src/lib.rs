@@ -5,9 +5,12 @@
 #![feature(decl_macro)]
 
 mod acpi_handler;
+mod error;
 pub mod pci;
+mod pmem_access;
 mod server;
 
+use pmem_access::PmemAccess;
 use sys::PhysMem;
 use aurora::prelude::*;
 use aurora::service::AppService;
@@ -16,8 +19,10 @@ use aurora::sync::Once;
 use sys::{MmioAllocator, Rsdp};
 use arpc::run_rpc_service;
 
-use pci::{Pci, PciDeviceInfo};
+use pci::{Pci, PciDeviceAddress, PciDeviceInfo};
 use server::HwAccessServerImpl;
+
+type AcpiTables = acpi::AcpiTables<acpi_handler::AcpiHandlerImpl>;
 
 // TODO: convert this to use vfs like service maybe when that is done
 // this is kind of mvp service api right now just to get fs server working
@@ -25,19 +30,17 @@ use server::HwAccessServerImpl;
 pub trait HwAccessServer: AppService {
     fn get_pci_devices(&self) -> Vec<PciDeviceInfo>;
 
-    fn get_pci_mem(&self, device: PciDeviceInfo) -> Option<PhysMem>;
+    fn get_pci_mem(&self, device: PciDeviceAddress) -> Option<PhysMem>;
 }
 
-type AcpiTables = acpi::AcpiTables<acpi_handler::AcpiHandlerImpl>;
+static PMEM_ACCESS: Once<PmemAccess> = Once::new();
 
-static MMIO_ALLOCATOR: Once<MmioAllocator> = Once::new();
-
-fn mmio_allocator() -> &'static MmioAllocator {
-    MMIO_ALLOCATOR.get().unwrap()
+pub fn pmem_access() -> &'static PmemAccess {
+    PMEM_ACCESS.get().unwrap()
 }
 
 pub fn run(mmio_allocator: MmioAllocator, rsdp: Rsdp, server_endpoint: ServerRpcEndpoint) {
-    MMIO_ALLOCATOR.call_once(|| mmio_allocator);
+    PMEM_ACCESS.call_once(|| mmio_allocator.into());
 
     let acpi_tables = unsafe {
         acpi_handler::read_acpi_tables(rsdp)

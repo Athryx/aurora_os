@@ -35,8 +35,9 @@ pub async fn get_backends(hwaccess_server: HwAccess) -> Result<Vec<FsBackend>, F
     let pci_devices = hwaccess_server.get_pci_devices().await;
 
     for device in pci_devices.iter() {
-        if device.class == CLASS_MASS_STORAGE {
-            if device.subclass == SUBCLASS_SERIAL_ATA && device.prog_if == PROG_IF_AHCI {
+        let device_type = device.device_type;
+        if device_type.class == CLASS_MASS_STORAGE {
+            if device_type.subclass == SUBCLASS_SERIAL_ATA && device_type.prog_if == PROG_IF_AHCI {
                 backends.push(
                     FsBackend::new(ahci::AhciBackend::new(&hwaccess_server, *device).await?),
                 );
