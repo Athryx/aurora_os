@@ -27,7 +27,8 @@ pub enum SysErr {
     InvlBytecode = 15,
     Obscured = 16,
     InvlSyscall = 17,
-    Unknown = 18,
+    InvlBuffer = 18,
+    Unknown = 19,
 }
 
 impl SysErr {
@@ -64,6 +65,7 @@ impl SysErr {
             Self::InvlBytecode => "invalid bytecode",
             Self::Obscured => "operation does not return information about error state",
             Self::InvlSyscall => "invalid syscall number",
+            Self::InvlBuffer => "invalid buffer for reading or writing syscall arguments or return values",
             Self::Unknown => "unknown error",
         }
     }

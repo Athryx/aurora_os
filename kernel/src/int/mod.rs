@@ -1,3 +1,5 @@
+use crate::arch::x64::asm_user_copy_fail;
+use crate::consts::ASM_USER_COPY_CODE_REGION;
 use crate::prelude::*;
 use crate::sched;
 use crate::arch::x64::{cli, hlt, get_cr2};
@@ -111,36 +113,47 @@ fn gp_exception(registers: &Registers) {
     panic!("general protection exception\nregisters:\n{:x?}", registers);
 }
 
-fn page_fault(registers: &Registers, error_code: u64) {
-    let ring = if error_code & PAGE_FAULT_USER != 0 {
-		"user"
-	} else {
-		"kernel"
-	};
+fn page_fault(registers: &mut Registers, error_code: u64) {
+    if error_code & PAGE_FAULT_USER == 0 {
+        // page fault occured in kernel mode
+        let rip = VirtAddr::new(registers.rip);
+        if ASM_USER_COPY_CODE_REGION.contains(rip) {
+            // page fault occured while copying code
+            registers.rip = asm_user_copy_fail as usize;
+            return;
+        } else {
+            let action = if error_code & PAGE_FAULT_EXECUTE != 0 {
+                "instruction fetch"
+            } else if error_code & PAGE_FAULT_WRITE != 0 {
+                "write"
+            } else {
+                "read"
+            };
 
-	let action = if error_code & PAGE_FAULT_EXECUTE != 0 {
-		"instruction fetch"
-	} else if error_code & PAGE_FAULT_WRITE != 0 {
-		"write"
-	} else {
-		"read"
-	};
-
-	// can't indent because it will print tabs
-	panic!(
-		r"page fault accessing virtual address {:x}
-page fault during {} {}
+            panic!(
+                r"kernel page fault accessing virtual address {:x}
+page fault during {}
 non present page: {}
 reserved bit set: {}
 registers:
 {:x?}",
-		get_cr2(),
-		ring,
-		action,
-		error_code & PAGE_FAULT_PROTECTION == 0,
-		error_code & PAGE_FAULT_RESERVED != 0,
-		registers
-	);
+                get_cr2(),
+                action,
+                error_code & PAGE_FAULT_PROTECTION == 0,
+                error_code & PAGE_FAULT_RESERVED != 0,
+                registers
+            );
+        }
+    }
+
+    // page fault occured in userspace
+    let current_thread = cpu_local_data().current_thread();
+    let _address_space = current_thread.address_space();
+
+    // TODO: check if this is copy on write or lazy allocated page and load them in to address space as writable
+    // TODO: emit page fault event if this is access to invalid address
+
+    panic!("user page fault: {:x}", get_cr2());
 }
 
 /// This function runs if a nother cpu panics, just halt the currnet cpu
@@ -153,7 +166,7 @@ fn ipi_panic() {
 
 /// Called by each assembly interrupt handler
 #[no_mangle]
-extern "C" fn rust_int_handler(int_num: u8, registers: &Registers, error_code: u64) {
+extern "C" fn rust_int_handler(int_num: u8, registers: &mut Registers, error_code: u64) {
     match int_num {
         EXC_DOUBLE_FAULT => double_fault(registers),
         EXC_GENERAL_PROTECTION_FAULT => gp_exception(registers),

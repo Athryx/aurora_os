@@ -411,6 +411,9 @@ extern "C" {
     fn asm_gs_addr() -> usize;
     pub fn asm_switch_thread(new_rsp: usize, new_addr_space: usize);
     pub fn asm_thread_init();
+
+    pub fn asm_user_copy(dst: *mut u8, src: *const u8, count: usize) -> bool;
+    pub fn asm_user_copy_fail() -> bool;
 }
 
 pub fn gs_addr() -> usize {

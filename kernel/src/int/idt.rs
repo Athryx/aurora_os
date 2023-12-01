@@ -74,6 +74,12 @@ macro_rules! make_idt_entry_r0 {
     };
 }
 
+macro_rules! make_idt_trap_entry_r0 {
+    ($idt:expr, $num:literal) => {
+        make_idt_entry!($idt, $num, IntHandlerType::Trap, CPUPrivLevel::Ring0)
+    };
+}
+
 /// Passed to lidt instruction to load idt
 #[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
@@ -111,7 +117,8 @@ impl Idt {
         make_idt_entry_r0!(out, 11);
         make_idt_entry_r0!(out, 12);
         make_idt_entry_r0!(out, 13);
-        make_idt_entry_r0!(out, 14);
+        // page fault should be trap
+        make_idt_trap_entry_r0!(out, 14);
         make_idt_entry_r0!(out, 15);
         make_idt_entry_r0!(out, 16);
         make_idt_entry_r0!(out, 17);

@@ -63,7 +63,7 @@ fn asm(out_dir: &str) {
         "int.asm",
         "syscall.asm",
         "sched.asm",
-        //"resources.asm",
+        "user_copy.asm",
     ];
 
     for f in incl_files.iter() {

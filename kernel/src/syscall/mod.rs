@@ -1,9 +1,11 @@
+use bytemuck::Pod;
 use sys::syscall_nums::*;
 
 use crate::alloc::root_alloc_ref;
+use crate::consts::KERNEL_VMA;
 use crate::prelude::*;
 use crate::arch::x64::{
-	rdmsr, wrmsr, EFER_MSR, EFER_SYSCALL_ENABLE, FMASK_MSR, LSTAR_MSR, STAR_MSR,
+	rdmsr, wrmsr, EFER_MSR, EFER_SYSCALL_ENABLE, FMASK_MSR, LSTAR_MSR, STAR_MSR, asm_user_copy,
 };
 
 mod cap;
@@ -323,6 +325,54 @@ fn is_option_set(options: u32, bit: u32) -> bool {
 /// Checks if the weak autodestroy bit is set in the options
 fn options_weak_autodestroy(options: u32) -> bool {
 	is_option_set(options, 1 << 31)
+}
+
+fn copy_from_userspace<T: Pod>(dst: &mut [T], src: *const T) -> KResult<()> {
+	let copy_count = dst.len() * size_of::<T>();
+	let end_read_addr = (src as usize).checked_add(copy_count)
+		.ok_or(SysErr::Overflow)?;
+
+	// forbid reading from kernel memory
+	if end_read_addr > *KERNEL_VMA {
+		return Err(SysErr::InvlBuffer);
+	}
+
+	// safety: it is checked no kernel memory that isn't expecting to be read is read
+	// dst is mutable slice to it can be written to
+	// reads are valid for T because T is Pod
+	let copy_success = unsafe {
+		asm_user_copy(dst.as_mut_ptr() as *mut u8, src as *const u8, copy_count)
+	};
+
+	if !copy_success {
+		Err(SysErr::InvlBuffer)
+	} else {
+		Ok(())
+	}
+}
+
+fn copy_to_userspace<T: Pod>(dst: *mut T, src: &[T]) -> KResult<()> {
+	let copy_count = src.len() * size_of::<T>();
+	let end_write_addr = (dst as usize).checked_add(copy_count)
+		.ok_or(SysErr::Overflow)?;
+
+	// forbid writing to kernel memory
+	if end_write_addr > *KERNEL_VMA {
+		return Err(SysErr::InvlBuffer);
+	}
+
+	// safety: it is checked no kernel memory that isn't expecting to be writen to is writen to
+	// src is slice so it can be read from
+	// reads are valid for T because T is Pod
+	let copy_success = unsafe {
+		asm_user_copy(dst as *mut u8, src.as_ptr() as *const u8, copy_count)
+	};
+
+	if !copy_success {
+		Err(SysErr::InvlBuffer)
+	} else {
+		Ok(())
+	}
 }
 
 /// Initializes the syscall entry point and enables the syscall instruction

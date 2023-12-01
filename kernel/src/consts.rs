@@ -28,6 +28,8 @@ extern "C" {
     static stack_bottom: usize;
     static stack_top: usize;
     static PDP_table: usize;
+    static asm_user_copy: usize;
+    static asm_user_copy_end: usize;
 }
 
 lazy_static! {
@@ -97,4 +99,12 @@ lazy_static! {
 
     pub static ref KZONE_PAGE_TABLE_POINTER: PhysAddr =
         PhysAddr::new(unsafe { &PDP_table } as *const _ as usize);
+    
+    /// This is the region of code that could page fault if userspace gives us bad pointer when calling syscall
+    /// Page fault handler will use this to determine if it is real kernel page fault of page fault from userspace
+    pub static ref ASM_USER_COPY_CODE_REGION: UVirtRange = UVirtRange::new(
+        VirtAddr::new(unsafe { &asm_user_copy } as *const _ as usize),
+        (unsafe { &asm_user_copy_end } as *const _ as usize)
+            - (unsafe { &asm_user_copy } as *const _ as usize),
+    );
 }
