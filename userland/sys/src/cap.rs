@@ -18,6 +18,7 @@ bitflags! {
 #[repr(usize)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Display)]
 pub enum CapType {
+    Null = 0,
     Thread = 1,
     ThreadGroup = 2,
     AddressSpace = 3,
@@ -42,6 +43,7 @@ pub enum CapType {
 impl CapType {
     pub fn from(n: usize) -> Option<Self> {
         Some(match n {
+            0 => Self::Null,
             1 => Self::Thread,
             2 => Self::ThreadGroup,
             3 => Self::AddressSpace,
@@ -119,9 +121,8 @@ impl CapId {
     // FIXME: introduce null to CapType enum
     pub fn cap_type(&self) -> CapType {
         // panic safety: CapId will always have valid metadata, this is checked in the constructor
-        CapType::from(get_bits(self.0, 5..10)).unwrap()
+        CapType::from(get_bits(self.0, 5..10)).unwrap_or(CapType::Null)
     }
-
 
     /// Newtype enum with this variant will be treated as a capability by aser
     /// 

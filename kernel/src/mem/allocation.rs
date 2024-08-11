@@ -34,11 +34,11 @@ impl Allocation {
     }
 
     pub fn as_slice_ptr(&self) -> *const [u8] {
-        core::ptr::from_raw_parts(self.as_ptr(), self.size)
+        core::ptr::from_raw_parts(self.as_ptr::<u8>(), self.size)
     }
 
     pub fn as_mut_slice_ptr(&mut self) -> *mut [u8] {
-        core::ptr::from_raw_parts_mut(self.as_mut_ptr(), self.size)
+        core::ptr::from_raw_parts_mut(self.as_mut_ptr::<u8>(), self.size)
     }
 
     pub fn as_vrange(&self) -> UVirtRange {

@@ -23,7 +23,7 @@ unsafe impl PageAllocator for FixedPageAllocator {
     fn alloc(&self, layout: PageLayout) -> Option<Allocation> {
         if self.alloced.load(Ordering::Acquire)
             || layout.size() > self.mem.size()
-            || layout.align() > align_of(self.mem.as_usize())
+            || layout.align() > align_of_addr(self.mem.as_usize())
         {
             None
         } else {

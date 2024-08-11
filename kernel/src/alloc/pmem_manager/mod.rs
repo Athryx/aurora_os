@@ -42,7 +42,7 @@ impl Iterator for SizeAlignedIter {
             return None;
         }
 
-        let size = min(align_of(self.start), 1 << log2(self.end - self.start));
+        let size = min(align_of_addr(self.start), 1 << log2(self.end - self.start));
 
         let out = AVirtRange::new(VirtAddr::new(self.start), size);
 
@@ -222,7 +222,7 @@ impl PmemManager {
     /// Called by both realloc and search_realloc
     unsafe fn realloc_inner(&self, allocator: &PmemAllocator, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
         assert!(
-            layout.align() <= align_of(layout.size()),
+            layout.align() <= align_of_addr(layout.size()),
             "PmemManager does not support allocations with a greater alignamant than size"
         );
 
@@ -243,7 +243,7 @@ impl PmemManager {
 unsafe impl PageAllocator for PmemManager {
     fn alloc(&self, layout: PageLayout) -> Option<Allocation> {
         assert!(
-            layout.align() <= align_of(layout.size()),
+            layout.align() <= align_of_addr(layout.size()),
             "PmemManager does not support allocations with a greater alignamant than size"
         );
 
@@ -277,7 +277,7 @@ unsafe impl PageAllocator for PmemManager {
 
     unsafe fn realloc_in_place(&self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
         assert!(
-            layout.align() <= align_of(layout.size()),
+            layout.align() <= align_of_addr(layout.size()),
             "PmemManager does not support allocations with a greater alignamant than size"
         );
 

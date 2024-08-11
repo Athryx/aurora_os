@@ -1,14 +1,11 @@
 #![no_std]
 #![no_main]
 #![feature(maybe_uninit_uninit_array)]
-#![feature(array_methods)]
 #![feature(alloc_error_handler)]
 #![feature(allocator_api)]
 #![feature(stmt_expr_attributes)]
 #![feature(const_mut_refs)]
-#![feature(bound_map)]
 #![feature(slice_index_methods)]
-#![feature(slice_ptr_len)]
 #![feature(slice_ptr_get)]
 #![feature(dropck_eyepatch)]
 #![feature(ptr_metadata)]
@@ -97,6 +94,8 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     sched::init_kernel_context().expect("failed to initialize kernel context");
     sched::init_cpu_local(*INIT_STACK)?;
 
+    eprintln!("a");
+
     let acpi_madt = boot_info.rsdt.get_table(SdtType::Madt).unwrap();
     let madt = acpi_madt.assume_madt().unwrap();
 
@@ -105,7 +104,11 @@ fn init(boot_info_addr: usize) -> KResult<()> {
         apic::init_local_apic();
     }
 
+    eprintln!("b");
+
     int::userspace_interrupt::init_interrupt_manager(ap_apic_ids.len() + 1)?;
+
+    eprintln!("c");
 
     apic::smp_init(&ap_apic_ids)?;
 

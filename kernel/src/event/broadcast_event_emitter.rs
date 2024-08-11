@@ -13,10 +13,13 @@ pub struct BroadcastEventEmitter {
 
 impl BroadcastEventEmitter {
     pub fn new(heap: HeapRef) -> Self {
-        BroadcastEventEmitter {
+        eprintln!("inside1");
+        let out = BroadcastEventEmitter {
             oneshot_listeners: Vec::new(heap.clone()),
             continous_listeners: Vec::new(heap),
-        }
+        };
+        eprintln!("inside2");
+        out
     }
 
     pub fn emit_event(&mut self, event_data: EventData) -> KResult<()> {

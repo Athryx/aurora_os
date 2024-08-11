@@ -2,7 +2,6 @@
 #![no_std]
 
 #![feature(slice_take)]
-#![feature(error_in_core)]
 
 #[cfg(feature = "alloc")]
 extern crate alloc;

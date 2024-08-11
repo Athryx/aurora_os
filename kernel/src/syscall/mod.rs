@@ -305,7 +305,7 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		MMIO_ALLOCATOR_ALLOC => sysret_1!(syscall_4!(mmio_allocator_alloc, vals), vals),
 		PHYS_MEM_MAP => sysret_1!(syscall_3!(phys_mem_map, vals), vals),
 		PHYS_MEM_GET_SIZE => sysret_1!(syscall_1!(phys_mem_get_size, vals), vals),
-		INTERRUPT_NEW => sysret_3!(syscall_2!(interrupt_new, vals), vals),
+		INTERRUPT_NEW => sysret_1!(syscall_5!(interrupt_new, vals), vals),
 		INTERRUPT_ID => sysret_2!(syscall_1!(interrupt_id, vals), vals),
 		INTERRUPT_HANDLE_INTERRUPT_TRIGGER_SYNC => sysret_0!(syscall_2!(interrupt_handle_interrupt_trigger_sync, vals), vals),
 		INTERRUPT_HANDLE_INTERRUPT_TRIGGER_ASYNC => sysret_0!(syscall_3!(interrupt_handle_interrupt_trigger_async, vals), vals),

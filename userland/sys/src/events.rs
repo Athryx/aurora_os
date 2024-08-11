@@ -2,7 +2,7 @@ use core::mem::size_of;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use bytemuck::{Pod, Zeroable, AnyBitPattern, try_from_bytes};
-use bit_utils::align_of;
+use bit_utils::align_of_addr;
 use strum::FromRepr;
 use bit_utils::Size;
 
@@ -82,7 +82,7 @@ macro_rules! create_event_types {
             }
 
             fn assert_aligned(&self) {
-                assert!(align_of(self.event_data.as_ptr() as usize) >= size_of::<usize>());
+                assert!(align_of_addr(self.event_data.as_ptr() as usize) >= size_of::<usize>());
                 assert!(self.event_data.len() % size_of::<usize>() == 0);
             }
 

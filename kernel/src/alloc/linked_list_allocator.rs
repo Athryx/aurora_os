@@ -326,7 +326,7 @@ impl LinkedListAllocator {
 
     /// Given the pointer and layout, computes the actual allocation slice that was returned
     pub fn get_allocation(allocation_start: NonNull<u8>, layout: Layout) -> Option<NonNull<[u8]>> {
-        if align_of(allocation_start.as_ptr() as usize) < CHUNK_SIZE {
+        if align_of_addr(allocation_start.as_ptr() as usize) < CHUNK_SIZE {
             None
         } else {
             let size = align_up(layout.size(), max(CHUNK_SIZE, layout.align()));

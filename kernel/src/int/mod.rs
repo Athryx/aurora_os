@@ -12,6 +12,8 @@ mod pic;
 pub mod pit;
 pub mod userspace_interrupt;
 
+pub const INTERRUPT_COUNT: usize = 256;
+
 // Interrupt vector numbers
 pub const EXC_DIVIDE_BY_ZERO: u8 = 0;
 pub const EXC_DEBUG: u8 = 1;
@@ -77,7 +79,7 @@ pub const SPURIOUS: u8 = 47;
 // Userspace handleable interrupts will use the interrupt
 // number starting at this interrupt all the way to end of the idt
 pub const USER_INTERRUPT_START: u8 = 48;
-pub const USER_INTERRUPT_COUNT: usize = 256 - USER_INTERRUPT_START as usize;
+pub const USER_INTERRUPT_COUNT: usize = INTERRUPT_COUNT - USER_INTERRUPT_START as usize;
 
 
 #[derive(Debug, Clone, Copy)]

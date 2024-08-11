@@ -190,7 +190,7 @@ macro_rules! impl_addr_range {
             /// returns true if the size equals the alignmant
             /// this also ensures that the size is always a power of 2
             fn is_power2_size_align(&self) -> bool {
-                self.size().is_power_of_two() && align_of(self.as_usize()) >= self.size()
+                self.size().is_power_of_two() && align_of_addr(self.as_usize()) >= self.size()
             }
 
             fn merge(&self, other: Self) -> Option<Self>
@@ -212,7 +212,7 @@ macro_rules! impl_addr_range {
             fn get_take_size(&self) -> Option<PageSize> {
                 PageSize::try_from_usize(min(
                     align_down_to_page_size(self.size()),
-                    align_down_to_page_size(align_of(self.addr().as_usize())),
+                    align_down_to_page_size(align_of_addr(self.addr().as_usize())),
                 ))
             }
 
@@ -278,7 +278,7 @@ macro_rules! impl_addr_range {
             }
 
             pub fn try_new_aligned(addr: $addr, size: usize) -> Option<Self> {
-                if align_of(addr.as_usize()) < PAGE_SIZE || align_of(size) < PAGE_SIZE {
+                if align_of_addr(addr.as_usize()) < PAGE_SIZE || align_of_addr(size) < PAGE_SIZE {
                     None
                 } else {
                     Some(Self {
@@ -332,7 +332,7 @@ macro_rules! impl_addr_range {
             }
 
             fn is_aligned(&self) -> bool {
-                align_of(self.as_usize()) >= PAGE_SIZE && align_of(self.end_usize()) >= PAGE_SIZE
+                align_of_addr(self.as_usize()) >= PAGE_SIZE && align_of_addr(self.end_usize()) >= PAGE_SIZE
             }
 
             fn as_unaligned(&self) -> $unaligned_range {
@@ -440,7 +440,7 @@ macro_rules! impl_addr_range {
             }
 
             pub fn try_new_aligned(addr: $addr, size: usize) -> Option<Self> {
-                if align_of(addr.as_usize()) < PAGE_SIZE || align_of(size) < PAGE_SIZE {
+                if align_of_addr(addr.as_usize()) < PAGE_SIZE || align_of_addr(size) < PAGE_SIZE {
                     None
                 } else {
                     Some(Self {
@@ -609,7 +609,7 @@ macro_rules! impl_addr_range {
                 }
 
                 let size = min(
-                    align_of(self.start.as_usize()),
+                    align_of_addr(self.start.as_usize()),
                     1 << log2(self.end - self.start),
                 );
                 let size = align_down_to_page_size(size);

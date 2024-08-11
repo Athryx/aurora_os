@@ -33,8 +33,8 @@ impl PageLayout {
         if !align.is_power_of_two()
             || size > usize::MAX - (align - 1)
             || size == 0
-            || align_of(size) < PAGE_SIZE
-            || align_of(align) < PAGE_SIZE
+            || align_of_addr(size) < PAGE_SIZE
+            || align_of_addr(align) < PAGE_SIZE
         {
             None
         } else {

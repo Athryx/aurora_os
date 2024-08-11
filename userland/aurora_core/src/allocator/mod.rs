@@ -10,7 +10,7 @@ use core::mem::size_of;
 use core::alloc::Layout;
 use alloc::alloc::GlobalAlloc;
 
-use bit_utils::{PAGE_SIZE, log2_up_const, align_up, align_down, align_of, Size, MemOwner};
+use bit_utils::{PAGE_SIZE, log2_up_const, align_up, align_down, align_of_addr, Size, MemOwner};
 use bit_utils::container::{LinkedList, ListNode, ListNodeData, CursorMut};
 use sys::{MessageBuffer, CapId, Capability};
 
@@ -368,7 +368,7 @@ impl LinkedListAllocator {
 
     /// Given the pointer and layout, computes the actual allocation slice that was returned
     pub fn get_allocation(allocation_start: NonNull<u8>, layout: Layout) -> Option<NonNull<[u8]>> {
-        if align_of(allocation_start.as_ptr() as usize) < CHUNK_SIZE {
+        if align_of_addr(allocation_start.as_ptr() as usize) < CHUNK_SIZE {
             None
         } else {
             let size = align_up(layout.size(), max(CHUNK_SIZE, layout.align()));

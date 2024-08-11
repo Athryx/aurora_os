@@ -36,7 +36,7 @@ pub const fn align_down(addr: usize, align: usize) -> usize {
 }
 
 /// Returns the alignment of `addr`
-pub fn align_of(addr: usize) -> usize {
+pub fn align_of_addr(addr: usize) -> usize {
     if addr == 0 {
         return 1 << 63;
     }
@@ -54,7 +54,7 @@ pub fn align_of(addr: usize) -> usize {
 
 /// Returns true if `addr` is page aligned
 pub fn page_aligned(addr: usize) -> bool {
-    align_of(addr) >= PAGE_SIZE
+    align_of_addr(addr) >= PAGE_SIZE
 }
 
 /// Gets the bits specified by the range `bits` from the number `n`
@@ -149,7 +149,7 @@ pub const fn log2_up_const(n: usize) -> usize {
 
 /// Returns true if `ptr` is aligned as necessary for the given type `T`, and if it is non null
 pub fn aligned_nonnull<T>(ptr: *const T) -> bool {
-    core::mem::align_of::<T>() == align_of(ptr as usize) && !ptr.is_null()
+    core::mem::align_of::<T>() == align_of_addr(ptr as usize) && !ptr.is_null()
 }
 
 /// Creates a `str` from a pointer to a cstring
