@@ -8,11 +8,12 @@ use spin::Once;
 use crate::config;
 use crate::gs_data::Prid;
 use crate::prelude::*;
-use crate::int::{SPURIOUS, IRQ_APIC_TIMER, IPI_PANIC, IPI_PROCESS_EXIT};
+use crate::int::{IPI_PANIC, IPI_PROCESS_EXIT, IRQ_APIC_TIMER, PIT_TICK, SPURIOUS};
 use crate::container::HashMap;
-use crate::int::pit::PIT;
+use crate::int::pit::{PIT, PIT_GLOBAL_SYSINT};
 use crate::arch::x64::*;
-use super::apic_modes::*;
+use super::{apic_modes::*, io_apic};
+use super::io_apic::IrqEntry;
 
 /// A map from processor ids used by the os to apic ids for that processor
 pub(super) static LOCAL_APIC_ID_MAP: Once<HashMap<Prid, u8>> = Once::new();
@@ -426,6 +427,11 @@ impl LocalApic {
 		self.write_reg_32(Self::TIMER_INIT_COUNT, 0);
 		self.eoi();
 		CALIBRATE_FIRED.store(false, Ordering::Release);
+
+		// stop pit from generating any more interrupts, it seems it still wants to generate interrupts
+		// after calibration is complete even
+		let pit_sysint = PIT_GLOBAL_SYSINT.load(Ordering::Acquire);
+		io_apic().lock().set_irq_entry(pit_sysint, IrqEntry::new_masked());
 
 		let elapsed_ticks = u32::MAX - new_count;
 		let out = TIMER_CALIBRATE_TIME.as_nanos() as u64 / elapsed_ticks as u64;

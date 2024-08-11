@@ -119,22 +119,15 @@ pub struct InterruptManager {
 
 impl InterruptManager {
     fn new(allocator: HeapRef, num_cpus: usize) -> KResult<Self> {
-        eprintln!("num cpus: {num_cpus}");
         let mut interrupts = Vec::try_with_capacity(allocator.clone(), num_cpus)?;
-        eprintln!("a");
         let mut interrupt_use_count = Vec::try_with_capacity(allocator, num_cpus)?;
-        eprintln!("b");
 
         for _ in 0..num_cpus {
-            eprintln!("init1");
-            let tmp = array_init(
+            // FIXME: array_init(...) page faults (null ptr dereference)
+            interrupts.push(array_init(
                 |_| IMutex::new(BroadcastEventEmitter::new(root_alloc_ref())),
-            );
-            eprintln!("init4");
-            interrupts.push(tmp)?;
-            eprintln!("init2");
+            ))?;
             interrupt_use_count.push([0; USER_INTERRUPT_COUNT])?;
-            eprintln!("init3");
         }
 
         Ok(InterruptManager {

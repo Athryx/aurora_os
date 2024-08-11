@@ -5,6 +5,7 @@ use spin::Once;
 
 use crate::alloc::PaRef;
 use crate::arch::x64::{cpuid, io_wait};
+use crate::int::pit::PIT_GLOBAL_SYSINT;
 use crate::mem::PageLayout;
 use crate::{config, consts};
 use crate::int::apic::io_apic::IrqEntry;
@@ -103,6 +104,9 @@ pub unsafe fn init_io_apic(madt: &WithTrailer<Madt>) -> KResult<Vec<u8>> {
                 let irq_entry = IrqEntry::from(PIT_TICK, IoApicDest::To(startup_core_apic_id), polarity, trigger_mode);
 
                 io_apic().lock().set_irq_entry(override_info.global_sysint as u8, irq_entry);
+
+                // store pit global sysint for disabling later
+                PIT_GLOBAL_SYSINT.store(override_info.global_sysint as u8, Ordering::Release);
             }
         }
     }
@@ -148,6 +152,11 @@ pub fn smp_init(ap_apic_ids: &[u8]) -> KResult<()> {
 
     NUM_APS_TO_BOOT.store(num_aps, Ordering::Release);
     config::set_cpu_count(num_aps + 1);
+
+    if num_aps == 0 {
+        // only 1 cpu core is present, no aps need to boot
+        return Ok(())
+    }
 
     let ap_code_src_virt_range = consts::AP_CODE_SRC_RANGE.to_virt();
     let mut ap_code_dest_virt_range = consts::AP_CODE_DEST_RANGE.to_virt();

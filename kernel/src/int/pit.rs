@@ -1,3 +1,4 @@
+use core::sync::atomic::AtomicU8;
 use core::time::Duration;
 use core::convert::TryInto;
 
@@ -20,6 +21,9 @@ const PIT_COMMAND: u16 = 0x43;
 const NANOSEC_PER_CLOCK: u64 = 838;
 
 pub static PIT: Pit = Pit::new();
+
+/// The global sysint on the io apic where the pit is plugged into
+pub static PIT_GLOBAL_SYSINT: AtomicU8 = AtomicU8::new(0);
 
 /// Programmable interrupt timer
 /// 

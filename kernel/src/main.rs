@@ -54,7 +54,7 @@ use sched::kernel_stack::KernelStack;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    eprintln!("{}", info);
+    rprintln!("{}", info);
     println!("{}", info);
 
     loop {
@@ -94,8 +94,6 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     sched::init_kernel_context().expect("failed to initialize kernel context");
     sched::init_cpu_local(*INIT_STACK)?;
 
-    eprintln!("a");
-
     let acpi_madt = boot_info.rsdt.get_table(SdtType::Madt).unwrap();
     let madt = acpi_madt.assume_madt().unwrap();
 
@@ -104,11 +102,8 @@ fn init(boot_info_addr: usize) -> KResult<()> {
         apic::init_local_apic();
     }
 
-    eprintln!("b");
-
-    int::userspace_interrupt::init_interrupt_manager(ap_apic_ids.len() + 1)?;
-
-    eprintln!("c");
+    // FIXME: this page faults
+    //int::userspace_interrupt::init_interrupt_manager(ap_apic_ids.len() + 1)?;
 
     apic::smp_init(&ap_apic_ids)?;
 
