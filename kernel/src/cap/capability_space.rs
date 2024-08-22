@@ -1,5 +1,3 @@
-use core::sync::atomic::{AtomicUsize, Ordering};
-
 use paste::paste;
 use sys::CapType;
 
@@ -21,50 +19,186 @@ struct CapabilityEntry<T: CapObject> {
     capability: Capability<T>,
 }
 
-type InnerCapMap<T> = IMutex<HashMap<CapId, CapabilityEntry<T>>>;
+/// Represents a map for one type of capability
+#[derive(Debug)]
+struct InnerCapMap<T: CapObject> {
+    next_id: usize,
+    map: HashMap<CapId, CapabilityEntry<T>>,
+}
+
+impl<T: CapObject> InnerCapMap<T> {
+    fn new(allocator: HeapRef) -> Self {
+        InnerCapMap {
+            next_id: 0,
+            map: HashMap::new(allocator),
+        }
+    }
+
+    fn next_id(&mut self) -> usize {
+        let id = self.next_id;
+        self.next_id += 1;
+        id
+    }
+
+    fn insert_capability(&mut self, mut capability: Capability<T>, visible: bool) -> KResult<CapId> {
+        let cap_id = CapId::new(
+            T::TYPE,
+            capability.flags(),
+            capability.is_weak(),
+            self.next_id(),
+        );
+
+        capability.set_id(cap_id);
+
+        self.map.insert(cap_id, CapabilityEntry {
+            capability,
+            visible,
+        })?;
+
+        Ok(cap_id)
+    }
+
+    /// Atomicly inserts capabilties from the iterator with the given flags, and returns the base id
+    fn insert_multiple_capabilities(&mut self, capabilities: impl ExactSizeIterator<Item = KResult<StrongCapability<T>>>, flags: CapFlags) -> KResult<CapId> {
+        let base_id = self.next_id;
+        let capability_count = capabilities.len();
+        self.next_id += capability_count;
+
+        let mut current_index = 0;
+
+        let result: KResult<CapId> = try {
+            for (i, capability) in capabilities.enumerate() {
+                current_index = i;
+
+                let mut capability = Capability::Strong(capability?);
+
+                let cap_id = CapId::new(
+                    T::TYPE,
+                    flags,
+                    false,
+                    base_id + i,
+                );
+    
+                capability.set_id(cap_id);
+    
+                // insert as invisible first
+                self.map.insert(cap_id, CapabilityEntry {
+                    capability,
+                    visible: false,
+                })?;
+            }
+
+            // insertion succeeded, mark capabilities as visible
+            for i in 0..capability_count {
+                let cap_id = CapId::new(
+                    T::TYPE,
+                    flags,
+                    false,
+                    base_id + i,
+                );
+
+                self.map.get_mut(&cap_id).expect("capability which should be inserted not found")
+                    .visible = true;
+            }
+
+            CapId::new(
+                T::TYPE,
+                flags,
+                false,
+                base_id
+            )
+        };
+
+        // insertion succeeded, return
+        if result.is_ok() {
+            return result;
+        }
+
+        // inserion of all capabilties failed, remove capabilities that were inserted
+        // failure occured on current index
+        for i in 0..current_index {
+            let cap_id = CapId::new(
+                T::TYPE,
+                flags,
+                false,
+                base_id + i,
+            );
+
+            // ignore error, it means somone else handled the error
+            let _ = self.map.remove(&cap_id);
+        }
+
+        // rollback id counter to before insertion
+        self.next_id = base_id;
+
+        result
+    }
+
+    fn set_capability_visibility(&mut self, cap_id: CapId, visible: bool) -> KResult<()> {
+        let cap_entry = self.map.get_mut(&cap_id).ok_or(SysErr::InvlId)?;
+        cap_entry.visible = visible;
+        Ok(())
+    }
+
+    fn get_capability(&self, cap_id: CapId) -> KResult<Capability<T>> {
+        let cap_entry = self.map.get(&cap_id).ok_or(SysErr::InvlId)?;
+
+        if cap_entry.visible {
+            Ok(cap_entry.capability.clone())
+        } else {
+            Err(SysErr::InvlId)
+        }
+    }
+
+    fn remove_capability(&mut self, cap_id: CapId) -> KResult<Capability<T>> {
+        Ok(
+            self.map.remove(&cap_id).ok_or(SysErr::InvlId)?.capability
+        )
+    }
+}
+
+//type InnerCapMap<T> = IMutex<HashMap<CapId, CapabilityEntry<T>>>;
 
 /// A map that holds all the capabilities in a process
 #[derive(Debug)]
 pub struct CapabilitySpace {
-    next_id: AtomicUsize,
-    thread_map: InnerCapMap<Thread>,
-    thread_group_map: InnerCapMap<ThreadGroup>,
-    address_space_map: InnerCapMap<AddressSpace>,
-    capability_space_map: InnerCapMap<Self>,
-    memory_map: InnerCapMap<Memory>,
-    event_pool_map: InnerCapMap<EventPool>,
-    key_map: InnerCapMap<Key>,
-    channel_map: InnerCapMap<Channel>,
-    reply_map: InnerCapMap<Reply>,
-    allocator_map: InnerCapMap<CapAllocator>,
-    drop_check_map: InnerCapMap<DropCheck>,
-    drop_check_reciever_map: InnerCapMap<DropCheckReciever>,
-    mmio_allocator_map: InnerCapMap<MmioAllocator>,
-    phys_mem_map: InnerCapMap<PhysMem>,
-    int_allocator_map: InnerCapMap<IntAllocator>,
-    interrupt_map: InnerCapMap<Interrupt>,
+    thread_map: IMutex<InnerCapMap<Thread>>,
+    thread_group_map: IMutex<InnerCapMap<ThreadGroup>>,
+    address_space_map: IMutex<InnerCapMap<AddressSpace>>,
+    capability_space_map: IMutex<InnerCapMap<Self>>,
+    memory_map: IMutex<InnerCapMap<Memory>>,
+    event_pool_map: IMutex<InnerCapMap<EventPool>>,
+    key_map: IMutex<InnerCapMap<Key>>,
+    channel_map: IMutex<InnerCapMap<Channel>>,
+    reply_map: IMutex<InnerCapMap<Reply>>,
+    allocator_map: IMutex<InnerCapMap<CapAllocator>>,
+    drop_check_map: IMutex<InnerCapMap<DropCheck>>,
+    drop_check_reciever_map: IMutex<InnerCapMap<DropCheckReciever>>,
+    mmio_allocator_map: IMutex<InnerCapMap<MmioAllocator>>,
+    phys_mem_map: IMutex<InnerCapMap<PhysMem>>,
+    int_allocator_map: IMutex<InnerCapMap<IntAllocator>>,
+    interrupt_map: IMutex<InnerCapMap<Interrupt>>,
 }
 
 impl CapabilitySpace {
     pub fn new(allocator: HeapRef) -> Self {
         CapabilitySpace {
-            next_id: AtomicUsize::new(0),
-            thread_map: IMutex::new(HashMap::new(allocator.clone())),
-            thread_group_map: IMutex::new(HashMap::new(allocator.clone())),
-            address_space_map: IMutex::new(HashMap::new(allocator.clone())),
-            capability_space_map: IMutex::new(HashMap::new(allocator.clone())),
-            memory_map: IMutex::new(HashMap::new(allocator.clone())),
-            event_pool_map: IMutex::new(HashMap::new(allocator.clone())),
-            key_map: IMutex::new(HashMap::new(allocator.clone())),
-            channel_map: IMutex::new(HashMap::new(allocator.clone())),
-            reply_map: IMutex::new(HashMap::new(allocator.clone())),
-            allocator_map: IMutex::new(HashMap::new(allocator.clone())),
-            drop_check_map: IMutex::new(HashMap::new(allocator.clone())),
-            drop_check_reciever_map: IMutex::new(HashMap::new(allocator.clone())),
-            mmio_allocator_map: IMutex::new(HashMap::new(allocator.clone())),
-            phys_mem_map: IMutex::new(HashMap::new(allocator.clone())),
-            int_allocator_map: IMutex::new(HashMap::new(allocator.clone())),
-            interrupt_map: IMutex::new(HashMap::new(allocator)),
+            thread_map: IMutex::new(InnerCapMap::new(allocator.clone())),
+            thread_group_map: IMutex::new(InnerCapMap::new(allocator.clone())),
+            address_space_map: IMutex::new(InnerCapMap::new(allocator.clone())),
+            capability_space_map: IMutex::new(InnerCapMap::new(allocator.clone())),
+            memory_map: IMutex::new(InnerCapMap::new(allocator.clone())),
+            event_pool_map: IMutex::new(InnerCapMap::new(allocator.clone())),
+            key_map: IMutex::new(InnerCapMap::new(allocator.clone())),
+            channel_map: IMutex::new(InnerCapMap::new(allocator.clone())),
+            reply_map: IMutex::new(InnerCapMap::new(allocator.clone())),
+            allocator_map: IMutex::new(InnerCapMap::new(allocator.clone())),
+            drop_check_map: IMutex::new(InnerCapMap::new(allocator.clone())),
+            drop_check_reciever_map: IMutex::new(InnerCapMap::new(allocator.clone())),
+            mmio_allocator_map: IMutex::new(InnerCapMap::new(allocator.clone())),
+            phys_mem_map: IMutex::new(InnerCapMap::new(allocator.clone())),
+            int_allocator_map: IMutex::new(InnerCapMap::new(allocator.clone())),
+            interrupt_map: IMutex::new(InnerCapMap::new(allocator)),
         }
     }
 
@@ -85,23 +219,8 @@ macro_rules! generate_cap_methods {
     ($map:ty, $cap_type:ty, $cap_map:ident, $cap_name:ident) => {
         paste! {
             impl $map {
-                pub fn [<insert_ $cap_name _inner>](&self, mut capability: Capability<$cap_type>, visible: bool) -> KResult<CapId> {
-                    let next_id = self.next_id.fetch_add(1, Ordering::Relaxed);
-
-                    let cap_id = CapId::new(
-                        $cap_type::TYPE,
-                        capability.flags(),
-                        capability.is_weak(),
-                        next_id,
-                    );
-
-                    capability.set_id(cap_id);
-
-                    self.$cap_map.lock().insert(cap_id, CapabilityEntry {
-                        capability,
-                        visible,
-                    })?;
-                    Ok(cap_id)
+                pub fn [<insert_ $cap_name _inner>](&self, capability: Capability<$cap_type>, visible: bool) -> KResult<CapId> {
+                    self.$cap_map.lock().insert_capability(capability, visible)
                 }
 
                 pub fn [<insert_ $cap_name>](&self, capability: Capability<$cap_type>) -> KResult<CapId> {
@@ -112,41 +231,33 @@ macro_rules! generate_cap_methods {
                     self.[<insert_ $cap_name _inner>](capability, false)
                 }
 
+                pub fn [<insert_ $cap_name _multiple>](&self, capabilities: impl ExactSizeIterator<Item = KResult<StrongCapability<$cap_type>>>, flags: CapFlags) -> KResult<CapId> {
+                    self.$cap_map.lock().insert_multiple_capabilities(capabilities, flags)
+                }
+
                 pub fn [<make_ $cap_name _visible>](&self, cap_id: CapId) -> KResult<()> {
-                    let mut map = self.$cap_map.lock();
-
-                    let entry = map.get_mut(&cap_id).ok_or(SysErr::InvlId)?;
-                    entry.visible = true;
-
-                    Ok(())
+                    self.$cap_map.lock().set_capability_visibility(cap_id, true)
                 }
 
                 pub fn [<remove_ $cap_name>](&self, cap_id: CapId) -> KResult<Capability<$cap_type>> {
-                    Ok(self.$cap_map.lock().remove(&cap_id)
-                        .ok_or(SysErr::InvlId)?
-                        .capability)
+                    self.$cap_map.lock().remove_capability(cap_id)
                 }
 
+                /// Gets a strong reference to the given capability, and checks that it has the required permissions
                 pub fn [<get_ $cap_name _with_perms>](
                     &self,
                     cap_id: usize,
                     required_perms: CapFlags,
                     weak_auto_destroy: bool,
                 ) -> KResult<StrongCapability<$cap_type>> {
-                    let mut map = self.$cap_map.lock();
-
                     let cap_id = CapId::try_from(cap_id).ok_or(SysErr::InvlId)?;
-                    let entry = map.get(&cap_id).ok_or(SysErr::InvlId)?;
+                    let capability = self.$cap_map.lock().get_capability(cap_id)?;
 
-                    if !entry.visible {
-                        return Err(SysErr::InvlId);
-                    }
-
-                    if !entry.capability.flags().contains(required_perms) {
+                    if !capability.flags().contains(required_perms) {
                         return Err(SysErr::InvlPerm);
                     }
 
-                    match &entry.capability {
+                    match &capability {
                         Capability::Strong(cap) => Ok(cap.clone()),
                         Capability::Weak(cap) => {
                             let strong = cap.upgrade();
@@ -155,7 +266,8 @@ macro_rules! generate_cap_methods {
                                 Some(cap) => Ok(cap),
                                 None => {
                                     if weak_auto_destroy {
-                                        map.remove(&cap_id);
+                                        // ignore error if capability was already removed by someone else
+                                        let _ = self.$cap_map.lock().remove_capability(cap_id);
                                     }
 
                                     Err(SysErr::InvlWeak)
@@ -166,9 +278,7 @@ macro_rules! generate_cap_methods {
                 }
 
                 pub fn [<get_ $cap_name>](&self, cap_id: CapId) -> KResult<Capability<$cap_type>> {
-                    let map = self.$cap_map.lock();
-
-                    Ok(map.get(&cap_id).ok_or(SysErr::InvlId)?.capability.clone())
+                    self.$cap_map.lock().get_capability(cap_id)
                 }
 
                 /// Used by cap_clone syscall

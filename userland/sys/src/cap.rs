@@ -7,6 +7,7 @@ use bit_utils::get_bits;
 use serde::{Serialize, Deserialize, de::{Visitor, Error, EnumAccess, VariantAccess}};
 
 bitflags! {
+    #[derive(Debug, Clone, Copy)]
     pub struct CapFlags: usize {
         const READ = 1;
         const PROD = 1 << 1;
