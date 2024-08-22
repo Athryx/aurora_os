@@ -116,6 +116,10 @@ impl CapId {
         get_bits(self.0, 4..5) == 1
     }
 
+    pub fn base_id(&self) -> usize {
+        get_bits(self.0, 5..64)
+    }
+
     /// # Panics
     /// 
     /// Panics if this capability is null

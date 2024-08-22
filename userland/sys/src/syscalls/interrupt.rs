@@ -42,6 +42,7 @@ impl Interrupt {
         }
     }
 
+    // for now do not cache interrupt id, performance of retrieving interrupt id is not particularly important I imagine
     pub fn id(&self) -> KResult<InterruptId> {
         let (cpu_num, interrupt_num) = unsafe {
             sysret_2!(syscall!(

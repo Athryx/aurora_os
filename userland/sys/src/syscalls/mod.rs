@@ -1,3 +1,5 @@
+use core::marker::PhantomData;
+
 use bit_utils::Size;
 
 use crate::{syscall_nums::*, CapId, CapType, CapFlags, KResult, CapCloneFlags, CapDestroyFlags};
@@ -479,6 +481,57 @@ fn cap_destroy(
             cspace_id,
             usize::from(capability_id)
         ))
+    }
+}
+
+/// An owned iterator over a list of capability id's returned by the kernel in the current cspace
+#[derive(Debug)]
+struct CapabilityIdListIterator {
+    base_id: usize,
+    flags: CapFlags,
+    is_weak: bool,
+    cap_type: CapType,
+    count: usize,
+    index: usize,
+}
+
+impl CapabilityIdListIterator {
+    fn new(base_id: CapId, count: usize) -> Self {
+        CapabilityIdListIterator {
+            base_id: base_id.base_id(),
+            flags: base_id.flags(),
+            is_weak: base_id.is_weak(),
+            cap_type: base_id.cap_type(),
+            count,
+            index: 0,
+        }
+    }
+
+    fn id_at_index(&self, index: usize) -> CapId {
+        CapId::new(self.cap_type, self.flags, self.is_weak, self.base_id + index)
+    }
+}
+
+impl Iterator for CapabilityIdListIterator {
+    type Item = CapId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index == self.count {
+            None
+        } else {
+            let cap_id = self.id_at_index(self.index);
+            self.index += 1;
+
+            Some(cap_id)
+        }
+    }
+}
+
+impl Drop for CapabilityIdListIterator {
+    fn drop(&mut self) {
+        for i in self.index..self.count {
+            let _ = cap_destroy(CspaceTarget::Current, self.id_at_index(i));
+        }
     }
 }
 

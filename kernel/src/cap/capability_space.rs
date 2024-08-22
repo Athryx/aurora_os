@@ -157,8 +157,6 @@ impl<T: CapObject> InnerCapMap<T> {
     }
 }
 
-//type InnerCapMap<T> = IMutex<HashMap<CapId, CapabilityEntry<T>>>;
-
 /// A map that holds all the capabilities in a process
 #[derive(Debug)]
 pub struct CapabilitySpace {

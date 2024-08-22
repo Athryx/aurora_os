@@ -151,17 +151,85 @@ impl InterruptManager {
     }
 
     /// Allocs a region interrupts with a certain alignmant and returns the InterruptId of the start of the interrupt region
-    pub fn alloc_interrupts(&self, interrupt_count: usize, interrupt_align: usize) -> KResult<InterruptId> {
+    pub fn alloc_interrupts(&self, interrupt_count: usize, interrupt_align: usize) -> KResult<InterruptRegionIterator> {
         let mut use_data = self.use_data.lock();
 
         let int_id = use_data.find_interrupt_region(interrupt_count, interrupt_align)?;
         use_data.mark_region(int_id, interrupt_count);
         
-        Ok(int_id)
+        Ok(InterruptRegionIterator {
+            base_id: int_id,
+            count: interrupt_count,
+            current_index: 0,
+        })
     }
 
     fn remove_interrupt(&self, interrupt_id: InterruptId) {
         self.use_data.lock().remove_interrupt(interrupt_id);
+    }
+}
+
+/// Owned iterator over a region of interrupts
+///
+/// Dropping this removes interrupts from interrupt manager
+#[derive(Debug)]
+pub struct InterruptRegionIterator {
+    /// Interrupt id of first interrupt in region
+    base_id: InterruptId,
+    /// Number of interrupts in region
+    count: usize,
+    /// Current iteration index (starting from 0)
+    current_index: usize,
+}
+
+impl InterruptRegionIterator {
+    pub fn base_interrupt_id(&self) -> InterruptId {
+        self.base_id
+    }
+
+    /// Gets the `InterruptId` corresponding to the given iteration index
+    fn offset_interrupt_id(&self, index: usize) -> Option<InterruptId> {
+        let index: u8 = index.try_into().ok()?;
+        let interrupt_num = self.base_id.interrupt_num.checked_add(index)?;
+
+        Some(InterruptId {
+            cpu: self.base_id.cpu,
+            interrupt_num,
+        })
+    }
+}
+
+impl Iterator for InterruptRegionIterator {
+    type Item = Interrupt;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.current_index == self.count {
+            None
+        } else {
+            let interrupt_id = self.offset_interrupt_id(self.current_index)
+                .expect("Itarating on InterruptRegionIterator with invalid region");
+            self.current_index += 1;
+
+            Some(interrupt_id.into())
+        }
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let size = self.count - self.current_index;
+
+        (size, Some(size))
+    }
+}
+
+impl ExactSizeIterator for InterruptRegionIterator {}
+
+impl Drop for InterruptRegionIterator {
+    fn drop(&mut self) {
+        for i in self.current_index..self.count {
+            let interrupt_id = self.offset_interrupt_id(i)
+                .expect("Dropping InterruptRegionIterator with invalid region");
+            interrupt_manager().remove_interrupt(interrupt_id);
+        }
     }
 }
 

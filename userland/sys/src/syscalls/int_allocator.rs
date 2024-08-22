@@ -9,7 +9,7 @@ use crate::{
     sysret_3,
 };
 use crate::syscall_nums::*;
-use super::{Capability, Allocator, Interrupt, InterruptId, cap_destroy, WEAK_AUTO_DESTROY, INVALID_CAPID_MESSAGE};
+use super::{cap_destroy, Allocator, Capability, CapabilityIdListIterator, Interrupt, InterruptId, INVALID_CAPID_MESSAGE, WEAK_AUTO_DESTROY};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IntAllocator(CapId);
@@ -35,26 +35,25 @@ impl IntAllocator {
         }
     }
 
-    pub fn create_interrupt(&self, allocator: &Allocator) -> KResult<(Interrupt, InterruptId)> {
-        let (interrupt_cap_id, cpu_num, interrupt_num) = unsafe {
+    /// Creates `count` interrupts with a given alignmant and returns an iterator over the created interrupts
+    pub fn create_interrupts(&self, allocator: &Allocator, count: usize, align: usize) -> KResult<impl Iterator<Item = Interrupt>> {
+        let (base_cap_id, _cpu_num, _interrupt_num) = unsafe {
             sysret_3!(syscall!(
                 INTERRUPT_NEW,
                 WEAK_AUTO_DESTROY,
                 self.as_usize(),
                 allocator.as_usize(),
-                0usize,
-                0usize
+                count,
+                align
             ))?
         };
 
-        let interrupt_cap_id = CapId::try_from(interrupt_cap_id).expect(INVALID_CAPID_MESSAGE);
-        let interrupt = Interrupt::from_cap_id(interrupt_cap_id).expect(INVALID_CAPID_MESSAGE);
-        let interrupt_id = InterruptId {
-            cpu_num,
-            interrupt_num,
-        };
+        let base_cap_id = CapId::try_from(base_cap_id).expect(INVALID_CAPID_MESSAGE);
 
-        Ok((interrupt, interrupt_id))
+        let iter = CapabilityIdListIterator::new(base_cap_id, count)
+            .map(|interrupt_id| Interrupt::from_cap_id(interrupt_id).expect(INVALID_CAPID_MESSAGE));
+
+        Ok(iter)
     }
 }
 
