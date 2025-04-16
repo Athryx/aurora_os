@@ -1,8 +1,6 @@
 //! Implements the aurora serialization format for message passing between processess
 #![no_std]
 
-#![feature(slice_take)]
-
 #[cfg(feature = "alloc")]
 extern crate alloc;
 

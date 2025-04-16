@@ -3,7 +3,6 @@
 #![feature(try_blocks)]
 #![feature(let_chains)]
 #![feature(slice_ptr_get)]
-#![feature(slice_take)]
 #![feature(naked_functions)]
 #![feature(slice_index_methods)]
 

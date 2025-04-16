@@ -13,7 +13,7 @@ const VGA_BUF_WIDTH: usize = 80;
 const VGA_BUF_HEIGHT: usize = 25;
 
 /// Port number of the debug console in qemu
-const DEBUGCON_PORT: u16 = 0xe9;
+pub const DEBUGCON_PORT: u16 = 0xe9;
 
 lazy_static! {
     /// The writer for the vga text buffer, used by print!() and friends
@@ -27,11 +27,6 @@ lazy_static! {
 
 /// The writer for the qemu debug port, used by eprint!() and friends
 pub static E_WRITER: IMutex<PortWriter> = IMutex::new(PortWriter::new(DEBUGCON_PORT));
-
-/// The writer for the qemu debug port, used by rprint!() and friends
-/// 
-/// Doesn't lock, so ideal for calling from interrupt handlers, but it is not synchronized
-pub static mut R_WRITER: PortWriter = PortWriter::new(DEBUGCON_PORT);
 
 /// Represents the vga text buffer
 #[repr(transparent)]
@@ -202,7 +197,7 @@ pub struct PortWriter {
 }
 
 impl PortWriter {
-    const fn new(port: u16) -> Self {
+    pub const fn new(port: u16) -> Self {
         PortWriter {
             port,
         }
@@ -259,7 +254,6 @@ macro_rules! rprintln {
 
 #[doc(hidden)]
 pub fn _rprint(args: fmt::Arguments) {
-    unsafe {
-        R_WRITER.write_fmt(args).unwrap();
-    }
+    let mut writer = PortWriter::new(DEBUGCON_PORT);
+    writer.write_fmt(args).unwrap();
 }

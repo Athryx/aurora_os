@@ -3,7 +3,6 @@
 #![feature(alloc_error_handler)]
 #![feature(allocator_api)]
 #![feature(stmt_expr_attributes)]
-#![feature(const_mut_refs)]
 #![feature(slice_index_methods)]
 #![feature(slice_ptr_get)]
 #![feature(dropck_eyepatch)]

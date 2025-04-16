@@ -2,7 +2,6 @@
 #![no_std]
 
 #![feature(const_try)]
-#![feature(const_option)]
 #![feature(const_trait_impl)]
 
 use core::arch::asm;

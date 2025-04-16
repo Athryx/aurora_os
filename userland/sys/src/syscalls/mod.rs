@@ -1,5 +1,3 @@
-use core::marker::PhantomData;
-
 use bit_utils::Size;
 
 use crate::{syscall_nums::*, CapId, CapType, CapFlags, KResult, CapCloneFlags, CapDestroyFlags};

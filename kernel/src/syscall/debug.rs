@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use crate::io::R_WRITER;
+use crate::io::{PortWriter, DEBUGCON_PORT};
 
 /// Prints the characters specified in the arguments to the debug console
 /// 
@@ -23,11 +23,12 @@ pub fn print_debug(
     a8: usize,
 ) -> KResult<()> {
     fn print_bytes(bytes: usize, mut n: usize) -> usize {
+		let writer = PortWriter::new(DEBUGCON_PORT);
+
 		let mut i = 0;
 		while i < core::mem::size_of::<usize>() && n > 0 {
-			unsafe {
-				R_WRITER.write_byte(get_bits(bytes, (8 * i)..(8 * i + 8)) as u8);
-			}
+			writer.write_byte(get_bits(bytes, (8 * i)..(8 * i + 8)) as u8);
+
 			i += 1;
 			n -= 1;
 		}
