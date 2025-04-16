@@ -8,7 +8,7 @@
 
 extern crate alloc;
 
-use core::arch::asm;
+use core::arch::naked_asm;
 use core::panic::PanicInfo;
 use core::slice;
 
@@ -34,13 +34,13 @@ fn panic(info: &PanicInfo) -> ! {
 #[no_mangle]
 pub extern "C" fn _aurora_startup() {
     unsafe {
-        asm!(
+        naked_asm!(
             "pop rdi", // process data pointer
             "pop rsi", // process data size
             "pop rdx", // startup data pointer
             "pop rcx", // startup data size
             "call _rust_startup",
-            options(noreturn)
+            // options(noreturn)
         )
     }
 }

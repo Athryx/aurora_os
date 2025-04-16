@@ -1,6 +1,5 @@
 #![no_std]
 #![no_main]
-#![feature(maybe_uninit_uninit_array)]
 #![feature(alloc_error_handler)]
 #![feature(allocator_api)]
 #![feature(stmt_expr_attributes)]

@@ -1,4 +1,4 @@
-use core::arch::asm;
+use core::arch::naked_asm;
 use core::sync::atomic::{Ordering, AtomicU8, AtomicU64};
 use core::mem::size_of;
 use core::ptr;
@@ -204,10 +204,10 @@ unsafe extern "C" fn thread_startup(data: *mut ThreadStartupData) -> ! {
 #[naked]
 unsafe extern "C" fn thread_spawn_asm() -> ! {
     unsafe {
-        asm!(
+        naked_asm!(
             "pop rdi", // get pointer to startup data
             "call thread_startup", // call startup function, stack should be 16 byte aligned at this point
-            options(noreturn),
+            // options(noreturn),
         )
     }
 }
@@ -262,7 +262,7 @@ extern "C" fn thread_exit_asm(
     thread_exit_syscall_num: u32,
 ) -> ! {
     unsafe {
-        asm!(
+        naked_asm!(
             "mov eax, edi", // mov unmap syscall num to eax
             "mov rbx, rsi", // mov address space id to syscall arg 1
             "mov r9, rcx", // save transient pointer for later, r9 is saved register for syscalls
@@ -271,7 +271,7 @@ extern "C" fn thread_exit_asm(
             "lock dec qword ptr [r9]", // decrament the transient counter now that stack is unmapped
             "mov eax, r8d", // move thread exit syscall to eax, this zeroes upper bits of eax, which is the flag for exit self
             "syscall", // issue thread destroy syscall to exit the current thread
-            options(noreturn),
+            // options(noreturn),
         )
     }
 }

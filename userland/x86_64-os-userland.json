@@ -11,6 +11,7 @@
 	"panic-strategy": "abort",
 	"disable-redzone": true,
 	"features": "-mmx,-sse,+soft-float",
+	"rustc-abi": "x86-softfloat",
 	"pre-link-args": {
 		"ld.lld": ["--script=entry.ld"]
 	}

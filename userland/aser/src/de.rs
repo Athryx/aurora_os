@@ -21,12 +21,12 @@ pub struct Deserializer<'de> {
 
 impl<'de> Deserializer<'de> {
     pub fn from_bytes(mut data: &'de [u8]) -> Result<Deserializer<'de>, AserError> {
-        let num_capabilities = data.take(..8)
+        let num_capabilities = data.split_off(..8)
             .ok_or(AserError::EndOfInput)?;
 
         let num_capabilities = usize::from_le_bytes(num_capabilities.try_into().unwrap());
 
-        let capabilities = data.take(..8 * num_capabilities)
+        let capabilities = data.split_off(..8 * num_capabilities)
             .ok_or(AserError::EndOfInput)?;
 
         let capabilities = unsafe {
@@ -40,29 +40,29 @@ impl<'de> Deserializer<'de> {
     }
 
     fn take_u8(&mut self) -> Result<u8, AserError> {
-        self.input.take_first().copied().ok_or(AserError::EndOfInput)
+        self.input.split_off_first().copied().ok_or(AserError::EndOfInput)
     }
 
     fn take_u16(&mut self) -> Result<u16, AserError> {
-        let bytes = self.input.take(..2).ok_or(AserError::EndOfInput)?;
+        let bytes = self.input.split_off(..2).ok_or(AserError::EndOfInput)?;
 
         Ok(u16::from_le_bytes(bytes.try_into().unwrap()))
     }
 
     fn take_u32(&mut self) -> Result<u32, AserError> {
-        let bytes = self.input.take(..4).ok_or(AserError::EndOfInput)?;
+        let bytes = self.input.split_off(..4).ok_or(AserError::EndOfInput)?;
 
         Ok(u32::from_le_bytes(bytes.try_into().unwrap()))
     }
 
     fn take_u64(&mut self) -> Result<u64, AserError> {
-        let bytes = self.input.take(..8).ok_or(AserError::EndOfInput)?;
+        let bytes = self.input.split_off(..8).ok_or(AserError::EndOfInput)?;
 
         Ok(u64::from_le_bytes(bytes.try_into().unwrap()))
     }
 
     fn take_u128(&mut self) -> Result<u128, AserError> {
-        let bytes = self.input.take(..16).ok_or(AserError::EndOfInput)?;
+        let bytes = self.input.split_off(..16).ok_or(AserError::EndOfInput)?;
 
         Ok(u128::from_le_bytes(bytes.try_into().unwrap()))
     }
@@ -80,7 +80,7 @@ impl<'de> Deserializer<'de> {
     }
 
     fn take_bytes(&mut self, num_bytes: usize) -> Result<&'de [u8], AserError> {
-        self.input.take(..num_bytes).ok_or(AserError::EndOfInput)
+        self.input.split_off(..num_bytes).ok_or(AserError::EndOfInput)
     }
 
     fn take_str(&mut self, num_bytes: usize) -> Result<&'de str, AserError> {

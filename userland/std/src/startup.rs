@@ -1,4 +1,4 @@
-use core::{slice, arch::asm};
+use core::{slice, arch::naked_asm};
 
 extern "C" {
     fn main();
@@ -9,13 +9,13 @@ extern "C" {
 #[no_mangle]
 pub extern "C" fn _aurora_startup() {
     unsafe {
-        asm!(
+        naked_asm!(
             "pop rdi", // process data pointer
             "pop rsi", // process data size
             "pop rdx", // startup data pointer
             "pop rcx", // startup data size
             "call _rust_startup",
-            options(noreturn)
+            // options(noreturn)
         )
     }
 }

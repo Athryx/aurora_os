@@ -1,0 +1,6 @@
+[toolchain]
+# rustc 1.87.0-nightly (249cb8431 2025-03-12)
+channel = "nightly-2025-03-13"
+components = ["rust-src"]
+targets = ["x86_64-unknown-none"]
+profile = "default"

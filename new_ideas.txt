@@ -1,0 +1,82 @@
+Unit of execution is Task
+Tasks are lightweight, more like green thread
+
+
+Tasks don't run in seperate address space
+Process groups tasks into address space
+(and capability space)
+
+TaskId unique across system, and contains process id
+
+
+messages can be sent to another task
+tasks can check message inbox
+each recieved message says sender id
+
+Universal serialization format for sent message data
+zero copy serialization?:
+	probably should be self describing
+	maybe some header to self describe, and all data packed in memory?
+
+2 types of data:
+	memory
+	capability to some resource in another process
+
+memory data just serialized
+
+capability are all represented as taskid which manages resource
+	task checks sender id to determine permissions, looking at process id
+	transfering capabilities within process just copy id
+
+## Permissions
+
+group
+a process can be member of many groups
+
+group can be created, and anyone in a group can add another process to a group
+	(or maybe a flag should be if group member can add other process to group)
+
+task must be exposed to be accessable from outside process, must be exposed to a specific group (or groups)
+
+To send message across process, task number, process id, and group id must be specified in syscall.
+Kernel checks current process is in the given group, and looks to make sure given task and process is registered in the group.
+Then message data is copied to recieving process's event pool.
+In addition there is a page aligned version of the syscall which is 0 copy and just either transfers pages or copy on writes
+pages in receiving process's event pool page section.
+
+There is also a broadcast syscall to send a message to all tasks listening in a group.
+
+Perhaps there are permission flags for each process in group, maybe can send to group, can listen
+in group, can add another process to group, can remove another process from group, can delete the whole group.
+Maybe custom flags can be set which are up to interpration of recieving task, for setting for example rwx bits.
+
+In order for call reply to work, there is a syscall which is send message and make group with recipient process,
+and specify reply group.
+Recipient process then can send to the task that sent, and there could be a combined syscall for send and delete the group.
+
+You could sign up to get events when there transition from 2 to 1 processes in group so resources can be freed when processess are killed.
+(task scheduler will send a message to registered task)
+
+## Process spawning, exiting and killing
+
+process_new system call, sets up process with minimum data mapped in.
+
+need something like spawner from old aurora to kill processess.
+(maybe implicitly when making process it starts in same group, optional flag or system call to make new child group).
+
+Other special kernel objects needed:
+	- shared memory thing
+	- lock
+	- thread?
+	- allocator permissions thing?
+	- maybe proces group / cpu usage permission thing?
+
+## Namespace
+
+resolve names to resources
+each process has a namespace
+it is a certain task in charge of this
+
+## Events
+
+process has event pool which is memory buffer kernel writes events into.
