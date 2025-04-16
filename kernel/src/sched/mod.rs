@@ -1,37 +1,82 @@
 use core::sync::atomic::Ordering;
+use core::slice;
 
 use spin::Once;
 
-pub use thread::{ThreadState, Thread, ThreadRef, WakeReason};
-pub use thread_group::{ThreadGroup, ThreadStartMode};
+pub use thread::Thread;
+use thread::ThreadId;
 use thread_map::ThreadMap;
-use crate::alloc::{root_alloc_ref, root_alloc_page_ref};
-use crate::arch::x64::{IntDisable, set_cr3};
+use crate::arch::x64::{IntDisable, set_cr3, asm_thread_init};
 use crate::cap::address_space::AddressSpace;
-use crate::cap::capability_space::CapabilitySpace;
 use crate::config::SCHED_TIME;
 use crate::prelude::*;
 use crate::sync::IMutex;
 use crate::arch::x64::asm_switch_thread;
 use crate::container::Arc;
-use timeout_queue::TimeoutQueue;
 use kernel_stack::KernelStack;
 
 pub mod kernel_stack;
 mod thread;
-mod thread_group;
 mod thread_map;
-mod timeout_queue;
 
 static THREAD_MAP: Once<ThreadMap> = Once::new();
-static TIMEOUT_QUEUE: Once<IMutex<TimeoutQueue>> = Once::new();
+static THREAD_LIST: IMutex<Vec<Arc<Thread>>> = Once::new();
 
 pub fn thread_map() -> &'static ThreadMap {
     THREAD_MAP.get().unwrap()
 }
 
-pub fn timeout_queue() -> &'static IMutex<TimeoutQueue> {
-    TIMEOUT_QUEUE.get().unwrap()
+pub fn create_thread(
+    address_space: Arc<AddressSpace>,
+    name: String,
+    rip: usize,
+    rsp: usize,
+) -> KResult<ThreadId> {
+    let kernel_stack = KernelStack::new()?;
+
+    // safety: kernel_stack points to valid memory
+    let stack_slice = unsafe { 
+        slice::from_raw_parts_mut(
+            kernel_stack.stack_base().as_mut_ptr(),
+            kernel_stack.as_virt_range().size() / size_of::<usize>(),
+        )
+    };
+
+    let mut push_index = 0;
+    let mut push = |val: usize| {
+        stack_slice[stack_slice.len() - 1 - push_index] = val;
+        push_index += 1;
+    };
+
+    // setup stack the first thing the new thread does is
+    // load the specified registers and jump to userspace code
+    push(rsp);
+    push(rip);
+    push(asm_thread_init as usize);
+    push(0);
+    push(0);
+    push(0);
+    push(0);
+    push(0);
+    push(0);
+    push(0x202);
+
+    let kernel_rsp = kernel_stack.stack_top() - 8 * push_index;
+    let thread = Arc::new(
+        Thread::new(
+            name,
+            kernel_stack,
+            kernel_rsp.as_usize(),
+            address_space,
+        ),
+    )?;
+
+    let tid = thread.tid;
+
+    let mut thread_list = THREAD_LIST.lock();
+    thread_list.push(thread)?;
+
+    Ok(tid)
 }
 
 /// This stores a reference to the current thread and process for easy retrieval
@@ -47,27 +92,12 @@ pub fn timer_handler() {
     let current_nsec = cpu_local_data().local_apic().nsec();
     let last_switch_nsec = cpu_local_data().last_thread_switch_nsec.load(Ordering::Acquire);
 
-    timeout_queue().lock().wake_threads(current_nsec);
-
     if current_nsec - last_switch_nsec > SCHED_TIME.as_nanos() as u64 {
         let _ = switch_current_thread_to(
-            ThreadState::Ready,
             IntDisable::new(),
             PostSwitchAction::InsertReadyQueue,
             true,
         );
-    }
-}
-
-/// Called when an ipi_exit ipi occurs, and potentialy exits the current thread
-pub fn exit_handler() {
-    if !cpu_local_data().current_thread().is_alive() {
-        switch_current_thread_to(
-            ThreadState::Dead,
-            IntDisable::new(),
-            PostSwitchAction::None,
-            true,
-        ).expect("thread terminated and there were no more threads to run");
     }
 }
 
@@ -91,8 +121,6 @@ pub enum PostSwitchAction {
     None,
     /// Inserts the thread into the ready queue to be run again
     InsertReadyQueue,
-    /// Inserts the thread into the timeout queue to wake up at the given nanosecond
-    SetTimeout(u64),
 }
 
 /// This is the function that runs after thread switch
@@ -103,7 +131,6 @@ extern "C" fn post_switch_handler(old_rsp: usize) {
         old_thread,
         post_switch_action,
         send_eoi,
-        ..
     } = (*post_switch_data).take()
         .expect("post switch data was none after switching threads");
 
@@ -111,15 +138,10 @@ extern "C" fn post_switch_handler(old_rsp: usize) {
 
     match post_switch_action {
         PostSwitchAction::None => (),
-       // FIXME: don't panic on out of memory here
+        // FIXME: don't panic on out of memory here
         PostSwitchAction::InsertReadyQueue => thread_map()
             .insert_ready_thread(Arc::downgrade(&old_thread))
             .expect("failed to add thread to ready queue"),
-        // FIXME: don't panic on out of memory here
-        PostSwitchAction::SetTimeout(timeout_nsec) => timeout_queue()
-            .lock()
-            .insert_thread(ThreadRef::new(&old_thread), timeout_nsec)
-            .expect("failed to add thread to timeout queue")
     }
 
     if send_eoi {
@@ -140,9 +162,7 @@ pub enum ThreadSwitchToError {
 /// and reverts interrupts to the prevoius mode just before switching threads
 /// 
 /// Returns None if there were no available threads to switch to
-pub fn switch_current_thread_to(state: ThreadState, _int_disable: IntDisable, post_switch_hook: PostSwitchAction, send_eoi: bool) -> Result<(), ThreadSwitchToError> {
-    assert!(!matches!(state, ThreadState::Running), "cannot switch current thread to running state");
-
+pub fn switch_current_thread_to(_int_disable: IntDisable, post_switch_hook: PostSwitchAction, send_eoi: bool) -> Result<(), ThreadSwitchToError> {
     let new_thread = thread_map().get_next_thread()
         .ok_or(ThreadSwitchToError::NoAvailableThreads)?;
 
@@ -150,15 +170,9 @@ pub fn switch_current_thread_to(state: ThreadState, _int_disable: IntDisable, po
 
     let old_thread = global_sched_state.current_thread.clone();
 
-    // change all thread states that need to be changed
-    old_thread.set_state(state);
-    new_thread.set_state(ThreadState::Running);
-
     // get the new rsp and address space we have to switch to
     let new_rsp = new_thread.rsp.load(Ordering::Acquire);
     let new_addr_space = new_thread.address_space().get_cr3().as_usize();
-
-    new_thread.load_thread_local_pointer();
 
     // set syscall rsp
     cpu_local_data().syscall_rsp.store(new_thread.syscall_rsp(), Ordering::Release);
@@ -189,61 +203,40 @@ pub fn switch_current_thread_to(state: ThreadState, _int_disable: IntDisable, po
 }
 
 pub fn init() {
-    THREAD_MAP.call_once(|| ThreadMap::new(root_alloc_ref()));
-    TIMEOUT_QUEUE.call_once(|| IMutex::new(TimeoutQueue::new(root_alloc_ref())));
+    THREAD_MAP.call_once(|| ThreadMap::new());
 }
 
-static KERNEL_THREAD_GROUP: Once<Arc<ThreadGroup>> = Once::new();
 static KERNEL_ADDRESS_SPACE: Once<Arc<AddressSpace>> = Once::new();
-static KERNEL_CAPABILITY_SPACE: Once<Arc<CapabilitySpace>> = Once::new();
 
 /// Initializes thread group, address space, and capability space used by kernel threads
 pub fn init_kernel_context() -> KResult<()> {
-    let thread_group = Arc::new(
-        ThreadGroup::new(root_alloc_page_ref(), root_alloc_ref()),
-        root_alloc_ref(),
-    )?;
-
     let address_space = Arc::new(
         AddressSpace::new(root_alloc_page_ref(), root_alloc_ref())?,
-        root_alloc_ref(),
     )?;
 
-    let capability_space = Arc::new(
-        CapabilitySpace::new(root_alloc_ref()),
-        root_alloc_ref(),
-    )?;
-
-    KERNEL_THREAD_GROUP.call_once(|| thread_group);
     KERNEL_ADDRESS_SPACE.call_once(|| address_space);
-    KERNEL_CAPABILITY_SPACE.call_once(|| capability_space);
 
     Ok(())
 }
 
 /// Creates an idle thread and sets up scheduler from the currently executing thread and its stack
 pub fn init_cpu_local(stack: AVirtRange) -> KResult<()> {
-    let thread_group = KERNEL_THREAD_GROUP.get().unwrap();
     let address_space = KERNEL_ADDRESS_SPACE.get().unwrap();
-    let capability_space = KERNEL_CAPABILITY_SPACE.get().unwrap();
 
     set_cr3(address_space.get_cr3().as_usize());
 
     let thread = Arc::new(
         Thread::new(
-            String::from_str(root_alloc_ref(), "idle_thread")?,
+            String::from_str("idle_thread")?,
             KernelStack::Existing(stack),
             // rsp will be set on next switch
             0,
-            Arc::downgrade(thread_group),
             address_space.clone(),
-            capability_space.clone(),
-            root_alloc_ref(),
         ),
-        root_alloc_ref(),
     )?;
 
-    thread_group.add_thread(thread.clone())?;
+    let mut thread_list = THREAD_LIST.lock();
+    thread_list.push(thread.clone());
 
     cpu_local_data().syscall_rsp.store(thread.syscall_rsp(), Ordering::Release);
 
