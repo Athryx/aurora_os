@@ -1,43 +1,20 @@
 use bytemuck::Pod;
 use sys::syscall_nums::*;
 
-use crate::alloc::root_alloc_ref;
 use crate::consts::KERNEL_VMA;
 use crate::prelude::*;
 use crate::arch::x64::{
 	rdmsr, wrmsr, EFER_MSR, EFER_SYSCALL_ENABLE, FMASK_MSR, LSTAR_MSR, STAR_MSR, asm_user_copy,
 };
 
-mod cap;
-use cap::*;
-mod channel;
-use channel::*;
 mod debug;
 use debug::*;
-mod event;
-mod drop_check;
-use drop_check::*;
-mod event_pool;
-use event_pool::*;
-mod interrupt;
-use interrupt::*;
-mod key;
-use key::*;
-mod memory;
-use memory::*;
-mod mmio;
-use mmio::*;
-mod thread;
-use thread::*;
-mod thread_group;
-use thread_group::*;
-
 mod process;
 use process::*;
 mod serial;
 use serial::*;
 
-mod strace;
+//mod strace;
 
 extern "C" {
     fn syscall_entry();
@@ -262,11 +239,11 @@ macro_rules! sysret_5 {
 /// This function is called by the assembly syscall entry point
 #[no_mangle]
 extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
-	let strace_args_string = if syscall_num != PRINT_DEBUG {
-		Some(strace::get_strace_args_string(syscall_num, vals))
-	} else {
-		None
-	};
+	// let strace_args_string = if syscall_num != PRINT_DEBUG {
+	// 	Some(strace::get_strace_args_string(syscall_num, vals))
+	// } else {
+	// 	None
+	// };
 
     match syscall_num {
 		// chall calls
@@ -284,7 +261,7 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 		SERIAL_READ => sysret_0!(syscall_2!(serial_read, vals), vals),
 		SERIAL_WRITE => sysret_0!(syscall_2!(serial_read, vals), vals),
 		PROCESS_SPAWN => sysret_1!(syscall_2!(process_spawn, vals), vals),
-		PROCESS_SEND_MESSAGE => sysret_0!(syscall_2!(process_send_message, vals), vals),
+		PROCESS_SEND_MESSAGE => sysret_0!(syscall_3!(process_send_message, vals), vals),
 		PROCESS_RECV_MESSAGE => sysret_1!(syscall_2!(process_recv_message, vals), vals),
 		PROCESS_SET_UID => sysret_0!(syscall_1!(process_set_uid, vals), vals),
 		PROCESS_MAP_MEM => sysret_0!(syscall_2!(process_map_mem, vals), vals),
@@ -292,10 +269,10 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
         _ => vals.a1 = SysErr::InvlSyscall.num(),
     }
 
-	if let Some(args_string) = strace_args_string {
-		let ret_string = strace::get_strace_return_string(syscall_num, vals);
-		eprintln!("{} -> {}", args_string, ret_string);
-	}
+	// if let Some(args_string) = strace_args_string {
+	// 	let ret_string = strace::get_strace_return_string(syscall_num, vals);
+	// 	eprintln!("{} -> {}", args_string, ret_string);
+	// }
 }
 
 fn is_option_set(options: u32, bit: u32) -> bool {

@@ -3,11 +3,11 @@ use core::slice;
 
 use spin::Once;
 
-pub use thread::Thread;
-use thread::ThreadId;
+pub use thread::{Thread, ThreadId, UserId};
+use thread::{ThreadId, UserId};
 use thread_map::ThreadMap;
 use crate::arch::x64::{IntDisable, set_cr3, asm_thread_init};
-use crate::cap::address_space::AddressSpace;
+use crate::vmem_manager::ProcessAddrSpace;
 use crate::config::SCHED_TIME;
 use crate::prelude::*;
 use crate::sync::IMutex;
@@ -27,10 +27,11 @@ pub fn thread_map() -> &'static ThreadMap {
 }
 
 pub fn create_thread(
-    address_space: Arc<AddressSpace>,
+    address_space: Arc<ProcessAddrSpace>,
     name: String,
     rip: usize,
     rsp: usize,
+    user_id: UserId,
 ) -> KResult<ThreadId> {
     let kernel_stack = KernelStack::new()?;
 
@@ -68,6 +69,7 @@ pub fn create_thread(
             kernel_stack,
             kernel_rsp.as_usize(),
             address_space,
+            user_id,
         ),
     )?;
 
@@ -206,12 +208,12 @@ pub fn init() {
     THREAD_MAP.call_once(|| ThreadMap::new());
 }
 
-static KERNEL_ADDRESS_SPACE: Once<Arc<AddressSpace>> = Once::new();
+static KERNEL_ADDRESS_SPACE: Once<Arc<ProcessAddrSpace>> = Once::new();
 
 /// Initializes thread group, address space, and capability space used by kernel threads
 pub fn init_kernel_context() -> KResult<()> {
     let address_space = Arc::new(
-        AddressSpace::new(root_alloc_page_ref(), root_alloc_ref())?,
+        ProcessAddrSpace::new()?,
     )?;
 
     KERNEL_ADDRESS_SPACE.call_once(|| address_space);
@@ -232,6 +234,7 @@ pub fn init_cpu_local(stack: AVirtRange) -> KResult<()> {
             // rsp will be set on next switch
             0,
             address_space.clone(),
+            UserId::from(0),
         ),
     )?;
 
