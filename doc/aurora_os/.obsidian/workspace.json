@@ -16,21 +16,41 @@
                 "file": "Kernel Events.md",
                 "mode": "source",
                 "source": false
-              }
+              },
+              "icon": "lucide-file",
+              "title": "Kernel Events"
             }
           },
           {
             "id": "ae2e87ba77160e3e",
             "type": "leaf",
             "state": {
-              "type": "release-notes",
+              "type": "markdown",
               "state": {
-                "currentVersion": "1.4.16"
-              }
+                "file": "Server APIs.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Server APIs"
+            }
+          },
+          {
+            "id": "1ba20f56007cfbea",
+            "type": "leaf",
+            "state": {
+              "type": "markdown",
+              "state": {
+                "file": "Kernel Architecture.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Kernel Architecture"
             }
           }
         ],
-        "currentTab": 1
+        "currentTab": 2
       }
     ],
     "direction": "vertical"
@@ -49,8 +69,11 @@
             "state": {
               "type": "file-explorer",
               "state": {
-                "sortOrder": "alphabetical"
-              }
+                "sortOrder": "alphabetical",
+                "autoReveal": false
+              },
+              "icon": "lucide-folder-closed",
+              "title": "Files"
             }
           },
           {
@@ -65,7 +88,9 @@
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical"
-              }
+              },
+              "icon": "lucide-search",
+              "title": "Search"
             }
           },
           {
@@ -73,7 +98,9 @@
             "type": "leaf",
             "state": {
               "type": "starred",
-              "state": {}
+              "state": {},
+              "icon": "lucide-file",
+              "title": "Plugin no longer active"
             }
           },
           {
@@ -81,7 +108,9 @@
             "type": "leaf",
             "state": {
               "type": "bookmarks",
-              "state": {}
+              "state": {},
+              "icon": "lucide-bookmark",
+              "title": "Bookmarks"
             }
           }
         ]
@@ -104,7 +133,7 @@
             "state": {
               "type": "backlink",
               "state": {
-                "file": "Kernel Events.md",
+                "file": "Kernel Architecture.md",
                 "collapseAll": false,
                 "extraContext": false,
                 "sortOrder": "alphabetical",
@@ -112,7 +141,9 @@
                 "searchQuery": "",
                 "backlinkCollapsed": false,
                 "unlinkedCollapsed": true
-              }
+              },
+              "icon": "links-coming-in",
+              "title": "Backlinks for Kernel Architecture"
             }
           },
           {
@@ -121,10 +152,12 @@
             "state": {
               "type": "outgoing-link",
               "state": {
-                "file": "Kernel Events.md",
+                "file": "Kernel Architecture.md",
                 "linksCollapsed": false,
                 "unlinkedCollapsed": true
-              }
+              },
+              "icon": "links-going-out",
+              "title": "Outgoing links from Kernel Architecture"
             }
           },
           {
@@ -134,8 +167,12 @@
               "type": "tag",
               "state": {
                 "sortOrder": "frequency",
-                "useHierarchy": true
-              }
+                "useHierarchy": true,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-tags",
+              "title": "Tags"
             }
           },
           {
@@ -144,8 +181,13 @@
             "state": {
               "type": "outline",
               "state": {
-                "file": "Kernel Events.md"
-              }
+                "file": "Kernel Architecture.md",
+                "followCursor": false,
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-list",
+              "title": "Outline of Kernel Architecture"
             }
           },
           {
@@ -154,8 +196,12 @@
             "state": {
               "type": "all-properties",
               "state": {
-                "sortOrder": "frequency"
-              }
+                "sortOrder": "frequency",
+                "showSearch": false,
+                "searchQuery": ""
+              },
+              "icon": "lucide-archive",
+              "title": "All properties"
             }
           }
         ]
@@ -175,14 +221,15 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "ae2e87ba77160e3e",
+  "active": "1ba20f56007cfbea",
   "lastOpenFiles": [
-    "Kernel Bytecode Interpreter.md",
     "General Design.md",
-    "Kernel Events.md",
+    "Kernel Architecture.md",
+    "Kernel Bytecode Interpreter.md",
+    "Kernel Structures.md",
+    "Server APIs.md",
     "Kernel Thread Switching Design 2.md",
     "Kernel Thread Switching Design.md",
-    "Server APIs.md",
-    "Kernel Structures.md"
+    "Kernel Events.md"
   ]
 }
