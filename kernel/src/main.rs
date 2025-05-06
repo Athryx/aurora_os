@@ -16,8 +16,10 @@
 #![test_runner(crate::test_runner)]
 #![reexport_test_harness_main = "test_main"]
 
+extern crate alloc;
+
 mod acpi;
-mod alloc;
+mod allocator;
 mod arch;
 mod cap;
 mod container;
@@ -32,6 +34,7 @@ mod vmem_manager;
 
 mod consts;
 mod config;
+mod fs;
 mod gdt;
 mod gs_data;
 mod io;
@@ -53,7 +56,6 @@ use sched::kernel_stack::KernelStack;
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
     rprintln!("{}", info);
-    println!("{}", info);
 
     loop {
         cli();
@@ -65,9 +67,6 @@ fn panic(info: &PanicInfo) -> ! {
 ///
 /// Runs once on the startup core
 fn init(boot_info_addr: usize) -> KResult<()> {
-    // clear the vga text buffer
-    io::WRITER.lock().clear();
-
     config_cpu_settings();
 
     let boot_info = unsafe { BootInfo::new(boot_info_addr) };
@@ -100,9 +99,6 @@ fn init(boot_info_addr: usize) -> KResult<()> {
         apic::init_local_apic();
     }
 
-    // FIXME: this page faults
-    //int::userspace_interrupt::init_interrupt_manager(ap_apic_ids.len() + 1)?;
-
     apic::smp_init(&ap_apic_ids)?;
 
     start_userspace::start_early_init_process(boot_info.initrd, mmio_allocator, boot_info.rsdp)
@@ -117,7 +113,7 @@ pub extern "C" fn _start(boot_info_addr: usize) -> ! {
 
     init(boot_info_addr).expect("kernel init failed");
 
-    println!("aurora v0.0.1");
+    eprintln!("aurora v0.0.1");
 
     sti();
 

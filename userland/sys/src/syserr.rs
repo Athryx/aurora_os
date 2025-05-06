@@ -28,7 +28,8 @@ pub enum SysErr {
     Obscured = 16,
     InvlSyscall = 17,
     InvlBuffer = 18,
-    Unknown = 19,
+    NotFound = 19,
+    Unknown = 20,
 }
 
 impl SysErr {
@@ -66,6 +67,7 @@ impl SysErr {
             Self::Obscured => "operation does not return information about error state",
             Self::InvlSyscall => "invalid syscall number",
             Self::InvlBuffer => "invalid buffer for reading or writing syscall arguments or return values",
+            Self::NotFound => "file not found",
             Self::Unknown => "unknown error",
         }
     }

@@ -11,10 +11,11 @@ use crate::mem::PhysFrame;
 use crate::mem::VirtFrame;
 use crate::prelude::*;
 use crate::consts;
-use crate::alloc::PaRef;
 use page_table::{PageTable, PageTablePointer, PageTableFlags};
 
 mod page_table;
+mod process_addr_space;
+pub use process_addr_space::ProcessAddrSpace;
 
 lazy_static! {
     /// Most permissive page table flags used by parent tables
@@ -91,18 +92,15 @@ impl From<MemoryMappingFlags> for PageMappingOptions {
 pub struct VirtAddrSpace {
     /// Page table pointer which will go in the cr3 register, it points to the pml4 table
     cr3: PageTablePointer,
-    /// Page allocator used to allocate page frames for page tables
-    page_allocator: PaRef,
 }
 
 impl VirtAddrSpace {
-    pub fn new(mut page_allocator: PaRef) -> KResult<Self> {
-        let pml4_table = PageTable::new(&mut page_allocator, PageTableFlags::empty())
+    pub fn new() -> KResult<Self> {
+        let pml4_table = PageTable::new(PageTableFlags::empty())
             .ok_or(SysErr::OutOfMem)?;
 
         let mut out = VirtAddrSpace {
             cr3: pml4_table,
-            page_allocator,
         };
 
         out.initialize_kernel_mapping();
@@ -222,7 +220,7 @@ impl VirtAddrSpace {
     pub unsafe fn dealloc_addr_space(&mut self) {
         unsafe {
             self.cr3.as_mut_ptr().as_mut().unwrap()
-                .dealloc_all(&mut self.page_allocator)
+                .dealloc_all()
         }
     }
 
@@ -284,7 +282,7 @@ impl VirtAddrSpace {
                 }
             } else {
                 page_table = page_table
-                    .get_or_alloc(index, &mut self.page_allocator, *PARENT_FLAGS)
+                    .get_or_alloc(index, *PARENT_FLAGS)
                     .ok_or(SysErr::OutOfMem)?;
             }
         }
@@ -354,7 +352,7 @@ impl VirtAddrSpace {
         for i in dealloc_start_index..4 {
             unsafe {
                 if let Some(table) = tables[i].as_mut() {
-                    table.dealloc(&mut self.page_allocator)
+                    table.dealloc()
                 } else {
                     break;
                 }
@@ -513,7 +511,7 @@ impl VirtAddrSpace {
                 }
             } else {
                 page_table = page_table
-                    .get_or_alloc(index, &mut self.page_allocator, *PARENT_FLAGS)
+                    .get_or_alloc(index, *PARENT_FLAGS)
                     .ok_or(SysErr::OutOfMem)?;
             }
         }

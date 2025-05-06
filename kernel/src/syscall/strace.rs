@@ -7,7 +7,6 @@ use sys::{CapId, syscall_nums::*, ThreadNewFlags, ThreadDestroyFlags, ThreadSusp
 use bitflags::Flags;
 
 use crate::prelude::*;
-use crate::alloc::{HeapRef, root_alloc_ref};
 use super::SyscallVals;
 
 #[derive(Debug, Clone, Copy)]
@@ -134,7 +133,7 @@ macro_rules! event_async {
 }
 
 pub fn get_strace_args_string(syscall_num: u32, vals: &SyscallVals) -> String {
-	let syscall_name = String::from_str(root_alloc_ref(), syscall_name(syscall_num)).unwrap();
+	let syscall_name = String::from_str(syscall_name(syscall_num)).unwrap();
 
     let args = match syscall_num {
         PRINT_DEBUG => return syscall_name,
@@ -185,7 +184,7 @@ pub fn get_strace_args_string(syscall_num: u32, vals: &SyscallVals) -> String {
         _ => return syscall_name,
     };
 
-	format!(root_alloc_ref(), "sys {}({})", syscall_name, args)
+	alloc::format!("sys {}({})", syscall_name, args)
 }
 
 struct StraceRetBuilder {
@@ -305,7 +304,7 @@ pub fn get_strace_return_string(syscall_num: u32, vals: &SyscallVals) -> String 
         out
     } else {
         if let Some(err) = SysErr::new(vals.a1) {
-            format!(root_alloc_ref(), "Err(SysErr::{:?})", err)
+            alloc::format!(root_alloc_ref(), "Err(SysErr::{:?})", err)
         } else {
             String::from_str(root_alloc_ref(), "Err(<invalid syserr>)").unwrap()
         }
