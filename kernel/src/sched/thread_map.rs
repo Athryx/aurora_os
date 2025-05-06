@@ -1,4 +1,5 @@
-use alloc::sync::{Arc, Weak};
+use crate::alloc::HeapRef;
+use crate::container::{Arc, Weak, Vec};
 use crate::sync::IMutex;
 use crate::prelude::*;
 
@@ -12,9 +13,9 @@ pub struct ThreadMap {
 }
 
 impl ThreadMap {
-    pub const fn new() -> Self {
+    pub const fn new(allocer: HeapRef) -> Self {
         ThreadMap {
-            ready_threads: IMutex::new(Vec::new()),
+            ready_threads: IMutex::new(Vec::new(allocer)),
         }
     }
 

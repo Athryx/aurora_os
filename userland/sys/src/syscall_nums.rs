@@ -1,19 +1,7 @@
 //! Numbers used by all aurora kernel syscalls
 
 pub const PRINT_DEBUG: u32 = 0;
-pub const SERIAL_READ: u32 = 1;
-pub const SERIAL_WRITE: u32 = 2;
 
-pub const PROCESS_SPAWN: u32 = 3;
-pub const PROCESS_SEND_MESSAGE: u32 = 4;
-pub const PROCESS_RECV_MESSAGE: u32 = 5;
-pub const PROCESS_SET_UID: u32 = 6;
-pub const PROCESS_MAP_MEM: u32 = 7;
-pub const PROCESS_UNMAP_MEM: u32 = 8;
-
-pub const READ_FILE: u32 = 9;
-
-// TODO: remove
 pub const THREAD_GROUP_NEW: u32 = 1;
 pub const THREAD_GROUP_EXIT: u32 = 2;
 pub const THREAD_NEW: u32 = 3;

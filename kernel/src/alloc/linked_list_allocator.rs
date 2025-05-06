@@ -1,7 +1,6 @@
 use core::cell::Cell;
 use core::cmp::max;
 use core::ptr::NonNull;
-use alloc::alloc::GlobalAlloc;
 
 use super::{HeapAllocator, PaRef};
 use crate::container::{LinkedList, ListNode, ListNodeData, CursorMut};
@@ -315,18 +314,14 @@ impl LinkedListAllocatorInner {
 }
 
 pub struct LinkedListAllocator {
-    inner: IMutex<Option<LinkedListAllocatorInner>>,
+    inner: IMutex<LinkedListAllocatorInner>,
 }
 
 impl LinkedListAllocator {
-    pub const fn new() -> Self {
+    pub fn new(page_allocator: PaRef) -> Self {
         LinkedListAllocator {
-            inner: IMutex::new(None),
+            inner: IMutex::new(LinkedListAllocatorInner::new(page_allocator)),
         }
-    }
-
-    pub fn init(&self) {
-        *self.inner.lock() = Some(LinkedListAllocatorInner::new(todo!()));
     }
 
     /// Given the pointer and layout, computes the actual allocation slice that was returned
@@ -341,24 +336,16 @@ impl LinkedListAllocator {
     }
 }
 
-unsafe impl GlobalAlloc for LinkedListAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let mut inner = self.inner.lock();
-        match inner.as_mut().unwrap().alloc(layout) {
-            Some(ptr) => ptr.as_mut_ptr(),
-            None => null_mut(),
-        }
+// TODO: add specialized realloc method
+unsafe impl HeapAllocator for LinkedListAllocator {
+    fn alloc(&self, layout: Layout) -> Option<NonNull<[u8]>> {
+        self.inner.lock().alloc(layout)
     }
 
-    unsafe fn dealloc(&self, allocation: *mut u8, layout: Layout) {
-        if let Some(ptr) = NonNull::new(allocation) {
-            let mut inner = self.inner.lock();
-            unsafe { inner.as_mut().unwrap().dealloc(ptr, layout) }
-        }
+    unsafe fn dealloc(&self, allocation: NonNull<u8>, layout: Layout) {
+        unsafe { self.inner.lock().dealloc(allocation, layout) }
     }
 }
-
-static GLOBAL_ALLOCATOR: LinkedListAllocator = LinkedListAllocator::new();
 
 impl Drop for LinkedListAllocator {
     fn drop(&mut self) {

@@ -32,11 +32,6 @@ use thread::*;
 mod thread_group;
 use thread_group::*;
 
-mod process;
-use process::*;
-mod serial;
-use serial::*;
-
 mod strace;
 
 extern "C" {
@@ -269,26 +264,51 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 	};
 
     match syscall_num {
-		// chall calls
 		PRINT_DEBUG => sysret_0!(syscall_8!(print_debug, vals), vals),
-		// TODO:
-		// write to serial with memory
-		// read from serial
-		// map memory
-		// unmap memory
-		// spawn (exec elf in new process)
-		// setuid (for root)
-		// scuffed fs
-		// send ipc message
-		// recv ipc message
-		SERIAL_READ => sysret_0!(syscall_2!(serial_read, vals), vals),
-		SERIAL_WRITE => sysret_0!(syscall_2!(serial_read, vals), vals),
-		PROCESS_SPAWN => sysret_1!(syscall_2!(process_spawn, vals), vals),
-		PROCESS_SEND_MESSAGE => sysret_0!(syscall_2!(process_send_message, vals), vals),
-		PROCESS_RECV_MESSAGE => sysret_1!(syscall_2!(process_recv_message, vals), vals),
-		PROCESS_SET_UID => sysret_0!(syscall_1!(process_set_uid, vals), vals),
-		PROCESS_MAP_MEM => sysret_0!(syscall_2!(process_map_mem, vals), vals),
-		PROCESS_UNMAP_MEM => sysret_0!(syscall_1!(process_unmap_mem, vals), vals),
+		THREAD_GROUP_NEW => sysret_1!(syscall_2!(thread_group_new, vals), vals),
+		THREAD_GROUP_EXIT => sysret_0!(syscall_1!(thread_group_exit, vals), vals),
+		THREAD_NEW => sysret_2!(syscall_6!(thread_new, vals), vals),
+		THREAD_YIELD => sysret_0!(thread_yield(), vals),
+		THREAD_DESTROY => sysret_0!(syscall_1!(thread_destroy, vals), vals),
+		THREAD_SUSPEND => sysret_0!(syscall_1!(thread_suspend, vals), vals),
+		THREAD_RESUME => sysret_0!(syscall_1!(thread_resume, vals), vals),
+		THREAD_SET_PROPERTY => sysret_0!(syscall_2!(thread_set_property, vals), vals),
+		THREAD_HANDLE_THREAD_EXIT_SYNC => sysret_0!(syscall_2!(thread_handle_thread_exit_sync, vals), vals),
+		THREAD_HANDLE_THREAD_EXIT_ASYNC => sysret_0!(syscall_3!(thread_handle_thread_exit_async, vals), vals),
+		CAP_CLONE => sysret_1!(syscall_3!(cap_clone, vals), vals),
+		CAP_DESTROY => sysret_0!(syscall_2!(cap_destroy, vals), vals),
+		ADDRESS_SPACE_NEW => sysret_1!(syscall_1!(address_space_new, vals), vals),
+		ADDRESS_SPACE_UNMAP => sysret_0!(syscall_2!(address_space_unmap, vals), vals),
+		MEMORY_MAP => sysret_1!(syscall_5!(memory_map, vals), vals),
+		MEMORY_UPDATE_MAPPING => sysret_1!(syscall_3!(memory_update_mapping, vals), vals),
+		MEMORY_NEW => sysret_2!(syscall_2!(memory_new, vals), vals),
+		MEMORY_GET_SIZE => sysret_1!(syscall_1!(memory_get_size, vals), vals),
+		MEMORY_RESIZE => sysret_1!(syscall_2!(memory_resize, vals), vals),
+		EVENT_POOL_NEW => sysret_1!(syscall_2!(event_pool_new, vals), vals),
+		EVENT_POOL_MAP => sysret_1!(syscall_3!(event_pool_map, vals), vals),
+		EVENT_POOL_AWAIT => sysret_2!(syscall_2!(event_pool_await, vals), vals),
+		CHANNEL_NEW => sysret_1!(syscall_1!(channel_new, vals), vals),
+		CHANNEL_TRY_SEND => sysret_1!(syscall_4!(channel_try_send, vals), vals),
+		CHANNEL_SYNC_SEND => sysret_1!(syscall_5!(channel_sync_send, vals), vals),
+		CHANNEL_ASYNC_SEND => sysret_0!(syscall_6!(channel_async_send, vals), vals),
+		CHANNEL_TRY_RECV => sysret_2!(syscall_4!(channel_try_recv, vals), vals),
+		CHANNEL_SYNC_RECV => sysret_2!(syscall_5!(channel_sync_recv, vals), vals),
+		CHANNEL_ASYNC_RECV => sysret_0!(syscall_3!(channel_async_recv, vals), vals),
+		CHANNEL_SYNC_CALL => sysret_1!(syscall_8!(channel_sync_call, vals), vals),
+		CHANNEL_ASYNC_CALL => sysret_0!(syscall_6!(channel_async_call, vals), vals),
+		REPLY_REPLY => sysret_1!(syscall_4!(reply_reply, vals), vals),
+		KEY_NEW => sysret_1!(syscall_1!(key_new, vals), vals),
+		KEY_ID => sysret_1!(syscall_1!(key_id, vals), vals),
+		DROP_CHECK_NEW => sysret_2!(syscall_2!(drop_check_new, vals), vals),
+		DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_SYNC => sysret_1!(syscall_2!(drop_check_reciever_handle_cap_drop_sync, vals), vals),
+		DROP_CHECK_RECIEVER_HANDLE_CAP_DROP_ASYNC => sysret_0!(syscall_3!(drop_check_reciever_handle_cap_drop_async, vals), vals),
+		MMIO_ALLOCATOR_ALLOC => sysret_1!(syscall_4!(mmio_allocator_alloc, vals), vals),
+		PHYS_MEM_MAP => sysret_1!(syscall_3!(phys_mem_map, vals), vals),
+		PHYS_MEM_GET_SIZE => sysret_1!(syscall_1!(phys_mem_get_size, vals), vals),
+		INTERRUPT_NEW => sysret_3!(syscall_4!(interrupt_new, vals), vals),
+		INTERRUPT_ID => sysret_2!(syscall_1!(interrupt_id, vals), vals),
+		INTERRUPT_HANDLE_INTERRUPT_TRIGGER_SYNC => sysret_0!(syscall_2!(interrupt_handle_interrupt_trigger_sync, vals), vals),
+		INTERRUPT_HANDLE_INTERRUPT_TRIGGER_ASYNC => sysret_0!(syscall_3!(interrupt_handle_interrupt_trigger_async, vals), vals),
         _ => vals.a1 = SysErr::InvlSyscall.num(),
     }
 
@@ -328,17 +348,6 @@ fn copy_from_userspace<T: Pod>(dst: &mut [T], src: *const T) -> KResult<()> {
 		Err(SysErr::InvlBuffer)
 	} else {
 		Ok(())
-	}
-}
-
-fn copy_vec_from_userspace(src: *const u8, num_bytes: usize) -> KResult<Vec<u8>> {
-	// just cap copy amount to be safe
-	if num_bytes > 0x1000 {
-		Err(SysErr::InvlArgs)
-	} else {
-		let mut out = alloc::vec![0; num_bytes];
-		copy_from_userspace(out.as_mut_slice(), src)?;
-		Ok(out)
 	}
 }
 
