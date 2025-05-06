@@ -5,7 +5,7 @@ use bitflags::bitflags;
 
 use crate::arch::x64::PatEntry;
 use crate::prelude::*;
-use crate::allocator::zm;
+use crate::alloc::PaRef;
 use crate::mem::{Allocation, PageLayout};
 use super::{PageMappingOptions, MemoryCacheSetting};
 
@@ -135,11 +135,12 @@ impl PageTable {
     /// Returns a PageTablePointer with the provided `flags`
     /// Returns None if there is not enough memory
 	pub fn new(
+		allocer: &mut PaRef,
 		flags: PageTableFlags,
 	) -> Option<PageTablePointer> {
         // FIXME: handle case where allocator gives us back more than 1 frame
         // this is technically allowed to happen, but with current implementation it won't
-		let frame = zm().alloc(
+		let frame = allocer.alloc(
             // This should never panic
             PageLayout::new_rounded(PAGE_SIZE, PAGE_SIZE).unwrap()
         )?.as_usize();
@@ -179,18 +180,18 @@ impl PageTable {
 		(self.0[index].0 & PageTableFlags::PRESENT.bits()) != 0
 	}
 
-	pub unsafe fn dealloc(&mut self) {
+	pub unsafe fn dealloc(&mut self, allocer: &mut PaRef) {
 		let frame = Allocation::new(self.addr(), PAGE_SIZE);
 		// TODO: maybe use regular dealloc and store the zindex in unused bits of page tabel entries
-        unsafe { zm().dealloc(frame); }
+        unsafe { allocer.dealloc(frame); }
 	}
 
-	pub unsafe fn dealloc_all(&mut self) {
-		unsafe { self.dealloc_recurse(3); }
+	pub unsafe fn dealloc_all(&mut self, allocer: &mut PaRef) {
+		unsafe { self.dealloc_recurse(allocer, 3); }
 	}
 
     // FIXME: this is super unsafe
-	unsafe fn dealloc_recurse(&mut self, level: usize) {
+	unsafe fn dealloc_recurse(&mut self, allocer: &mut PaRef, level: usize) {
 		let last_entry_index = self.0.len() - 1;
 
 		if level > 0 {
@@ -202,13 +203,13 @@ impl PageTable {
 
                 unsafe {
 					if let Some(page_table) = pointer.as_mut_ptr().as_mut() {
-						page_table.dealloc_recurse(level-1);
+						page_table.dealloc_recurse(allocer, level-1);
 					}
                 }
 			}
 		}
 
-		unsafe { self.dealloc() }
+		unsafe { self.dealloc(allocer) }
 	}
 
     /// Adds the page table entry at the given index
@@ -247,6 +248,7 @@ impl PageTable {
 	pub fn get_or_alloc<'a>(
 		&'a mut self,
 		index: usize,
+		allocer: &mut PaRef,
 		flags: PageTableFlags,
 	) -> Option<&'a mut PageTable> {
 		// safety: page tables form a tree (no recursive mapping)
@@ -255,7 +257,7 @@ impl PageTable {
 		if self.present(index) {
 			unsafe { self.0[index].as_mut_ptr().as_mut() }
 		} else {
-			let mut out = PageTable::new(flags)?;
+			let mut out = PageTable::new(allocer, flags)?;
 			unsafe {
 				self.add_entry(index, out);
 				out.as_mut_ptr().as_mut()

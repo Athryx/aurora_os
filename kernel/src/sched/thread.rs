@@ -1,8 +1,15 @@
 use core::sync::atomic::{AtomicUsize, Ordering};
 
+use sys::{EventData, ThreadExit};
+
+use crate::arch::x64::{wrmsr, FSBASE_MSR};
+use crate::cap::CapObject;
+use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::address_space::AddressSpace;
+use crate::cap::channel::RecieveResult;
 use crate::container::Arc;
-use crate::vmem_manager::ProcessAddrSpace;
+use crate::event::{BroadcastEventEmitter, BroadcastEventListener};
+use crate::sync::IMutex;
 use super::kernel_stack::KernelStack;
 use crate::container::Weak;
 use crate::{make_id_type, prelude::*};
@@ -10,13 +17,6 @@ use crate::{make_id_type, prelude::*};
 static NEXT_TID: AtomicUsize = AtomicUsize::new(0);
 
 make_id_type!(ThreadId);
-make_id_type!(UserId);
-
-impl UserId {
-    pub fn root() -> Self {
-        Self(0)
-    }
-}
 
 #[derive(Debug)]
 pub struct Thread {
@@ -25,8 +25,7 @@ pub struct Thread {
     // this has to be atomic usize because it is written to in assembly
     pub rsp: AtomicUsize,
     kernel_stack: KernelStack,
-    address_space: Arc<ProcessAddrSpace>,
-    user_id: AtomicUsize,
+    address_space: Arc<AddressSpace>,
 }
 
 impl Thread {
@@ -34,8 +33,7 @@ impl Thread {
         name: String,
         kernel_stack: KernelStack,
         rsp: usize,
-        address_space: Arc<ProcessAddrSpace>,
-        user_id: UserId,
+        address_space: Arc<AddressSpace>,
     ) -> Self {
         Thread {
             name,
@@ -43,7 +41,6 @@ impl Thread {
             rsp: AtomicUsize::new(rsp),
             kernel_stack,
             address_space,
-            user_id: AtomicUsize::new(user_id),
         }
     }
 
@@ -54,14 +51,6 @@ impl Thread {
     /// This is the rsp value loaded when a syscall occurs for this thread
     pub fn syscall_rsp(&self) -> usize {
         self.kernel_stack.stack_top().as_usize()
-    }
-
-    pub fn user_id(&self) -> UserId {
-        self.user_id.load(Ordering::Acquire).into()
-    }
-
-    pub fn set_user_id(&self, user_id: UserId) {
-        self.user_id.store(user_id.into(), Ordering::Release);
     }
 
     pub fn is_current_thread(&self) -> bool {
