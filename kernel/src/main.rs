@@ -52,7 +52,7 @@ use sched::kernel_stack::KernelStack;
 
 #[panic_handler]
 fn panic(info: &PanicInfo) -> ! {
-    rprintln!("{}", info);
+    error!("{}", info);
     println!("{}", info);
 
     loop {
@@ -65,6 +65,8 @@ fn panic(info: &PanicInfo) -> ! {
 ///
 /// Runs once on the startup core
 fn init(boot_info_addr: usize) -> KResult<()> {
+    io::init_logging();
+
     // clear the vga text buffer
     io::WRITER.lock().clear();
 
@@ -168,7 +170,7 @@ fn ap_init(id: usize, stack_addr: usize) -> KResult<()> {
 pub extern "C" fn _ap_start(id: usize, stack_top: usize) -> ! {
     ap_init(id, stack_top).expect("ap init failed");
 
-    eprintln!("ap {} started", id);
+    info!("ap {} started", id);
 
     sti();
 

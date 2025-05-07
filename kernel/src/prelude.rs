@@ -17,3 +17,4 @@ pub use crate::mem::{
 };
 pub use crate::util::*;
 pub use crate::{eprint, eprintln, print, println, rprint, rprintln, format};
+pub use log::{error, warn, info, debug, trace};

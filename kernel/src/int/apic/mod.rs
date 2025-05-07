@@ -148,7 +148,7 @@ struct ApData {
 /// Initializes all other cpu cores
 pub fn smp_init(ap_apic_ids: &[u8]) -> KResult<()> {
     let num_aps = ap_apic_ids.len();
-    eprintln!("booting {} ap cores...", num_aps);
+    info!("booting {} ap cores...", num_aps);
 
     NUM_APS_TO_BOOT.store(num_aps, Ordering::Release);
     config::set_cpu_count(num_aps + 1);

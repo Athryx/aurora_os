@@ -3,6 +3,7 @@
 use core::fmt::{self, Write};
 
 use lazy_static::lazy_static;
+use log::{LevelFilter, Level, Log, Metadata, Record};
 use volatile::Volatile;
 
 use crate::arch::x64::*;
@@ -256,4 +257,81 @@ macro_rules! rprintln {
 pub fn _rprint(args: fmt::Arguments) {
     let mut writer = PortWriter::new(DEBUGCON_PORT);
     writer.write_fmt(args).unwrap();
+}
+
+struct Logger {
+    log_level: LevelFilter,
+    color: bool,
+}
+
+impl Log for Logger {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        self.log_level >= metadata.level()
+    }
+
+    fn log(&self, record: &Record) {
+        if self.enabled(&record.metadata()) {
+            let mut writer = E_WRITER.lock();
+
+            // add color for level text
+            if self.color {
+                let color = match record.level() {
+                    Level::Error => "\x1b[0;31m",
+                    Level::Warn => "\x1b[0;33m",
+                    Level::Info => "\x1b[0;32m",
+                    Level::Debug => "\x1b[0;34m",
+                    Level::Trace => "\x1b[0;35m",
+                };
+                write!(writer, "{}", color).unwrap();
+            }
+
+            write!(writer, "{}", record.level()).unwrap();
+
+            // make file location faint
+            // colors at https://stackoverflow.com/questions/4842424/list-of-ansi-color-escape-sequences
+            if self.color {
+                write!(writer, "\x1b[38;5;242m").unwrap();
+            }
+
+            if let Some(line) = record.line() {
+                write!(writer, " ({}:{}) ", record.target(), line).unwrap();
+            } else {
+                write!(writer, " ").unwrap();
+            }
+
+            // style log body based on log level
+            if self.color {
+                let color = match record.level() {
+                    // error prints in all red
+                    Level::Error => "\x1b[0;31m",
+                    // trace prints fainter
+                    Level::Trace => "\x1b[38;5;249m",
+                    // everything else just prints default
+                    _ => "\x1b[0m",
+                };
+                write!(writer, "{}", color).unwrap();
+            }
+
+            writer.write_fmt(*record.args()).unwrap();
+
+            write!(writer, "\n").unwrap();
+
+            // remove color (in case other things are printed after)
+            if self.color {
+                write!(writer, "\x1b[0m").unwrap();
+            }
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+static LOGGER: Logger = Logger {
+    log_level: LevelFilter::Trace,
+    color: true,
+};
+
+pub fn init_logging() {
+    log::set_max_level(LOGGER.log_level);
+    log::set_logger(&LOGGER).expect("failed to set logger");
 }

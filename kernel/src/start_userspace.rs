@@ -302,9 +302,9 @@ pub fn start_early_init_process(initrd: &[u8], mmio_allocator: Arc<MmioAllocator
 
 
     // start the first thread
-    eprintln!("starting first userspace process");
-    eprintln!("rip: 0x{:x}", rip);
-    eprintln!("rsp: 0x{:x}", rsp);
+    info!("starting first userspace process");
+    info!("rip: 0x{:x}", rip);
+    info!("rsp: 0x{:x}", rsp);
     Thread::resume_suspended_thread(&thread)
         .expect("failed to resume first thread");
 

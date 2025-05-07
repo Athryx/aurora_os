@@ -314,7 +314,7 @@ extern "C" fn rust_syscall_entry(syscall_num: u32, vals: &mut SyscallVals) {
 
 	if let Some(args_string) = strace_args_string {
 		let ret_string = strace::get_strace_return_string(syscall_num, vals);
-		eprintln!("{} -> {}", args_string, ret_string);
+		trace!("{} -> {}", args_string, ret_string);
 	}
 }
 
