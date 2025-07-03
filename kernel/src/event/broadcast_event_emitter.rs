@@ -1,7 +1,7 @@
 use sys::EventData;
 
 use crate::{prelude::*, sched::WakeReason};
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::sched::ThreadRef;
 use super::EventPoolListenerRef;
 

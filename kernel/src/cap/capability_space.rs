@@ -4,9 +4,9 @@ use sys::CapType;
 use crate::event::{UserspaceBuffer, EventPool};
 use crate::int::userspace_interrupt::{IntAllocator, Interrupt};
 use crate::sched::{ThreadGroup, Thread};
-use crate::{prelude::*, alloc::HeapRef};
+use crate::prelude::*;
 use crate::container::HashMap;
-use crate::alloc::{CapAllocator, MmioAllocator, PhysMem};
+use crate::mem::{HeapRef, tracking_allocator::TrackingAllocator, mmio_allocator::{MmioAllocator, PhysMem}};
 use crate::sync::IMutex;
 use crate::container::Arc;
 use super::address_space::AddressSpace;
@@ -169,7 +169,7 @@ pub struct CapabilitySpace {
     key_map: IMutex<InnerCapMap<Key>>,
     channel_map: IMutex<InnerCapMap<Channel>>,
     reply_map: IMutex<InnerCapMap<Reply>>,
-    allocator_map: IMutex<InnerCapMap<CapAllocator>>,
+    allocator_map: IMutex<InnerCapMap<TrackingAllocator>>,
     drop_check_map: IMutex<InnerCapMap<DropCheck>>,
     drop_check_reciever_map: IMutex<InnerCapMap<DropCheckReciever>>,
     mmio_allocator_map: IMutex<InnerCapMap<MmioAllocator>>,
@@ -353,7 +353,7 @@ generate_cap_methods!(CapabilitySpace, EventPool, event_pool_map, event_pool);
 generate_cap_methods!(CapabilitySpace, Key, key_map, key);
 generate_cap_methods!(CapabilitySpace, Channel, channel_map, channel);
 generate_cap_methods!(CapabilitySpace, Reply, reply_map, reply);
-generate_cap_methods!(CapabilitySpace, CapAllocator, allocator_map, allocator);
+generate_cap_methods!(CapabilitySpace, TrackingAllocator, allocator_map, allocator);
 generate_cap_methods!(CapabilitySpace, DropCheck, drop_check_map, drop_check);
 generate_cap_methods!(CapabilitySpace, DropCheckReciever, drop_check_reciever_map, drop_check_reciever);
 generate_cap_methods!(CapabilitySpace, MmioAllocator, mmio_allocator_map, mmio_allocator);

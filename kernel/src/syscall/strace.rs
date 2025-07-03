@@ -7,7 +7,7 @@ use sys::{CapId, syscall_nums::*, ThreadNewFlags, ThreadDestroyFlags, ThreadSusp
 use bitflags::Flags;
 
 use crate::prelude::*;
-use crate::alloc::{HeapRef, root_alloc_ref};
+use crate::mem::{HeapRef, root_alloc_ref};
 use super::SyscallVals;
 
 #[derive(Debug, Clone, Copy)]

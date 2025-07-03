@@ -8,7 +8,7 @@ use spin::Once;
 use crate::config;
 use crate::gs_data::Prid;
 use crate::prelude::*;
-use crate::int::{IPI_PANIC, IPI_PROCESS_EXIT, IRQ_APIC_TIMER, PIT_TICK, SPURIOUS};
+use crate::int::{IPI_PANIC, IPI_PROCESS_EXIT, IRQ_APIC_TIMER, SPURIOUS};
 use crate::container::HashMap;
 use crate::int::pit::{PIT, PIT_GLOBAL_SYSINT};
 use crate::arch::x64::*;

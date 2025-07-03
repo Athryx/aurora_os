@@ -3,7 +3,7 @@ use sys::{CapType, EventData, CapDrop};
 use crate::event::{BroadcastEventEmitter, BroadcastEventListener};
 use crate::prelude::*;
 use crate::container::Arc;
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::sync::IMutex;
 
 use super::CapObject;

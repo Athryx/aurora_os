@@ -1,10 +1,11 @@
 use core::cell::Cell;
 use core::cmp::max;
 use core::ptr::NonNull;
+use core::alloc::Layout;
 
-use super::{HeapAllocator, PaRef};
+use super::HeapAllocator;
 use crate::container::{LinkedList, ListNode, ListNodeData, CursorMut};
-use crate::mem::{Allocation, Layout, MemOwner, PageLayout};
+use crate::mem::{MemOwner, page_allocator::{PaRef, PageLayout, PageAllocation}};
 use crate::prelude::*;
 use crate::sync::IMutex;
 
@@ -89,7 +90,7 @@ impl ListNode for Node {
 
 struct HeapZone {
     list_node_data: ListNodeData<Self>,
-    mem: Allocation,
+    mem: PageAllocation,
     free_space: Cell<usize>,
     list: LinkedList<Node>,
 }

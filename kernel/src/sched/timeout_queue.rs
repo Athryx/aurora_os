@@ -2,7 +2,7 @@ use core::cmp::{Ordering, Reverse};
 
 use sys::KResult;
 
-use crate::{container::BinaryHeap, alloc::HeapRef};
+use crate::{container::BinaryHeap, mem::HeapRef};
 use super::{ThreadRef, thread::WakeReason};
 
 #[derive(Debug, Clone)]

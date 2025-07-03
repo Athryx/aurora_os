@@ -11,10 +11,11 @@ use pmem_allocator::PmemAllocator;
 use zone_map::ZoneMap;
 
 use super::fixed_page_allocator::FixedPageAllocator;
-use super::linked_list_allocator::LinkedListAllocator;
-use super::{HeapRef, PaRef, PageAllocator};
+use crate::mem::heap_allocator::LinkedListAllocator;
+use super::{PaRef, PageAllocator};
+use crate::mem::heap_allocator::HeapRef;
 use crate::mb2::{MemoryMap, MemoryRegionType};
-use crate::mem::{Allocation, PageLayout};
+use super::{PageAllocation, PageLayout};
 use crate::prelude::*;
 
 /// Iterates over all the sections of size aligned pages in an AVirtRange
@@ -53,7 +54,7 @@ impl Iterator for SizeAlignedIter {
 }
 
 pub struct PmemManager {
-    pub(super) allocers: &'static [PmemAllocator],
+    allocers: &'static [PmemAllocator],
     next_index: AtomicUsize,
 }
 
@@ -200,7 +201,7 @@ impl PmemManager {
     }
 
     // gets index in search dealloc, where the zindex is not set
-    fn get_allocator_for_allocation(&self, allocation: Allocation) -> &PmemAllocator {
+    fn get_allocator_for_allocation(&self, allocation: PageAllocation) -> &PmemAllocator {
         if let Some(index) = allocation.zindex {
             &self.allocers[index]
         } else {
@@ -220,7 +221,7 @@ impl PmemManager {
     /// Takes in allocator that allocation was allocated from and performs reallocation
     /// 
     /// Called by both realloc and search_realloc
-    unsafe fn realloc_inner(&self, allocator: &PmemAllocator, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
+    unsafe fn realloc_inner(&self, allocator: &PmemAllocator, allocation: PageAllocation, layout: PageLayout) -> Option<PageAllocation> {
         assert!(
             layout.align() <= align_of_addr(layout.size()),
             "PmemManager does not support allocations with a greater alignamant than size"
@@ -238,10 +239,14 @@ impl PmemManager {
             Some(out)
         }
     }
+
+    pub fn allocator_regions(&self) -> &[PmemAllocator] {
+        self.allocers
+    }
 }
 
 unsafe impl PageAllocator for PmemManager {
-    fn alloc(&self, layout: PageLayout) -> Option<Allocation> {
+    fn alloc(&self, layout: PageLayout) -> Option<PageAllocation> {
         assert!(
             layout.align() <= align_of_addr(layout.size()),
             "PmemManager does not support allocations with a greater alignamant than size"
@@ -261,21 +266,21 @@ unsafe impl PageAllocator for PmemManager {
         None
     }
 
-    unsafe fn dealloc(&self, allocation: Allocation) {
+    unsafe fn dealloc(&self, allocation: PageAllocation) {
         // this will panic if allocation is not contained in the allocator
         unsafe {
             self.get_allocator_for_allocation(allocation).dealloc(allocation);
         }
     }
 
-    unsafe fn realloc(&self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
+    unsafe fn realloc(&self, allocation: PageAllocation, layout: PageLayout) -> Option<PageAllocation> {
         unsafe {
             self.realloc_inner(self.get_allocator_for_allocation(allocation), allocation, layout)
         }
     }
 
 
-    unsafe fn realloc_in_place(&self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
+    unsafe fn realloc_in_place(&self, allocation: PageAllocation, layout: PageLayout) -> Option<PageAllocation> {
         assert!(
             layout.align() <= align_of_addr(layout.size()),
             "PmemManager does not support allocations with a greater alignamant than size"

@@ -1,6 +1,6 @@
 use sys::{CapFlags, CapDrop};
 
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::{Capability, StrongCapability};
 use crate::cap::drop_check::{drop_check_pair, DropCheckReciever};

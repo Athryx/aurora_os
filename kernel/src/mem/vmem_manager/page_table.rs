@@ -5,8 +5,8 @@ use bitflags::bitflags;
 
 use crate::arch::x64::PatEntry;
 use crate::prelude::*;
-use crate::alloc::PaRef;
-use crate::mem::{Allocation, PageLayout};
+use crate::mem::PaRef;
+use crate::mem::page_allocator::{PageAllocation, PageLayout};
 use super::{PageMappingOptions, MemoryCacheSetting};
 
 /// Bitmask of page table entry address, all other bits are reserved or used for metadata bits
@@ -181,7 +181,7 @@ impl PageTable {
 	}
 
 	pub unsafe fn dealloc(&mut self, allocer: &mut PaRef) {
-		let frame = Allocation::new(self.addr(), PAGE_SIZE);
+		let frame = PageAllocation::new(self.addr(), PAGE_SIZE);
 		// TODO: maybe use regular dealloc and store the zindex in unused bits of page tabel entries
         unsafe { allocer.dealloc(frame); }
 	}

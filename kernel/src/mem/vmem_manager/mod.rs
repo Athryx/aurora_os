@@ -11,7 +11,7 @@ use crate::mem::PhysFrame;
 use crate::mem::VirtFrame;
 use crate::prelude::*;
 use crate::consts;
-use crate::alloc::PaRef;
+use crate::mem::PaRef;
 use page_table::{PageTable, PageTablePointer, PageTableFlags};
 
 mod page_table;

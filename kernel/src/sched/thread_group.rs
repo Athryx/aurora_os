@@ -1,6 +1,6 @@
 use core::slice;
 
-use crate::alloc::{HeapRef, PaRef};
+use crate::mem::{HeapRef, PaRef};
 use crate::arch::x64::{IntDisable, asm_thread_init};
 use crate::cap::address_space::AddressSpace;
 use crate::cap::capability_space::CapabilitySpace;

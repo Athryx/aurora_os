@@ -4,17 +4,17 @@ use super::VirtAddr;
 use crate::prelude::*;
 
 #[derive(Debug, Clone, Copy)]
-pub struct Allocation {
+pub struct PageAllocation {
     ptr: VirtAddr,
     size: usize,
     /// specifies which PmemAllocator this allocation is from, or `None` if it is not known
     pub zindex: Option<usize>,
 }
 
-impl Allocation {
+impl PageAllocation {
     // NOTE: panics if addr is not canonical
     pub fn new(addr: usize, size: usize) -> Self {
-        Allocation {
+        PageAllocation {
             ptr: VirtAddr::new(addr),
             size,
             zindex: None,

@@ -1,7 +1,7 @@
 use core::cmp::Ordering;
 
 use super::VecMap;
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::prelude::*;
 
 pub struct VecSet<T: Ord>(VecMap<T, ()>);

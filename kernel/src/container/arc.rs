@@ -4,7 +4,7 @@ use core::ptr::NonNull;
 use core::sync::atomic::{fence, AtomicUsize, Ordering};
 use core::alloc::Layout;
 
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::prelude::*;
 
 const MAX_REFCOUNT: usize = isize::MAX as usize;

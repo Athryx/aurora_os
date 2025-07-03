@@ -3,7 +3,7 @@ use core::time::Duration;
 
 use spin::Once;
 
-use crate::alloc::PaRef;
+use crate::mem::PaRef;
 use crate::arch::x64::{cpuid, io_wait};
 use crate::int::pit::PIT_GLOBAL_SYSINT;
 use crate::mem::PageLayout;
@@ -12,7 +12,8 @@ use crate::int::apic::io_apic::IrqEntry;
 use crate::int::{PIT_IRQ_SRC, PIT_TICK};
 use crate::prelude::*;
 use crate::sync::IMutex;
-use crate::{acpi::madt::{Madt, MadtElem}, alloc::root_alloc_ref};
+use crate::acpi::madt::{Madt, MadtElem};
+use crate::mem::root_alloc_ref;
 use crate::sched::kernel_stack::KernelStack;
 use io_apic::{IoApic, IoApicDest};
 use apic_modes::{PinPolarity, TriggerMode};

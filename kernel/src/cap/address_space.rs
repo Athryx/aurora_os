@@ -2,12 +2,12 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 
 use sys::CapType;
 
-use crate::alloc::{HeapRef, PaRef, PhysMem};
+use crate::mem::{HeapRef, PaRef, mmio_allocator::PhysMem};
 use crate::consts;
 use crate::event::EventPool;
 use crate::prelude::*;
 use crate::sync::{IMutex, IMutexGuard};
-use crate::vmem_manager::{VirtAddrSpace, PageMappingOptions};
+use crate::mem::vmem_manager::{VirtAddrSpace, PageMappingOptions};
 use crate::container::{Arc, HashMap};
 
 use super::memory::MemoryMappingLocation;

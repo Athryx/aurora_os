@@ -1,4 +1,4 @@
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::container::{Vec, VecMap};
 use crate::prelude::*;
 

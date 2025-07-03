@@ -2,7 +2,7 @@ use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::{StrongCapability, Capability};
 use crate::prelude::*;
 use crate::cap::{CapFlags, key::Key};
-use crate::{arch::x64::IntDisable, alloc::HeapRef};
+use crate::{arch::x64::IntDisable, mem::HeapRef};
 use crate::container::Arc;
 use super::options_weak_autodestroy;
 

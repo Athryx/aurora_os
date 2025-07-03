@@ -1,6 +1,6 @@
 //! A collection of miscallaneous utility functions
 
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::mem::{MemOwner, MemOwnerKernelExt};
 use crate::prelude::*;
 

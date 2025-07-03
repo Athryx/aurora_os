@@ -1,7 +1,6 @@
 use bytemuck::Pod;
 use sys::syscall_nums::*;
 
-use crate::alloc::root_alloc_ref;
 use crate::consts::KERNEL_VMA;
 use crate::prelude::*;
 use crate::arch::x64::{

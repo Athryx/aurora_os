@@ -5,7 +5,7 @@ use bit_utils::MemOwner;
 use bit_utils::container::{LinkedList, DefaultNode};
 use sys::{CapType, CapId, CapFlags};
 
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::event::{UserspaceBuffer, EventPoolListenerRef};
 use crate::prelude::*;
 use crate::mem::MemOwnerKernelExt;

@@ -4,7 +4,8 @@ use core::marker::PhantomData;
 use core::mem::size_of_val;
 use core::slice;
 
-use super::{Allocation, PhysAddr, VirtAddr};
+use super::{PhysAddr, VirtAddr};
+use super::page_allocator::PageAllocation;
 use crate::prelude::*;
 //use crate::syscall::udata;
 
@@ -648,8 +649,8 @@ pub trait VirtRange: VirtRangeInner {
 
 impl<T: VirtRangeInner> VirtRange for T {}
 
-impl From<Allocation> for UPhysRange {
-    fn from(mem: Allocation) -> Self {
+impl From<PageAllocation> for UPhysRange {
+    fn from(mem: PageAllocation) -> Self {
         Self::new(mem.addr().to_phys(), mem.size())
     }
 }

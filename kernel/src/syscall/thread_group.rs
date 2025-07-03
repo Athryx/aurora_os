@@ -3,7 +3,7 @@ use sys::CapFlags;
 use crate::arch::x64::IntDisable;
 use crate::cap::{Capability, StrongCapability};
 use crate::cap::capability_space::CapabilitySpace;
-use crate::alloc::{HeapRef, PaRef};
+use crate::mem::{HeapRef, PaRef};
 use crate::prelude::*;
 use crate::sched::ThreadGroup;
 use super::options_weak_autodestroy;

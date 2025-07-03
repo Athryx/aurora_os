@@ -1,6 +1,6 @@
 use sys::{CapId, CapFlags, ChannelSyncFlags, ChannelAsyncRecvFlags, EventId};
 
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::channel::ChannelSyncResult;
 use crate::cap::{Capability, StrongCapability, channel::Channel};

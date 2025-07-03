@@ -1,12 +1,12 @@
-use crate::alloc::PaRef;
+use crate::mem::PaRef;
 use crate::prelude::*;
 use crate::container::Arc;
-use crate::mem::{Allocation, PageLayout};
+use crate::mem::{PageAllocation, PageLayout};
 
 #[derive(Debug)]
 pub struct Page {
     // this allocation is made to be the size of 1 page
-    allocation: Allocation,
+    allocation: PageAllocation,
     allocator: PaRef,
 }
 
@@ -37,7 +37,7 @@ impl Page {
         Ok(page)
     }
 
-    pub fn allocation(&self) -> Allocation {
+    pub fn allocation(&self) -> PageAllocation {
         self.allocation
     }
 
@@ -108,7 +108,7 @@ impl PageSource {
 
 pub enum NewPageIter<'a> {
     Alloced {
-        allocation: Allocation,
+        allocation: PageAllocation,
         allocator: &'a PaRef,
         offset: usize,
     },
@@ -133,7 +133,7 @@ impl Iterator for NewPageIter<'_> {
                 if *offset >= allocation.size() {
                     None
                 } else {
-                    let mut out_allocation = Allocation::new(
+                    let mut out_allocation = PageAllocation::new(
                         allocation.as_usize() + *offset,
                         PAGE_SIZE,
                     );

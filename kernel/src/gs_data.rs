@@ -2,7 +2,7 @@ use core::sync::atomic::{AtomicUsize, Ordering, AtomicU64};
 
 use spin::Once;
 
-use crate::alloc::root_alloc_ref;
+use crate::mem::root_alloc_ref;
 use crate::arch::x64::{gs_addr, wrmsr, GSBASEK_MSR, GSBASE_MSR};
 use crate::container::{Arc, Box};
 use crate::gdt::{Gdt, Tss};

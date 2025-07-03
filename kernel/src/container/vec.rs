@@ -9,7 +9,7 @@ use core::cmp::max;
 
 use aser::ByteBuf;
 
-use crate::alloc::{HeapRef, root_alloc_ref};
+use crate::mem::{HeapRef, root_alloc_ref};
 use crate::prelude::*;
 
 struct RawVec<T> {

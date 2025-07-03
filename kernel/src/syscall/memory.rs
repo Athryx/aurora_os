@@ -1,6 +1,6 @@
 use sys::{MemoryNewFlags, MemoryResizeFlags, MemoryMapFlags, MemoryUpdateMappingFlags, MemoryMappingFlags};
 
-use crate::alloc::{PaRef, HeapRef};
+use crate::mem::{PaRef, HeapRef};
 use crate::cap::address_space::AddressSpace;
 use crate::cap::capability_space::CapabilitySpace;
 use crate::cap::memory::{PageSource, MapMemoryArgs, UpdateValue, UpdateMappingAgs};
@@ -9,7 +9,7 @@ use crate::cap::{CapFlags, memory::Memory};
 use crate::prelude::*;
 use crate::arch::x64::IntDisable;
 use crate::container::Arc;
-use crate::vmem_manager::PageMappingOptions;
+use crate::mem::vmem_manager::PageMappingOptions;
 use super::options_weak_autodestroy;
 
 pub fn address_space_new(options: u32, allocator_id: usize) -> KResult<usize> {

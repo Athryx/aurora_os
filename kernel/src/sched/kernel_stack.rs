@@ -1,10 +1,10 @@
-use crate::{prelude::*, mem::{Allocation, PageLayout}, alloc::PaRef};
+use crate::{prelude::*, mem::{PageAllocation, PageLayout, PaRef}};
 
 /// A kernel stack for a thread
 #[derive(Debug)]
 pub enum KernelStack {
     /// `KernelStack` will usually be the owned variant
-    Owned(Allocation, PaRef),
+    Owned(PageAllocation, PaRef),
     /// `Existing` is used just for the idle threads, when the stack was created before the thread structure
     Existing(AVirtRange),
 }

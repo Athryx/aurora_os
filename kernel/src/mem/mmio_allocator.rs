@@ -3,7 +3,7 @@ use sys::CapType;
 use crate::cap::CapObject;
 use crate::cap::address_space::{AddressSpace, PhysMemMapping, AddrSpaceMapping, AddressSpaceInner, MappingId};
 use crate::prelude::*;
-use crate::vmem_manager::{MapAction, PageMappingOptions};
+use super::vmem_manager::{MapAction, PageMappingOptions};
 
 use super::HeapRef;
 

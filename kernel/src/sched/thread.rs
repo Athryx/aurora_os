@@ -2,7 +2,7 @@ use core::sync::atomic::{AtomicUsize, Ordering, AtomicBool};
 
 use sys::{EventData, ThreadExit};
 
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::arch::x64::{wrmsr, FSBASE_MSR};
 use crate::cap::CapObject;
 use crate::cap::capability_space::CapabilitySpace;

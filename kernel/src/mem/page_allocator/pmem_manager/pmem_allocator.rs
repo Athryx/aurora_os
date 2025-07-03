@@ -4,7 +4,7 @@ use core::sync::atomic::{AtomicU8, AtomicUsize, Ordering};
 
 use bitflags::bitflags;
 
-use crate::mem::Allocation;
+use super::PageAllocation;
 use crate::prelude::*;
 
 bitflags! {
@@ -259,7 +259,7 @@ impl PmemAllocator {
     }
 
     /// Returns the level of an existing allocation
-    fn get_node_from_allocation(&self, allocation: Allocation) -> TreeNode {
+    fn get_node_from_allocation(&self, allocation: PageAllocation) -> TreeNode {
         let level = log2(self.max_size / allocation.size());
         assert!(level <= self.depth);
         assert!(self.addr_range.full_contains_range(&allocation.as_vrange()));
@@ -272,7 +272,7 @@ impl PmemAllocator {
     }
 
     /// Returns allocated pages at least `size` bytes large, or `None` on failure
-    pub fn alloc(&self, size: usize) -> Option<Allocation> {
+    pub fn alloc(&self, size: usize) -> Option<PageAllocation> {
         let level = self.get_level_for_allocation_size(size)?;
 
         // iterate over all nodes in the correct level
@@ -297,7 +297,7 @@ impl PmemAllocator {
                 } else {
                     // allocation succeeded
                     self.free_space.fetch_sub(node.size(), Ordering::AcqRel);
-                    return Some(Allocation::new(node.addr(), node.size()));
+                    return Some(PageAllocation::new(node.addr(), node.size()));
                 }
             }
 
@@ -361,7 +361,7 @@ impl PmemAllocator {
     /// If the allocation cannot be resized, `None` is returned, and the original allocation will still be valid
     // TODO: we might be able to have a function that can grow a node even if it is not aligned at the start of its new level size
     // this would require growing the allocation in both directions, but this is hard to work with page mapping so for now just return None on that case
-    pub unsafe fn realloc_in_place(&self, allocation: Allocation, new_size: usize) -> Option<Allocation> {
+    pub unsafe fn realloc_in_place(&self, allocation: PageAllocation, new_size: usize) -> Option<PageAllocation> {
         let old_node = self.get_node_from_allocation(allocation);
         let old_level = old_node.level();
         let new_level = self.get_level_for_allocation_size(new_size)?;
@@ -412,12 +412,12 @@ impl PmemAllocator {
                 current_node.data().store(0, Ordering::Release);
             }
 
-            Some(Allocation::new(new_node.addr(), new_node.size()))
+            Some(PageAllocation::new(new_node.addr(), new_node.size()))
         } else if old_level < new_level {
             // allocation needs to be shrunk
             let new_node = unsafe { self.shrink_node(old_node, new_level) };
             
-            Some(Allocation::new(new_node.addr(), new_node.size()))
+            Some(PageAllocation::new(new_node.addr(), new_node.size()))
         } else {
             // allocation can stay the same size
             Some(allocation)
@@ -453,7 +453,7 @@ impl PmemAllocator {
     /// deallocates memory referenced by allocation
     /// panics if allocation is smaller than min level size,
     /// or if allocation does not reference a range of memory managed by this allocator
-    pub unsafe fn dealloc(&self, allocation: Allocation) {
+    pub unsafe fn dealloc(&self, allocation: PageAllocation) {
         let node = self.get_node_from_allocation(allocation);
 
         self.dealloc_node(node, self.get_tree_node(0));

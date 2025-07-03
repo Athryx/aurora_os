@@ -1,7 +1,7 @@
 use arrayvec::ArrayVec;
 
 use super::Box;
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::prelude::*;
 
 // this should be an odd number

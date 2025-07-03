@@ -1,6 +1,6 @@
 use sys::{CapFlags, InterruptTrigger};
 
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::cap::StrongCapability;
 use crate::cap::capability_space::CapabilitySpace;
 use crate::container::Arc;

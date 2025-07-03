@@ -1,13 +1,16 @@
+mod linked_list_allocator;
+
 use core::alloc::Layout;
 use core::ptr::NonNull;
 use core::fmt::{self, Debug};
 
+use spin::Once;
+
 use crate::prelude::*;
 use crate::container::Arc;
 
-use super::{heap, CapAllocator};
-use super::linked_list_allocator::LinkedListAllocator;
-use super::cap_allocator::CapAllocatorWrapper;
+pub use linked_list_allocator::LinkedListAllocator;
+use super::tracking_allocator::{TrackingAllocator, TrackingAllocatorWrapper};
 
 /// A trait that represents an object that can allocate heap memory
 pub unsafe trait HeapAllocator: Send + Sync {
@@ -40,7 +43,7 @@ pub unsafe trait HeapAllocator: Send + Sync {
 enum HeapRefInner {
     MainAllocator(&'static LinkedListAllocator),
     InitAllocator(*const LinkedListAllocator),
-    CapAllocator(CapAllocatorWrapper),
+    TrackingAllocator(TrackingAllocatorWrapper),
 }
 
 /// A reference to a page allocator that can be cheaply cloned
@@ -60,19 +63,19 @@ impl HeapRef {
         HeapRef(HeapRefInner::InitAllocator(linked_list_allocator))
     }
 
-    pub fn cap_allocator(cap_allocator: CapAllocatorWrapper) -> Self {
-        HeapRef(HeapRefInner::CapAllocator(cap_allocator))
+    pub fn tracking_allocator(cap_allocator: TrackingAllocatorWrapper) -> Self {
+        HeapRef(HeapRefInner::TrackingAllocator(cap_allocator))
     }
 
-    pub fn from_arc(allocator: Arc<CapAllocator>) -> Self {
-        HeapRef(HeapRefInner::CapAllocator(allocator.into()))
+    pub fn from_arc(allocator: Arc<TrackingAllocator>) -> Self {
+        HeapRef(HeapRefInner::TrackingAllocator(allocator.into()))
     }
 
     pub fn alloc(&mut self, layout: Layout) -> Option<NonNull<[u8]>> {
         match self.0 {
             HeapRefInner::MainAllocator(allocator) => allocator.alloc(layout),
             HeapRefInner::InitAllocator(init_allocator) => unsafe { (*init_allocator).alloc(layout) },
-            HeapRefInner::CapAllocator(ref mut cap_allocator) => cap_allocator.heap_alloc(layout),
+            HeapRefInner::TrackingAllocator(ref mut cap_allocator) => cap_allocator.heap_alloc(layout),
         }
     }
 
@@ -81,7 +84,7 @@ impl HeapRef {
             match self.0 {
                 HeapRefInner::MainAllocator(allocator) => allocator.dealloc(allocation, layout),
                 HeapRefInner::InitAllocator(init_allocator) => (*init_allocator).dealloc(allocation, layout),
-                HeapRefInner::CapAllocator(ref mut cap_allocator) => cap_allocator.heap_dealloc(allocation, layout),
+                HeapRefInner::TrackingAllocator(ref mut cap_allocator) => cap_allocator.heap_dealloc(allocation, layout),
             }
         }
     }
@@ -91,7 +94,7 @@ impl HeapRef {
             match self.0 {
                 HeapRefInner::MainAllocator(allocator) => allocator.realloc(allocation, old_layout, new_layout),
                 HeapRefInner::InitAllocator(init_allocator) => (*init_allocator).realloc(allocation, old_layout, new_layout),
-                HeapRefInner::CapAllocator(ref mut cap_allocator) => cap_allocator.heap_realloc(allocation, old_layout, new_layout),
+                HeapRefInner::TrackingAllocator(ref mut cap_allocator) => cap_allocator.heap_realloc(allocation, old_layout, new_layout),
             }
         }
     }
@@ -104,4 +107,14 @@ impl Debug for HeapRef {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         writeln!(f, "(AllocRef)")
     }
+}
+
+pub(super) static HEAP: Once<LinkedListAllocator> = Once::new();
+
+/// Returns the kernel heap allocator
+/// 
+/// # Panics
+/// Panics if the heap allocator has not yet been initilized
+pub fn heap() -> &'static LinkedListAllocator {
+    HEAP.get().expect("heap not yet initilized")
 }

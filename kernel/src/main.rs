@@ -17,7 +17,6 @@
 #![reexport_test_harness_main = "test_main"]
 
 mod acpi;
-mod alloc;
 mod arch;
 mod cap;
 mod container;
@@ -28,7 +27,6 @@ mod sched;
 mod sync;
 mod syscall;
 mod util;
-mod vmem_manager;
 
 mod consts;
 mod config;
@@ -75,7 +73,7 @@ fn init(boot_info_addr: usize) -> KResult<()> {
     let boot_info = unsafe { BootInfo::new(boot_info_addr) };
 
     let mmio_allocator = unsafe {
-        alloc::init(&boot_info.memory_map)?
+        mem::init(&boot_info.memory_map)?
     };
 
     // initialize the cpu local data
@@ -190,8 +188,7 @@ fn test_runner(tests: &[&dyn Fn()]) {
 
 #[test_case]
 fn test() {
-    use alloc::{zm, PageAllocator};
-
+    use mem::page_allocator::{zm, PageAllocator};
     use mem::PageLayout;
 
     unsafe {

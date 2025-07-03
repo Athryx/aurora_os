@@ -2,9 +2,9 @@ use spin::Once;
 use array_init::array_init;
 use sys::{CapType, EventData, InterruptTrigger};
 
-use crate::alloc::root_alloc_ref;
+use crate::mem::{root_alloc_ref, HeapRef};
 use crate::gs_data::Prid;
-use crate::{alloc::HeapRef, sync::IMutexGuard};
+use crate::sync::IMutexGuard;
 use crate::event::{BroadcastEventEmitter, BroadcastEventListener};
 use crate::prelude::*;
 use crate::cap::CapObject;

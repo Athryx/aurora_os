@@ -1,27 +1,27 @@
 use core::alloc::Layout;
 use core::ptr::NonNull;
 
-use super::linked_list_allocator::LinkedListAllocator;
-use super::pmem_manager::PmemManager;
-use super::{heap, zm, HeapAllocator, PageAllocator};
+use spin::Once;
+
+use super::heap_allocator::{LinkedListAllocator, HeapAllocator, HeapRef, heap};
+use super::page_allocator::{PmemManager, PageAllocator, PaRef, zm, PageAllocation, PageLayout};
 use crate::cap::{CapObject, CapType};
 use crate::container::Arc;
-use crate::mem::{Allocation, PageLayout};
 use crate::prelude::*;
 use crate::sync::{IMutex, IMutexGuard};
 
 #[derive(Debug)]
-struct CapAllocatorInner {
-    parent: Option<Arc<CapAllocator>>,
+struct TrackingAllocatorInner {
+    parent: Option<Arc<TrackingAllocator>>,
     is_alive: bool,
     max_capacity: usize,
     prealloc_size: usize,
     used_size: usize,
 }
 
-impl CapAllocatorInner {
+impl TrackingAllocatorInner {
     /// Gets the closest alive parent, and reassignes this cap allocators parent to the closest alive parent
-    fn get_parent(&mut self) -> Option<IMutexGuard<CapAllocatorInner>> {
+    fn get_parent(&mut self) -> Option<IMutexGuard<TrackingAllocatorInner>> {
         loop {
             let parent = self.parent.as_ref()?.clone();
             let parent_inner = parent.inner.lock();
@@ -106,14 +106,14 @@ impl CapAllocatorInner {
 
 /// an allocator that makes up the allocator tree that the kernel presents in its api to the userspace
 #[derive(Debug)]
-pub struct CapAllocator {
-    inner: IMutex<CapAllocatorInner>,
+pub struct TrackingAllocator {
+    inner: IMutex<TrackingAllocatorInner>,
 }
 
-impl CapAllocator {
+impl TrackingAllocator {
     pub fn new_root(total_pages: usize) -> Self {
         Self {
-            inner: IMutex::new(CapAllocatorInner {
+            inner: IMutex::new(TrackingAllocatorInner {
                 parent: None,
                 is_alive: true,
                 max_capacity: PAGE_SIZE * total_pages,
@@ -129,27 +129,27 @@ impl CapAllocator {
     }
 }
 
-impl CapObject for CapAllocator {
+impl CapObject for TrackingAllocator {
     const TYPE: CapType = CapType::Allocator;
 }
 
-/// References a [`CapAllocator`] and implements page and heap allocation traits
+/// References a [`TrackingAllocator`] and implements page and heap allocation traits
 #[derive(Debug, Clone)]
-pub struct CapAllocatorWrapper {
-    allocator: Arc<CapAllocator>,
+pub struct TrackingAllocatorWrapper {
+    allocator: Arc<TrackingAllocator>,
 }
 
-impl From<Arc<CapAllocator>> for CapAllocatorWrapper {
-    fn from(allocator: Arc<CapAllocator>) -> Self {
-        CapAllocatorWrapper {
+impl From<Arc<TrackingAllocator>> for TrackingAllocatorWrapper {
+    fn from(allocator: Arc<TrackingAllocator>) -> Self {
+        TrackingAllocatorWrapper {
             allocator
         }
     }
 }
 
-impl CapAllocatorWrapper {
+impl TrackingAllocatorWrapper {
     /// Gets the closest alive parent and returns a lock to its inner data
-    fn with_inner<T>(&mut self, f: impl FnOnce(&mut CapAllocatorInner) -> T) -> T {
+    fn with_inner<T>(&mut self, f: impl FnOnce(&mut TrackingAllocatorInner) -> T) -> T {
         let mut allocator = self.allocator.inner.lock();
         if allocator.is_alive {
             f(&mut allocator)
@@ -174,7 +174,7 @@ impl CapAllocatorWrapper {
         self.with_inner(|inner| inner.dealloc_bytes(size))
     }
 
-    pub fn page_alloc(&mut self, layout: PageLayout) -> Option<Allocation> {
+    pub fn page_alloc(&mut self, layout: PageLayout) -> Option<PageAllocation> {
         let alloc_size = PmemManager::get_allocation_size_for_layout(layout);
         self.alloc_bytes(alloc_size).ok()?;
 
@@ -188,7 +188,7 @@ impl CapAllocatorWrapper {
         }
     }
 
-    pub unsafe fn page_dealloc(&mut self, allocation: Allocation) {
+    pub unsafe fn page_dealloc(&mut self, allocation: PageAllocation) {
         self.dealloc_bytes(allocation.size());
 
         unsafe {
@@ -196,7 +196,7 @@ impl CapAllocatorWrapper {
         }
     }
 
-    unsafe fn page_realloc_inner(&mut self, allocation: Allocation, layout: PageLayout, in_place: bool) -> Option<Allocation> {
+    unsafe fn page_realloc_inner(&mut self, allocation: PageAllocation, layout: PageLayout, in_place: bool) -> Option<PageAllocation> {
         let old_size = allocation.size();
         let new_size = PmemManager::get_allocation_size_for_layout(layout);
         if old_size == new_size {
@@ -231,13 +231,13 @@ impl CapAllocatorWrapper {
         }
     }
 
-    pub unsafe fn page_realloc(&mut self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
+    pub unsafe fn page_realloc(&mut self, allocation: PageAllocation, layout: PageLayout) -> Option<PageAllocation> {
         unsafe {
             self.page_realloc_inner(allocation, layout, false)
         }
     }
 
-    pub unsafe fn page_realloc_in_place(&mut self, allocation: Allocation, layout: PageLayout) -> Option<Allocation> {
+    pub unsafe fn page_realloc_in_place(&mut self, allocation: PageAllocation, layout: PageLayout) -> Option<PageAllocation> {
         unsafe {
             self.page_realloc_inner(allocation, layout, true)
         }
@@ -302,4 +302,32 @@ impl CapAllocatorWrapper {
             new_allocation
         }
     }
+}
+
+pub(super) static ROOT_ALLOCATOR: Once<Arc<TrackingAllocator>> = Once::new();
+
+/// Returns the root TrackingAllocator
+/// 
+/// # Panics
+/// Panics if the root TrackingAllocator has not yet been intialized
+pub fn root_alloc() -> &'static Arc<TrackingAllocator> {
+    ROOT_ALLOCATOR
+        .get()
+        .expect("root allocator accessed before it was initilized")
+}
+
+/// Returns the root TrackingAllocator
+/// 
+/// # Panics
+/// Panics if the root TrackingAllocator has not yet been intialized
+pub fn root_alloc_ref() -> HeapRef {
+    HeapRef::tracking_allocator(root_alloc().clone().into())
+}
+
+/// Returns the root TrackingAllocator
+/// 
+/// # Panics
+/// Panics if the root TrackingAllocator has not yet been intialized
+pub fn root_alloc_page_ref() -> PaRef {
+    PaRef::tracking_allocator(root_alloc().clone().into())
 }

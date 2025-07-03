@@ -1,4 +1,4 @@
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::container::{Arc, Weak, Vec};
 use crate::sync::IMutex;
 use crate::prelude::*;

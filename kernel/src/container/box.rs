@@ -1,7 +1,7 @@
 use core::mem::{self, MaybeUninit};
 use core::ops::{Deref, DerefMut};
 
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::mem::{MemOwner, MemOwnerKernelExt};
 use crate::prelude::*;
 

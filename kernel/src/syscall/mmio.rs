@@ -1,12 +1,12 @@
 use sys::{CapFlags, MemoryMappingFlags};
 
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::cap::{StrongCapability, Capability};
 use crate::cap::capability_space::CapabilitySpace;
 use crate::prelude::*;
 use crate::arch::x64::IntDisable;
 use crate::container::Arc;
-use crate::vmem_manager::PageMappingOptions;
+use crate::mem::vmem_manager::PageMappingOptions;
 
 use super::options_weak_autodestroy;
 

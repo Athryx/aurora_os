@@ -11,6 +11,8 @@ mod flags;
 pub use flags::*;
 mod init_info;
 pub use init_info::*;
+mod ipc;
+pub use ipc::*;
 mod process_init_data;
 pub use process_init_data::*;
 mod syscalls;

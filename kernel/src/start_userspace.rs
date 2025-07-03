@@ -5,7 +5,10 @@ use sys::{CapFlags, InitInfo, ProcessInitData, ProcessMemoryEntry, StackInfo, Rs
 use elf::{ElfBytes, endian::NativeEndian, abi::{PT_LOAD, PF_R, PF_W, PF_X}};
 use aser::to_bytes_count_cap;
 
-use crate::{prelude::*, alloc::{root_alloc, root_alloc_page_ref, root_alloc_ref, MmioAllocator}, cap::{Capability, StrongCapability, memory::{Memory, PageSource, MapMemoryArgs}, address_space::AddressSpace, capability_space::CapabilitySpace, WeakCapability}, sched::{ThreadGroup, Thread, ThreadStartMode}, vmem_manager::PageMappingOptions, int::userspace_interrupt::IntAllocator};
+use crate::{prelude::*, cap::{Capability, StrongCapability, memory::{Memory, PageSource, MapMemoryArgs}, address_space::AddressSpace, capability_space::CapabilitySpace, WeakCapability}, sched::{ThreadGroup, Thread, ThreadStartMode}, int::userspace_interrupt::IntAllocator};
+use crate::mem::vmem_manager::PageMappingOptions;
+use crate::mem::mmio_allocator::MmioAllocator;
+use crate::mem::{root_alloc_ref, root_alloc_page_ref, root_alloc};
 use crate::container::Arc;
 
 const INITRD_MAGIC: u64 = 0x39f298aa4b92e836;

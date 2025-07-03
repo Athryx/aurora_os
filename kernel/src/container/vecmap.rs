@@ -5,7 +5,7 @@ use core::slice::{Iter, IterMut};
 use core::fmt::{self, Debug};
 
 use super::Vec;
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::prelude::*;
 
 #[derive(Debug)]

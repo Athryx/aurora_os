@@ -1,10 +1,10 @@
 use core::ops::{RangeBounds, Bound};
 
 use crate::prelude::*;
-use crate::alloc::{PaRef, HeapRef};
+use crate::mem::{PaRef, HeapRef};
 use crate::sync::{IrwLock, IrwLockReadGuard, IrwLockWriteGuard};
 use crate::container::{Weak, Arc, HashMap};
-use crate::vmem_manager::{MapAction, VirtAddrSpace, PageMappingOptions};
+use crate::mem::vmem_manager::{MapAction, VirtAddrSpace, PageMappingOptions};
 use super::address_space::{AddressSpace, AddrSpaceMapping, MemoryMapping as AddrSpaceMemoryMapping, AddressSpaceInner};
 use super::{CapObject, CapType, address_space::MappingId};
 

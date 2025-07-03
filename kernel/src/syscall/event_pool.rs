@@ -1,6 +1,6 @@
 use sys::{CapFlags, EventPoolAwaitFlags};
 
-use crate::alloc::{HeapRef, PaRef};
+use crate::mem::{HeapRef, PaRef};
 use crate::cap::{StrongCapability, Capability};
 use crate::cap::capability_space::CapabilitySpace;
 use crate::container::Arc;

@@ -1,6 +1,6 @@
 use core::alloc::Layout;
 
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::prelude::*;
 
 pub use bit_utils::MemOwner;

@@ -1,6 +1,6 @@
 use sys::{CapFlags, ThreadNewFlags, ThreadSuspendFlags, ThreadDestroyFlags, ThreadProperty, ThreadExit};
 
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::arch::x64::IntDisable;
 use crate::cap::{WeakCapability, Capability};
 use crate::container::Arc;

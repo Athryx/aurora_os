@@ -7,7 +7,7 @@ use core::fmt;
 use siphasher::sip::SipHasher;
 
 use super::{vec, Vec};
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::prelude::*;
 
 enum HashMapCell<K, V> {

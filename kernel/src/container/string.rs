@@ -2,7 +2,7 @@ use core::fmt::{self, Write};
 use core::ops::{Deref, DerefMut};
 use core::str;
 
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 use crate::prelude::*;
 
 pub struct String {

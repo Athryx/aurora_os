@@ -1,7 +1,7 @@
 use core::mem;
 
 use crate::prelude::*;
-use crate::alloc::HeapRef;
+use crate::mem::HeapRef;
 
 /// A max heap binary heap
 #[derive(Debug)]

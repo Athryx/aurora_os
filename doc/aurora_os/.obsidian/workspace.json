@@ -27,30 +27,16 @@
             "state": {
               "type": "markdown",
               "state": {
-                "file": "Server APIs.md",
+                "file": "RPC and Serialization.md",
                 "mode": "source",
                 "source": false
               },
               "icon": "lucide-file",
-              "title": "Server APIs"
-            }
-          },
-          {
-            "id": "1ba20f56007cfbea",
-            "type": "leaf",
-            "state": {
-              "type": "markdown",
-              "state": {
-                "file": "Kernel Architecture.md",
-                "mode": "source",
-                "source": false
-              },
-              "icon": "lucide-file",
-              "title": "Kernel Architecture"
+              "title": "RPC and Serialization"
             }
           }
         ],
-        "currentTab": 2
+        "currentTab": 1
       }
     ],
     "direction": "vertical"
@@ -221,15 +207,18 @@
       "command-palette:Open command palette": false
     }
   },
-  "active": "1ba20f56007cfbea",
+  "active": "ae2e87ba77160e3e",
   "lastOpenFiles": [
+    "Server APIs.md",
+    "Kernel Events.md",
+    "Kernel Bytecode Interpreter.md",
     "General Design.md",
     "Kernel Architecture.md",
-    "Kernel Bytecode Interpreter.md",
+    "RPC and Serialization.md",
+    "Capability Types.md",
+    "Untitled 1.md",
     "Kernel Structures.md",
-    "Server APIs.md",
-    "Kernel Thread Switching Design 2.md",
     "Kernel Thread Switching Design.md",
-    "Kernel Events.md"
+    "Kernel Thread Switching Design 2.md"
   ]
 }
